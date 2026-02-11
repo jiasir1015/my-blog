@@ -1,0 +1,6 @@
+<div class="admonition {{ .Get 0 | default "note" }}">
+    <span class="admonition-title">{{ .Get 0 | default "Note" }}</span>
+    <div class="admonition-content">
+        {{ .Inner | markdownify }}
+    </div>
+</div>

@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>逻辑复制 | Kernel Notes</title>
+<meta name="keywords" content="MVCC, PostgreSQL, Transaction, Logical Replication">
+<meta name="description" content="基本概念
+逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。
+1. 逻辑数据格式
+逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：
+[MsgType：Insert，Relation：test，New Tuple：[a, int, 100]]
+从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步。
+接上例，通过一定的解析步骤，我们总能够得到：
+Insert into test(a) values 100::int;
+对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。
+2. 与物理复制的区别
+逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。
+几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：
+--------------
+Page Header
+--------------
+Tuple 1 for r1
+--------------
+Tuple 2 for r1
+--------------
+Tuple 1 for r2
+--------------
+Tuple 1 for r3
+--------------
+Tuple 2 for r2
+--------------
+如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。
+逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。
+Reader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。
+逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：
+
+应用场景
+
+某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换；
+某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异；
+某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递；
+&hellip;
+
+
+架构
+
+如图所示，">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/logical_replication/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.c08b01ada1d6770629b7b7d5f450dcf46e8c642e99338041dc14125ffeaed182.css" integrity="sha256-wIsBraHWdwYpt7fV9FDc9G6MZC6ZM4BB3BQSX/6u0YI=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/logical_replication/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/logical_replication/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="逻辑复制">
+  <meta property="og:description" content="基本概念 逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。
+1. 逻辑数据格式 逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：
+[MsgType：Insert，Relation：test，New Tuple：[a, int, 100]] 从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步。
+接上例，通过一定的解析步骤，我们总能够得到：
+Insert into test(a) values 100::int; 对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。
+2. 与物理复制的区别 逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。
+几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：
+-------------- Page Header -------------- Tuple 1 for r1 -------------- Tuple 2 for r1 -------------- Tuple 1 for r2 -------------- Tuple 1 for r3 -------------- Tuple 2 for r2 -------------- 如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。
+逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。
+Reader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。
+逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：
+应用场景
+某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换； 某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异； 某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递； … 架构 如图所示，">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-02-10T16:15:52+08:00">
+    <meta property="article:modified_time" content="2026-02-10T16:15:52+08:00">
+    <meta property="article:tag" content="MVCC">
+    <meta property="article:tag" content="PostgreSQL">
+    <meta property="article:tag" content="Transaction">
+    <meta property="article:tag" content="Logical Replication">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="逻辑复制">
+<meta name="twitter:description" content="基本概念
+逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。
+1. 逻辑数据格式
+逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：
+[MsgType：Insert，Relation：test，New Tuple：[a, int, 100]]
+从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步。
+接上例，通过一定的解析步骤，我们总能够得到：
+Insert into test(a) values 100::int;
+对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。
+2. 与物理复制的区别
+逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。
+几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：
+--------------
+Page Header
+--------------
+Tuple 1 for r1
+--------------
+Tuple 2 for r1
+--------------
+Tuple 1 for r2
+--------------
+Tuple 1 for r3
+--------------
+Tuple 2 for r2
+--------------
+如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。
+逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。
+Reader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。
+逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：
+
+应用场景
+
+某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换；
+某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异；
+某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递；
+&hellip;
+
+
+架构
+
+如图所示，">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "逻辑复制",
+      "item": "http://localhost:1313/posts/logical_replication/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "逻辑复制",
+  "name": "逻辑复制",
+  "description": "基本概念 逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。\n1. 逻辑数据格式 逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：\n[MsgType：Insert，Relation：test，New Tuple：[a, int, 100]] 从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步。\n接上例，通过一定的解析步骤，我们总能够得到：\nInsert into test(a) values 100::int; 对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。\n2. 与物理复制的区别 逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。\n几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：\n-------------- Page Header -------------- Tuple 1 for r1 -------------- Tuple 2 for r1 -------------- Tuple 1 for r2 -------------- Tuple 1 for r3 -------------- Tuple 2 for r2 -------------- 如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。\n逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。\nReader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。\n逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：\n应用场景\n某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换； 某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异； 某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递； \u0026hellip; 架构 如图所示，\n",
+  "keywords": [
+    "MVCC", "PostgreSQL", "Transaction", "Logical Replication"
+  ],
+  "articleBody": "基本概念 逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。\n1. 逻辑数据格式 逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：\n[MsgType：Insert，Relation：test，New Tuple：[a, int, 100]] 从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步。\n接上例，通过一定的解析步骤，我们总能够得到：\nInsert into test(a) values 100::int; 对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。\n2. 与物理复制的区别 逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。\n几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：\n-------------- Page Header -------------- Tuple 1 for r1 -------------- Tuple 2 for r1 -------------- Tuple 1 for r2 -------------- Tuple 1 for r3 -------------- Tuple 2 for r2 -------------- 如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。\n逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。\nReader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。\n逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：\n应用场景\n某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换； 某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异； 某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递； … 架构 如图所示，\n",
+  "wordCount" : "61",
+  "inLanguage": "en",
+  "datePublished": "2026-02-10T16:15:52+08:00",
+  "dateModified": "2026-02-10T16:15:52+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/logical_replication/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/search/" title="Search (Alt &#43; /)" accesskey=/>
+                    <span>Search</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      逻辑复制
+    </h1>
+    <div class="post-meta">
+      <span title='2026-02-10 16:15:52 +0800 CST'>February 10, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>61 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#%e5%9f%ba%e6%9c%ac%e6%a6%82%e5%bf%b5" aria-label="基本概念">基本概念</a><ul>
+                        
+                <li>
+                    <a href="#1-%e9%80%bb%e8%be%91%e6%95%b0%e6%8d%ae%e6%a0%bc%e5%bc%8f" aria-label="1. 逻辑数据格式">1. 逻辑数据格式</a></li>
+                <li>
+                    <a href="#2-%e4%b8%8e%e7%89%a9%e7%90%86%e5%a4%8d%e5%88%b6%e7%9a%84%e5%8c%ba%e5%88%ab" aria-label="2. 与物理复制的区别">2. 与物理复制的区别</a></li></ul>
+                </li>
+                <li>
+                    <a href="#%e6%9e%b6%e6%9e%84" aria-label="架构">架构</a>
+                </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h2 id="基本概念">基本概念<a hidden class="anchor" aria-hidden="true" href="#基本概念">#</a></h2>
+<p>逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。</p>
+<h3 id="1-逻辑数据格式">1. 逻辑数据格式<a hidden class="anchor" aria-hidden="true" href="#1-逻辑数据格式">#</a></h3>
+<p>逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="o">[</span>MsgType：Insert，Relation：test，New Tuple：<span class="o">[</span>a, int, 100<span class="o">]]</span>
+</span></span></code></pre></div><p>从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：<strong>无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步</strong>。</p>
+<p>接上例，通过一定的解析步骤，我们总能够得到：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">Insert</span><span class="w"> </span><span class="k">into</span><span class="w"> </span><span class="n">test</span><span class="p">(</span><span class="n">a</span><span class="p">)</span><span class="w"> </span><span class="k">values</span><span class="w"> </span><span class="mi">100</span><span class="p">::</span><span class="nb">int</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><p>对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。</p>
+<h3 id="2-与物理复制的区别">2. 与物理复制的区别<a hidden class="anchor" aria-hidden="true" href="#2-与物理复制的区别">#</a></h3>
+<p>逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。</p>
+<p>几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">--------------
+</span></span><span class="line"><span class="cl">Page Header
+</span></span><span class="line"><span class="cl">--------------
+</span></span><span class="line"><span class="cl">Tuple <span class="m">1</span> <span class="k">for</span> r1
+</span></span><span class="line"><span class="cl">--------------
+</span></span><span class="line"><span class="cl">Tuple <span class="m">2</span> <span class="k">for</span> r1
+</span></span><span class="line"><span class="cl">--------------
+</span></span><span class="line"><span class="cl">Tuple <span class="m">1</span> <span class="k">for</span> r2
+</span></span><span class="line"><span class="cl">--------------
+</span></span><span class="line"><span class="cl">Tuple <span class="m">1</span> <span class="k">for</span> r3
+</span></span><span class="line"><span class="cl">--------------
+</span></span><span class="line"><span class="cl">Tuple <span class="m">2</span> <span class="k">for</span> r2
+</span></span><span class="line"><span class="cl">--------------
+</span></span></code></pre></div><p>如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。</p>
+<p>逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。</p>
+<p>Reader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。</p>
+<p>逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：</p>
+<blockquote>
+<p><strong>应用场景</strong></p>
+<ol>
+<li>某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换；</li>
+<li>某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异；</li>
+<li>某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递；
+&hellip;</li>
+</ol>
+</blockquote>
+<h2 id="架构">架构<a hidden class="anchor" aria-hidden="true" href="#架构">#</a></h2>
+<p><img alt="alt text" loading="lazy" src="image.png"></p>
+<p>如图所示，</p>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/mvcc/">MVCC</a></li><li><a href="http://localhost:1313/tags/postgresql/">PostgreSQL</a></li><li><a href="http://localhost:1313/tags/transaction/">Transaction</a></li><li><a href="http://localhost:1313/tags/logical-replication/">Logical Replication</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./Database</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+</body>
+
+</html>

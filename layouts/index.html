@@ -1,0 +1,114 @@
+{{ define "main" }}
+
+<!-- 🌟 核心改变：引入一个 dashboard 容器 -->
+<div class="dashboard-wrapper">
+
+    <!-- ================= 左侧边栏 (Left Sidebar) ================= -->
+    <aside class="dashboard-sidebar-left">
+        
+        <!-- 1. 快速导航 -->
+        <div class="widget-box">
+            <h4 class="widget-title">>_ QUICK NAV</h4>
+            <ul class="sidebar-menu">
+                <li><a href="/archives/">📦 Archives (归档)</a></li>
+                <li><a href="/search/">🔍 Search (搜索)</a></li>
+                <li><a href="/about/">👨‍💻 About Me (关于)</a></li>
+                <li><a href="/index.xml">📡 RSS Feed</a></li>
+            </ul>
+        </div>
+
+        <!-- 2. 技术栈标签云 (只显示文章最多的 20 个标签) -->
+        <div class="widget-box">
+            <h4 class="widget-title">>_ TECH STACK</h4>
+            <div class="tag-cloud">
+                {{ range first 20 .Site.Taxonomies.tags.ByCount }}
+                <a href="{{ .Page.Permalink }}" class="tag-item">
+                    {{ .Page.Title }} <span class="tag-count">({{ .Count }})</span>
+                </a>
+                {{ end }}
+            </div>
+        </div>
+    </aside>
+
+
+    <!-- ================= 中间内容区 (Center) ================= -->
+    <div class="dashboard-center">
+        
+        <!-- 个人简介 (Profile) -->
+        {{ if .Site.Params.homeInfoParams }}
+            {{ partial "home_info.html" . }}
+        {{ end }}
+
+        <!-- 分类卡片区域 (你之前的逻辑) -->
+        <div class="home-category-container">
+            <!-- 修改这里：自定义你的分类 -->
+            {{ $display_categories := slice "Database" "Storage Engine" "Distributed System" "Linux" }}
+
+            {{ range $category := $display_categories }}
+                {{ $posts := where $.Site.RegularPages "Params.categories" "intersect" (slice .) }}
+                {{ if gt (len $posts) 0 }}
+                <div class="category-section">
+                    <div class="category-header">
+                        <h3 class="category-title">>_ {{ $category | upper }}</h3>
+                        <a class="category-more" href="{{ "categories/" | absURL }}{{ $category | urlize }}">All →</a>
+                    </div>
+                    <div class="category-post-list">
+                        {{ range first 3 $posts }}
+                        <article class="category-post-entry">
+                            <span class="post-date">{{ .Date.Format "2006-01-02" }}</span>
+                            <a class="post-link" href="{{ .Permalink }}">
+                                <span class="post-title">{{ .Title }}</span>
+                            </a>
+                        </article>
+                        {{ end }}
+                    </div>
+                </div>
+                {{ end }}
+            {{ end }}
+        </div>
+        
+        <!-- 底部按钮 -->
+        <div style="text-align: center; margin-top: 30px;">
+            <a href="/archives" class="view-all-button">Explore All Posts</a>
+        </div>
+    </div>
+
+
+    <!-- ================= 右侧边栏 (Right Sidebar) ================= -->
+    <aside class="dashboard-sidebar-right">
+        
+        <!-- 1. GitHub 贡献图 (极客标配) -->
+        <div class="widget-box">
+            <h4 class="widget-title">>_ GITHUB ACTIVITY</h4>
+            <!-- 请把下面的 username 改成你的 GitHub 用户名 -->
+            <img src="https://ghchart.rshah.org/40c463/jxh-cuit" alt="GitHub Contributions" style="width: 100%; opacity: 0.8;">
+            <div style="font-size: 12px; color: var(--secondary); margin-top: 5px; text-align: right;">
+                <a href="https://github.com/jxh-cuit" target="_blank" style="color: var(--secondary);">View Profile →</a>
+            </div>
+        </div>
+
+        <!-- 2. 最近更新 / 公告栏 (模拟 Terminal 风格) -->
+        <div class="widget-box terminal-box">
+            <h4 class="widget-title">>_ SYSTEM LOG</h4>
+            <div class="terminal-content">
+                <p><span class="log-time">[2026-02-10]</span> Site initialized.</p>
+                <p><span class="log-time">[2026-02-11]</span> Kernel update: v6.1.</p>
+                <p><span class="log-time">[INFO]</span> Looking for bugs...</p>
+                <p class="blink">_</p>
+            </div>
+        </div>
+        
+        <!-- 3. 友情链接 / 常用工具 -->
+        <div class="widget-box">
+            <h4 class="widget-title">>_ LINKS</h4>
+            <ul class="sidebar-links">
+                <li><a href="https://www.postgresql.org/docs/" target="_blank">PostgreSQL Docs</a></li>
+                <li><a href="https://leveldb.org/" target="_blank">LevelDB Source</a></li>
+                <li><a href="https://kernel.org/" target="_blank">Linux Kernel</a></li>
+            </ul>
+        </div>
+    </aside>
+
+</div>
+
+{{ end }}

@@ -1,0 +1,101 @@
+baseURL = 'http://localhost/'
+languageCode = 'zh-cn'
+title = 'Kernel Notes' # 你的博客标题
+theme = 'PaperMod'
+
+# 允许在 markdown 中使用内联短代码
+enableInlineShortcodes = true
+
+[outputs]
+  home = ["HTML", "RSS", "JSON"]
+
+# --- 代码高亮配置 (类似 Monokai) ---
+[markup.highlight]
+  style = 'monokai'
+  tabWidth = 4
+  noClasses = false 
+  guessSyntax = true
+
+# --- 允许部分 HTML (为了灵活性) ---
+[markup.goldmark.renderer]
+  unsafe = true 
+
+# --- 菜单配置 ---
+[[menu.main]]
+  identifier = 'categories'
+  name = '分类'
+  url = '/categories/'
+  weight = 10
+
+[[menu.main]]
+  identifier = 'tags'
+  name = '标签'
+  url = '/tags/'
+  weight = 20
+
+[[menu.main]]
+  identifier = 'archives'
+  name = '归档'
+  url = '/archives/'
+  weight = 30
+
+[[menu.main]]
+    identifier = "search"
+    name = "Search"
+    url = "/search/"
+    weight = 10
+# --- PaperMod 主题参数配置 ---
+[params]
+  env = 'production'
+  defaultTheme = 'auto' # 跟随系统切换暗黑模式
+  author = 'Me'
+  ShowReadingTime = true # 显示预计阅读时间
+  ShowWordCount = true   # 显示字数
+  # 显示目录
+  ShowToc = true
+  # 目录默认展开
+  TocOpen = true
+  # 开启侧边浮动目录 (关键点：屏幕宽时显示在右侧，窄时显示在顶部)
+  showToc = true
+  
+  # 首页个人简介
+  [params.homeInfoParams]
+    Title = "<img src='/avatar.jpg' class='home-avatar'> Hi there 👋"
+    Content = """
+    我是贾旭辉，一名程序员💻，目前在北京海量数据担任存储引擎组的内核开发。
+    专注于存储引擎、性能优化等方面的工作。
+    这里记录我的技术笔记、Debug踩坑实录，也会记录一些好的文章的阅读心得📖。
+    记录并理解，才算真正掌握。
+    希望不久的将来，我也能被尊称为架构设计师😂.
+    🛠️ Tech Stack: C, C++, A little bit Java, Linux System Programming.
+    """
+    
+  # 社交链接 (可选)
+  [[params.socialIcons]]
+    name = 'github'
+    url = 'https://github.com/jxh-cuit'
+  
+  [[params.socialIcons]]
+    name = "email"
+    url = "j846538307@163.com"
+
+  [[params.socialIcons]]
+    name = "rss" # 极客标配
+    url = "/index.xml"
+
+[markup.tableOfContents]
+  endLevel = 3 # 只显示 H1, H2, H3，忽略 H4 之后的
+  ordered = false # 不显示 1. 1.1 这种序号，更清爽
+
+[related]
+  includeNewer = true
+  threshold = 80
+  toLower = false
+
+  [[related.indices]]
+    name = "tags"
+    weight = 100 # 标签相同的文章最相关
+
+  [[related.indices]]
+    name = "categories"
+    weight = 70

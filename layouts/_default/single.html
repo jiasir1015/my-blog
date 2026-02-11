@@ -1,0 +1,104 @@
+{{- define "main" -}}
+
+<article class="post-single">
+  <!-- 1. 文章头部 (标题, Meta信息) -->
+  <header class="post-header">
+    {{ partial "breadcrumbs.html" . }}
+    <h1 class="post-title">
+      {{ .Title }}
+      {{- if .Draft }}<sup><span class="entry-isdraft">&nbsp;&nbsp;[draft]</span></sup>{{- end }}
+    </h1>
+    {{- if .Description }}
+    <div class="post-description">
+      {{ .Description }}
+    </div>
+    {{- end }}
+    {{- if not .Params.hideMeta }}
+    <div class="post-meta">
+      {{ partial "post_meta.html" . }}
+      {{ partial "translation_list.html" . }}
+      {{ partial "edit_post.html" . }}
+      {{ partial "post_canonical.html" . }}
+    </div>
+    {{- end }}
+  </header>
+
+  <!-- 2. 封面图 -->
+  {{- $isHidden := .Params.cover.hidden | default .Site.Params.cover.hiddenInSingle | default .Site.Params.cover.hidden }}
+  {{- partial "cover.html" (dict "cxt" . "IsHome" false "isHidden" $isHidden) }}
+
+  <!-- 3. 文章是否有目录 (ToC) -->
+  {{- if (.Params.ShowToc | default .Site.Params.ShowToc) }}
+  {{- partial "toc.html" . }}
+  {{- end }}
+
+  <!-- 4. 文章正文内容 -->
+  <div class="post-content">
+    {{- if not .Params.disableAnchoredHeadings }}
+    {{- partial "anchored_headings.html" .Content -}}
+    {{- else }}{{ .Content }}{{ end }}
+  </div>
+
+  <!-- 5. 文章底部 (Footer) -->
+  <footer class="post-footer">
+    {{- if .Params.tags -}}
+    <ul class="post-tags">
+      {{- range ($.GetTerms "tags") -}}
+      <li><a href="{{ .Permalink }}">{{ .LinkTitle }}</a></li>
+      {{- end -}}
+    </ul>
+    {{- end -}}
+    {{- if (.Params.ShowShareButtons | default .Site.Params.ShowShareButtons) }}
+    {{- partial "share_icons.html" . -}}
+    {{- end }}
+  </footer>
+
+  <!-- ============================================ -->
+  <!-- 🌟 新增：右侧极客风边栏 (Right Sidebar) 🌟 -->
+  <!-- ============================================ -->
+  <aside class="sidebar-right">
+    <!-- Git Commit Info -->
+    {{- if .GitInfo }}
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ COMMIT INFO</h4>
+        <div class="widget-content git-info">
+            <div class="git-hash">Hash: <a href="{{ .Site.Params.gitUrl }}/commit/{{ .GitInfo.Hash }}" target="_blank">{{ substr .GitInfo.Hash 0 7 }}</a></div>
+            <div class="git-time">Time: {{ .GitInfo.AuthorDate.Format "2006-01-02" }}</div>
+        </div>
+    </div>
+    {{- end }}
+
+    <!-- 相关文章推荐 -->
+    {{- $related := .Site.RegularPages.Related . | first 5 -}}
+    {{- with $related -}}
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts">
+            {{- range . -}}
+            <li><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>
+            {{- end -}}
+        </ul>
+    </div>
+    {{- end -}}
+    
+    <!-- 仅仅为了装饰：显示当前分类 -->
+    {{- if .Params.categories }}
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            {{ range .Params.categories }}
+            <span style="color:var(--primary); font-family:monospace;">./{{ . }}</span><br>
+            {{ end }}
+        </div>
+    </div>
+    {{- end }}
+  </aside>
+  <!-- ============================================ -->
+
+  <!-- 6. 评论区 (如果有配置) -->
+  {{- if (.Params.comments | default .Site.Params.comments) }}
+  {{- partial "comments.html" . }}
+  {{- end }}
+</article>
+
+{{- end -}}

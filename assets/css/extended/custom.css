@@ -1,0 +1,293 @@
+/* ==========================================================================
+   1. Admonition Block Styles (提示块/警告块)
+   ========================================================================== */
+.admonition {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    border-left: 4px solid;
+    background-color: var(--entry);
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+.admonition-title {
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+    display: block;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+}
+.admonition.note { border-color: #42b983; background-color: rgba(66, 185, 131, 0.1); }
+.admonition.note .admonition-title { color: #42b983; }
+.admonition.warning { border-color: #e7c000; background-color: rgba(231, 192, 0, 0.1); }
+.admonition.warning .admonition-title { color: #d7b000; }
+.admonition.danger { border-color: #ff4d4d; background-color: rgba(255, 77, 77, 0.1); }
+.admonition.danger .admonition-title { color: #ff4d4d; }
+.admonition.info { border-color: #3498db; background-color: rgba(52, 152, 219, 0.1); }
+.admonition.info .admonition-title { color: #3498db; }
+
+
+/* ==========================================================================
+   2. Home Profile & Avatar (首页头像与简介)
+   ========================================================================== */
+.home-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    vertical-align: middle;
+    margin-right: 15px;
+    border: 2px solid var(--primary);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    transition: transform 0.3s ease;
+}
+.home-avatar:hover { transform: rotate(360deg) scale(1.1); }
+.first-entry { min-height: 150px; }
+
+/* 社交图标 */
+.social-icons a {
+    background: var(--entry);
+    padding: 10px;
+    border-radius: 50%;
+    margin-right: 10px;
+    transition: all 0.3s;
+}
+.social-icons a:hover {
+    background: var(--primary);
+    color: white;
+    transform: translateY(-3px);
+}
+.social-icons svg { fill: currentColor; width: 20px; height: 20px; }
+
+
+/* ==========================================================================
+   3. Dashboard Layout (首页三栏仪表盘布局)
+   ========================================================================== */
+.dashboard-wrapper {
+    display: grid;
+    grid-template-columns: 240px 1fr 240px; 
+    gap: 40px;
+    max-width: 1400px;
+    margin: 0 auto;
+    align-items: start;
+}
+/* 响应式：屏幕小于 1200px 时切回单栏 */
+@media screen and (max-width: 1200px) {
+    .dashboard-wrapper { grid-template-columns: 1fr; }
+    .dashboard-sidebar-left, .dashboard-sidebar-right { display: none; }
+}
+
+/* 首页通用小部件样式 */
+.widget-box { margin-bottom: 30px; }
+.widget-title {
+    font-family: 'Menlo', monospace;
+    font-size: 13px;
+    font-weight: bold;
+    color: var(--secondary);
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 5px;
+    margin-bottom: 15px;
+    letter-spacing: 1px;
+}
+.sidebar-menu { list-style: none; padding: 0; }
+.sidebar-menu li { margin-bottom: 10px; }
+.sidebar-menu a {
+    text-decoration: none; color: var(--content); font-size: 14px;
+    display: block; padding: 5px 10px; border-radius: 4px; transition: background 0.2s;
+}
+.sidebar-menu a:hover { background: var(--entry); color: var(--primary); }
+
+.tag-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag-item {
+    font-size: 12px; background: var(--entry); padding: 3px 8px;
+    border-radius: 4px; color: var(--primary); border: 1px solid transparent;
+}
+.tag-item:hover { border-color: var(--primary); transform: translateY(-2px); }
+.tag-count { font-size: 10px; opacity: 0.6; }
+
+.terminal-box {
+    background: #1e1e1e; color: #42b983; padding: 15px;
+    border-radius: 6px; font-family: 'Menlo', monospace; font-size: 12px;
+    border: 1px solid #333;
+}
+.terminal-content p { margin: 5px 0; }
+.log-time { color: #888; margin-right: 5px; }
+@keyframes blink { 50% { opacity: 0; } }
+.blink { animation: blink 1s step-end infinite; }
+
+.sidebar-links { list-style: none; padding: 0; }
+.sidebar-links li { margin-bottom: 8px; }
+.sidebar-links a {
+    color: var(--secondary); font-size: 13px; text-decoration: none;
+    border-bottom: 1px dotted var(--secondary);
+}
+.sidebar-links a:hover { color: var(--primary); border-bottom-style: solid; }
+
+
+/* ==========================================================================
+   4. Dashboard Categories (首页中间的分类卡片)
+   ========================================================================== */
+.home-category-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 30px;
+    margin-top: 40px;
+}
+.category-section {
+    background: var(--entry);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 15px 25px 15px 20px !important;
+    border-top: 4px solid var(--primary);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.category-section:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
+
+.category-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 20px; border-bottom: 1px dashed var(--border); padding-bottom: 10px;
+}
+.category-title {
+    font-family: 'Menlo', 'Monaco', monospace;
+    font-size: 14px !important; font-weight: bold; margin: 0;
+    color: var(--primary); letter-spacing: 1px; opacity: 0.9;
+}
+.category-more { font-size: 12px; color: var(--secondary); text-decoration: none; }
+.category-more:hover { color: var(--primary); }
+
+.category-post-entry {
+    display: flex; align-items: center; margin-bottom: 0;
+    font-size: 14px; padding: 12px 0; border-bottom: 1px solid var(--border);
+}
+.category-post-entry:last-child { border-bottom: none; padding-bottom: 5px; }
+
+.post-date {
+    font-family: 'Menlo', monospace; font-size: 12px !important;
+    color: var(--secondary); min-width: 85px; margin-right: 10px; opacity: 0.7;
+}
+.post-title {
+    font-size: 18px !important; font-weight: 600; line-height: 1.4;
+    margin: 0; color: var(--content); transition: all 0.2s;
+}
+.post-link { text-decoration: none !important; width: 100%; display: block; }
+.post-link:hover .post-title {
+    color: var(--primary); border-left: 3px solid var(--primary); padding-left: 8px;
+}
+.view-all-button {
+    display: inline-block; padding: 10px 30px; border: 2px solid var(--primary);
+    color: var(--primary); text-decoration: none; font-weight: bold;
+    border-radius: 4px; transition: all 0.2s;
+}
+.view-all-button:hover { background: var(--primary); color: white; }
+
+
+/* ==========================================================================
+   5. Article Page Layout Fix (文章页：防重叠核心修复)
+   ========================================================================== */
+
+/* 5.1 全局容器设置：撑开主容器以适应三栏，但在文章页限制正文宽度 */
+.main {
+    max-width: 1440px !important;
+    padding: 0 40px;
+}
+
+/* 5.2 强制文章内容区域居中且限宽，防止碰到侧边栏 */
+.post-single {
+    max-width: 800px;
+    margin: 0 auto;
+    position: relative;
+}
+
+/* 5.3 左侧悬浮目录 (Left ToC) - 默认隐藏，超宽屏显示 */
+.toc { display: none; } /* 默认隐藏，避免手机和平板重叠 */
+
+/* 仅在屏幕 > 1500px 时显示悬浮目录 */
+@media screen and (min-width: 1500px) {
+    .toc {
+        display: block;
+        position: fixed;
+        top: 100px;
+        /* 计算逻辑：屏幕中心 - 文章一半(400) - 目录宽(250) - 间距(50) */
+        left: calc(50vw - 400px - 250px - 50px); 
+        width: 250px;
+        max-height: 80vh;
+        overflow-y: auto;
+        background: transparent !important; border: none !important;
+        padding: 0 !important; margin: 0 !important;
+        z-index: 99;
+    }
+    .toc::-webkit-scrollbar { width: 0; }
+    
+    /* 极客风标题 */
+    .toc summary {
+        display: block; font-family: 'Menlo', 'Monaco', monospace;
+        font-size: 13px; font-weight: bold; color: var(--secondary);
+        margin-bottom: 15px; cursor: default; letter-spacing: 1px;
+        pointer-events: none;
+        visibility: hidden; position: relative;
+    }
+    .toc summary::after {
+        visibility: visible; content: ">_ INDEX"; 
+        position: absolute; left: 0; top: 0; color: var(--primary);
+    }
+    
+    /* 目录线条 */
+    .toc .inner { margin: 0; padding: 0; border-left: 1px solid var(--border); }
+    .toc li { list-style: none; margin: 0; padding: 0; }
+    .toc a {
+        display: block; font-size: 13px; line-height: 1.5; color: var(--secondary);
+        text-decoration: none; padding: 4px 0 4px 15px; margin-left: -1px;
+        border-left: 2px solid transparent; transition: all 0.2s ease;
+    }
+    .toc a:hover {
+        color: var(--primary); border-left: 2px solid var(--primary);
+        background: linear-gradient(90deg, var(--entry) 0%, transparent 100%);
+        transform: translateX(2px);
+    }
+    .toc li ul { margin-left: 10px; border-left: none; }
+}
+
+/* 屏幕小于 1500px 时，恢复 PaperMod 默认的 ToC 样式 (在文章内部) */
+@media screen and (max-width: 1499px) {
+    .post-content .toc {
+        display: block; position: static; background: var(--entry);
+        border: 1px solid var(--border); padding: 10px; margin-bottom: 20px; width: auto;
+    }
+    .toc summary, .toc summary span { visibility: visible; pointer-events: auto; }
+    .toc summary::after { content: none; }
+    .toc .inner { border-left: none; }
+}
+
+
+/* 5.4 右侧悬浮边栏 (Right Sidebar) - 默认隐藏，超宽屏显示 */
+.sidebar-right { display: none; }
+
+@media screen and (min-width: 1500px) {
+    .sidebar-right {
+        display: block;
+        position: fixed;
+        top: 100px;
+        /* 计算逻辑：屏幕中心 + 文章一半(400) + 间距(60) */
+        left: calc(50vw + 400px + 60px);
+        width: 220px;
+        max-height: 80vh;
+        overflow-y: auto;
+        font-family: 'Menlo', monospace; z-index: 99;
+    }
+    
+    .git-info {
+        color: var(--secondary); font-size: 12px;
+        border-left: 2px solid var(--border); padding-left: 10px;
+    }
+    .related-posts { list-style: none; padding: 0; margin: 0; border-left: 1px solid var(--border); }
+    .related-posts li { margin-bottom: 8px; }
+    .related-posts a {
+        display: block; color: var(--secondary); text-decoration: none;
+        padding-left: 15px; margin-left: -1px; border-left: 2px solid transparent;
+        transition: all 0.2s;
+    }
+    .related-posts a:hover {
+        color: var(--primary); border-left: 2px solid var(--primary);
+        transform: translateX(2px);
+    }
+}
