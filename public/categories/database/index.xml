@@ -9,7 +9,7 @@
     <lastBuildDate>Tue, 10 Feb 2026 16:15:52 +0800</lastBuildDate>
     <atom:link href="http://localhost:1313/categories/database/index.xml" rel="self" type="application/rss+xml" />
     <item>
-      <title>1.Logical_replication</title>
+      <title>逻辑复制</title>
       <link>http://localhost:1313/posts/logical_replication/</link>
       <pubDate>Tue, 10 Feb 2026 16:15:52 +0800</pubDate>
       <guid>http://localhost:1313/posts/logical_replication/</guid>

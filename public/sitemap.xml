@@ -38,14 +38,6 @@
     <loc>http://localhost:1313/posts/readme/</loc>
     <lastmod>2026-02-10T16:05:44+08:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/tags/database/</loc>
-  </url><url>
-    <loc>http://localhost:1313/categories/storage-engine/</loc>
-  </url><url>
-    <loc>http://localhost:1313/tags/vastbase/</loc>
-  </url><url>
-    <loc>http://localhost:1313/tags/xugu/</loc>
-  </url><url>
     <loc>http://localhost:1313/search/</loc>
   </url>
 </urlset>

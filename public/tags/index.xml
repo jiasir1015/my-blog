@@ -36,26 +36,5 @@
       <guid>http://localhost:1313/tags/transaction/</guid>
       <description></description>
     </item>
-    <item>
-      <title>Database</title>
-      <link>http://localhost:1313/tags/database/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/tags/database/</guid>
-      <description></description>
-    </item>
-    <item>
-      <title>Vastbase</title>
-      <link>http://localhost:1313/tags/vastbase/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/tags/vastbase/</guid>
-      <description></description>
-    </item>
-    <item>
-      <title>Xugu</title>
-      <link>http://localhost:1313/tags/xugu/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/tags/xugu/</guid>
-      <description></description>
-    </item>
   </channel>
 </rss>
