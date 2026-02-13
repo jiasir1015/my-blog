@@ -291,3 +291,217 @@
         transform: translateX(2px);
     }
 }
+
+/* =======================================================
+   社交图标增强 (Social Icons Enhanced)
+   ======================================================= */
+
+/* 1. 基础按钮样式 (保持和 PaperMod 一致) */
+.social-icons {
+    display: flex;
+    justify-content: center;
+    gap: 15px; /* 图标之间的间距 */
+}
+
+.social-custom-btn {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 24px; /* 图标大小，根据你的主题调整 */
+    height: 24px;
+    cursor: pointer;
+    color: var(--content); /* 默认颜色 */
+    transition: all 0.3s;
+    position: relative; /* 为 tooltip 定位 */
+}
+
+.social-custom-btn:hover {
+    color: var(--primary); /* 悬停变色 */
+    transform: scale(1.1);
+}
+
+.social-custom-btn svg {
+    width: 24px;
+    height: 24px;
+    fill: currentColor;
+}
+
+/* =======================================================
+   2. Email 悬浮 Tooltip 样式
+   ======================================================= */
+.email-btn-wrapper .email-tooltip {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    bottom: 130%; /* 图标上方 */
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--primary); /* 主题色背景 */
+    color: white; /* 假设主题色较深 */
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    white-space: nowrap; /* 不换行 */
+    font-family: 'Menlo', monospace;
+    z-index: 10;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+}
+
+/* 小三角 */
+.email-btn-wrapper .email-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+/* 鼠标悬停显示 */
+.email-btn-wrapper:hover .email-tooltip {
+    visibility: visible;
+    opacity: 1;
+    bottom: 140%; /* 微微上浮动画 */
+}
+
+/* =======================================================
+   3. WeChat 弹窗样式 (Modal) - 修正版
+   ======================================================= */
+.wechat-modal {
+    display: none;
+    position: fixed;
+    z-index: 10001;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.6); /* 遮罩稍微淡一点 */
+    backdrop-filter: blur(4px);
+    animation: fadeIn 0.2s;
+}
+
+.wechat-modal-content {
+    background-color: var(--entry);
+    margin: 10vh auto; /* 距离顶部 10% */
+    border: 1px solid var(--border);
+    width: 320px; /*稍微加宽一点点 */
+    border-radius: 12px;
+    position: relative;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.25);
+    overflow: hidden;
+    /* 关键：确保容器自身没有额外的 Padding 干扰布局 */
+    padding: 0; 
+}
+
+/* 顶部 Tab 切换条 */
+.wechat-tabs {
+    display: flex;
+    justify-content: center; /* Tab 文字居中 */
+    border-bottom: 1px solid var(--border);
+    background: var(--post-bg);
+    padding-right: 40px; /* 关键：右侧给关闭按钮留出位置，防止重叠 */
+}
+
+.wechat-tab {
+    flex: 1;
+    text-align: center;
+    padding: 14px 0;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--secondary);
+    transition: 0.3s;
+    position: relative; /* 用于底部线条定位 */
+}
+
+.wechat-tab:hover { background: rgba(0,0,0,0.02); }
+
+/* 激活的 Tab */
+.wechat-tab.active {
+    color: var(--primary);
+    font-weight: bold;
+}
+/* 激活时的底部线条 (更精致的做法) */
+.wechat-tab.active::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 25%; /* 线条不占满整个格，只占中间一半 */
+    width: 50%;
+    height: 3px;
+    background-color: var(--primary);
+    border-radius: 3px 3px 0 0;
+}
+
+/* --- 修正：关闭按钮样式 --- */
+.wechat-close {
+    position: absolute;
+    right: 12px;
+    top: 10px; /* 垂直居中 */
+    width: 24px;
+    height: 24px;
+    line-height: 22px; /* 调整文字垂直居中 */
+    text-align: center;
+    font-size: 18px; /* 调小字号 */
+    font-weight: normal; /* 去掉粗体 */
+    color: #999; /* 颜色变淡 */
+    cursor: pointer;
+    z-index: 20;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+.wechat-close:hover { 
+    color: var(--primary); 
+    background: rgba(0,0,0,0.05); /* 悬停加个淡背景圆圈 */
+}
+
+/* --- 修正：内容区域居中 --- */
+.wechat-tab-content {
+    display: none;
+    padding: 35px 20px 25px 20px;
+    /* 核心修复：使用 Flexbox 强制垂直水平居中 */
+    flex-direction: column;
+    align-items: center; 
+    justify-content: center;
+    animation: fadeIn 0.3s;
+}
+
+.wechat-tab-content.active {
+    display: flex; /* 注意这里改为 flex */
+}
+
+.wechat-tab-content img {
+    width: 200px;
+    height: 200px;
+    border-radius: 8px;
+    /* 给图片加一个淡淡的边框，防止白底二维码在白底主题下看不清边界 */
+    border: 1px solid rgba(0,0,0,0.1); 
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    margin-bottom: 20px;
+    display: block; /* 防止图片行内元素的间隙 */
+}
+
+.wechat-desc {
+    font-size: 13px;
+    color: var(--secondary);
+    font-family: 'Menlo', monospace;
+    margin: 0;
+    letter-spacing: 0.5px;
+}
+
+.email-btn-wrapper svg {
+    fill: none !important;        /* 关键：去掉填充色 */
+    stroke: currentColor !important; /* 关键：使用线条描边 */
+    stroke-width: 2;              /* 线条粗细 */
+    stroke-linecap: round;        /* 线头变圆 */
+    stroke-linejoin: round;       /* 拐角变圆 */
+}
+
+/* 确保微信图标依然是实心的 (如果之前的样式被影响了) */
+.social-custom-btn:not(.email-btn-wrapper) svg {
+    fill: currentColor;
+    stroke: none;
+}

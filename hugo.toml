@@ -73,15 +73,9 @@ enableInlineShortcodes = true
   # 社交链接 (可选)
   [[params.socialIcons]]
     name = 'github'
-    url = 'https://github.com/jxh-cuit'
+    url = 'https://github.com/jiasir1015'
   
-  [[params.socialIcons]]
-    name = "email"
-    url = "j846538307@163.com"
-
-  [[params.socialIcons]]
-    name = "rss" # 极客标配
-    url = "/index.xml"
+  
 
 [markup.tableOfContents]
   endLevel = 3 # 只显示 H1, H2, H3，忽略 H4 之后的

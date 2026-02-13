@@ -15,7 +15,7 @@
 ">
 <meta name="author" content="Me">
 <link rel="canonical" href="http://localhost:1313/posts/readme/">
-<link crossorigin="anonymous" href="/assets/css/stylesheet.c08b01ada1d6770629b7b7d5f450dcf46e8c642e99338041dc14125ffeaed182.css" integrity="sha256-wIsBraHWdwYpt7fV9FDc9G6MZC6ZM4BB3BQSX/6u0YI=" rel="preload stylesheet" as="style">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.9e7dd99c046247595486359440334f005080988c448cd6e4ea825ab8d0daa034.css" integrity="sha256-nn3ZnARiR1lUhjWUQDNPAFCAmIxEjNbk6oJauNDaoDQ=" rel="preload stylesheet" as="style">
 <link rel="icon" href="http://localhost:1313/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
@@ -341,6 +341,293 @@
         }
     })
 
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none; 
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    overflow: hidden; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);  
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+    margin: auto;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 90%;
+    max-width: 700px;
+    text-align: center;
+}
+
+.cat-image-container img {
+    max-width: 100%;
+    max-height: 80vh;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 14px;
+}
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: 0;
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.3s;
+}
+.cat-close:hover { color: var(--primary); }
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    width: auto;
+    padding: 16px;
+    margin-top: -50px;
+    color: white;
+    font-weight: bold;
+    font-size: 24px;
+    transition: 0.6s ease;
+    border-radius: 3px;
+    user-select: none;
+    background: transparent;
+    border: none;
+}
+
+.prev { left: 0; }
+.next { right: 0; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.2); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    modal.style.display = "block";
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "block") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
 </script>
 </body>
 

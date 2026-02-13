@@ -149,3 +149,38 @@
 </script>
 {{- end }}
 {{ partial "cat_widget.html" . }}
+
+<script>
+// --- WeChat Modal Logic ---
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+// 点击遮罩关闭
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Tab 切换逻辑
+function switchWeChatTab(tabName) {
+    // 1. 处理 Tab 样式
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    // 简单判断：第一个是好友，第二个是支付。根据点击文字判断有点脆弱，但这里够用了
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    // 2. 处理内容显示
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
