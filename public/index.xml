@@ -56,6 +56,62 @@
 &lt;p&gt;如图所示，&lt;/p&gt;</description>
     </item>
     <item>
+      <title>0.AboutMe</title>
+      <link>http://localhost:1313/about/</link>
+      <pubDate>Tue, 10 Feb 2026 16:05:44 +0800</pubDate>
+      <guid>http://localhost:1313/about/</guid>
+      <description>&lt;h1 id=&#34;1-关于我&#34;&gt;1. 关于我&lt;/h1&gt;
+&lt;ul&gt;
+&lt;li&gt;作者：Jia Xuhui&lt;/li&gt;
+&lt;li&gt;年龄：97年出生，2027年就满20了&lt;/li&gt;
+&lt;li&gt;专业：计算机&lt;/li&gt;
+&lt;li&gt;职业：数据库内核开发&lt;/li&gt;
+&lt;li&gt;现居：成都&lt;/li&gt;
+&lt;li&gt;微信：easymoneysniper（注明来源）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;经历：
+时间	经历	内容
+2016-2020	南京理工大学	能源与动力工程学院
+2021-2024	成都信息工程大学	计算机科学与技术
+2024-2025   虚谷伟业        数据库内核开发
+2025-       海量数据        数据库内核开发&lt;/p&gt;
+&lt;h1 id=&#34;2-博客&#34;&gt;2. 博客&lt;/h1&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;博客记录的内容：主要有3类：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;计算机基础&lt;/li&gt;
+&lt;li&gt;数据库内核&lt;/li&gt;
+&lt;li&gt;杂谈&lt;/li&gt;
+&lt;li&gt;好文心得、记录&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;写博客的目的，主要有2个：&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;学习笔记：我发现我的记忆，在面对复杂问题的时候，会很不够用，所以要记录，万一别人问起我来，我做过的东西答不上来，很尴尬，也表示没有掌握。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;知识分享：其实也不算分享，因为不一定对所有的人都有价值，可能只是我觉得对我个人比较有价值&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;读博客的时候，需要注意3个问题：、&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;正确性：很多内容，按我的理解写的，可能有误，欢迎指正（我自己也会写完问一下ai有没有常识性错误，然而深层次的，不好说）&lt;/li&gt;
+&lt;li&gt;完整性：由于工作需求，不一定会连续的处理一个模块的问题，可能东跳西跳的；&lt;/li&gt;
+&lt;li&gt;美观性：页面美观，完全是ai写的，我描述我想要的，他来完成，可能会有显示bug&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;3-博客相关&#34;&gt;3. 博客相关&lt;/h1&gt;
+&lt;ul&gt;
+&lt;li&gt;框架：hugo&lt;/li&gt;
+&lt;li&gt;主题：papermod&lt;/li&gt;
+&lt;li&gt;ai：gemini 3 pro（挺好用，而且免费）&lt;/li&gt;
+&lt;/ul&gt;</description>
+    </item>
+    <item>
       <title>0.Readme</title>
       <link>http://localhost:1313/posts/readme/</link>
       <pubDate>Tue, 10 Feb 2026 16:05:44 +0800</pubDate>
