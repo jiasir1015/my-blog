@@ -28,6 +28,49 @@
                 {{ end }}
             </div>
         </div>
+        <!-- 3. 在读书单 (新增组件) -->
+        <div class="widget-box">
+            <h4 class="widget-title">>_ READING LIST</h4>
+            <div class="reading-list">
+                
+                <!-- 书籍 1 -->
+                <div class="reading-item">
+                    <div class="book-info">
+                        <span class="book-title">Designing Data-Intensive App</span>
+                        <span class="book-percent">45%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" style="width: 45%;"></div>
+                    </div>
+                    <div class="book-author">Martin Kleppmann</div>
+                </div>
+
+                <!-- 书籍 2 -->
+                <div class="reading-item">
+                    <div class="book-info">
+                        <span class="book-title">Database System Concepts</span>
+                        <span class="book-percent">12%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" style="width: 12%;"></div>
+                    </div>
+                    <div class="book-author">Abraham Silberschatz</div>
+                </div>
+
+                <!-- 书籍 3 -->
+                <div class="reading-item">
+                    <div class="book-info">
+                        <span class="book-title">Effective C++</span>
+                        <span class="book-percent">100%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill done" style="width: 100%;"></div>
+                    </div>
+                    <div class="book-status">✅ Completed</div>
+                </div>
+
+            </div>
+        </div>
     </aside>
 
 
@@ -42,7 +85,7 @@
         <!-- 分类卡片区域 (你之前的逻辑) -->
         <div class="home-category-container">
             <!-- 修改这里：自定义你的分类 -->
-            {{ $display_categories := slice "Database" "Storage Engine" "Distributed System" "Linux" }}
+            {{ $display_categories := slice "Database" "Storage Engine" "VastBase" "Linux" }}
 
             {{ range $category := $display_categories }}
                 {{ $posts := where $.Site.RegularPages "Params.categories" "intersect" (slice .) }}
@@ -107,6 +150,36 @@
                 <li><a href="https://kernel.org/" target="_blank">Linux Kernel</a></li>
             </ul>
         </div>
+        <div class="widget-box">
+            <h4 class="widget-title">>_ OPEN SOURCE</h4>
+            <div class="project-list">
+                
+                <!-- 项目卡片 1 -->
+                <a href="https://github.com/yourname/my-db-wheel" target="_blank" class="project-card">
+                    <div class="project-header">
+                        <span class="project-name">🛠️ my-db-wheel</span>
+                        <span class="project-stars">⭐ 128</span>
+                    </div>
+                    <p class="project-desc">一个简单的 KV 存储引擎实现，基于 LSM-Tree 模型。</p>
+                    <div class="project-meta">
+                        <span class="lang-dot" style="background-color: #f34b7d;"></span> C++
+                        <span style="margin-left: 10px;">⚖️ MIT</span>
+                    </div>
+                </a>
+
+                <!-- 项目卡片 2 -->
+                <a href="https://github.com/yourname/raft-demo" target="_blank" class="project-card">
+                    <div class="project-header">
+                        <span class="project-name">⛵ raft-demo</span>
+                        <span class="project-stars">⭐ 45</span>
+                    </div>
+                    <p class="project-desc">Raft 分布式一致性算法的可视化演示。</p>
+                    <div class="project-meta">
+                        <span class="lang-dot" style="background-color: #dea584;"></span> Rust
+                    </div>
+                </a>
+
+            </div>
     </aside>
 
 </div>

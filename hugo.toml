@@ -41,7 +41,7 @@ enableInlineShortcodes = true
 
 [[menu.main]]
     identifier = "search"
-    name = "Search"
+    name = "搜索"
     url = "/search/"
     weight = 10
 # --- PaperMod 主题参数配置 ---
