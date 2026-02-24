@@ -165,7 +165,7 @@
         <!-- 分类卡片区域 (你之前的逻辑) -->
         <div class="home-category-container">
             <!-- 修改这里：自定义你的分类 -->
-            {{ $display_categories := slice "Database" "Storage Engine" "VastBase" "Linux" }}
+            {{ $display_categories := slice "Database" "Storage Engine" "VastBase" "Linux" "Algorithm" }}
 
             {{ range $category := $display_categories }}
                 {{ $posts := where $.Site.RegularPages "Params.categories" "intersect" (slice .) }}

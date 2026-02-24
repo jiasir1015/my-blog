@@ -5,16 +5,51 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <meta name="robots" content="index, follow">
-<title>0.Readme | Kernel Notes</title>
-<meta name="keywords" content="">
-<meta name="description" content="关于
-把这里当成第一步，开始积累自己的东西，当有一天面对外部变化，能够从从容容、游刃有余。
-我是贾旭辉，我希望能够养成良好的习惯，开始随手记录一些工作中、生活中积累到的东西。
-种下一棵树最好的时间是十年前，其次就是现在了。
-                                -- 2026.02.10
-">
+<title>深度优先遍历 | Kernel Notes</title>
+<meta name="keywords" content="DFS, LeetCode">
+<meta name="description" content="今天的每日一题：1202. 从根到叶的二进制数之和。
+简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：
+输入：root = [1,0,1,0,1,0,1]
+输出：22
+解释：(100) &#43; (101) &#43; (110) &#43; (111) = 4 &#43; 5 &#43; 6 &#43; 7 = 22
+可以表示为：
+    1
+   / \
+  0   1
+ / \  / \
+0  1  0  1
+思路就是使用dfs来遍历这个树，代码为：
+/**
+ * Definition for a binary tree node.
+ * struct TreeNode {
+ *     int val;
+ *     TreeNode *left;
+ *     TreeNode *right;
+ *     TreeNode() : val(0), left(nullptr), right(nullptr) {}
+ *     TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+ *     TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+ * };
+ */
+class Solution {
+public:
+    int dfs(TreeNode *root, int val) {
+        if (root == nullptr)
+            return 0;
+
+        val = val &lt;&lt; 1 | root-&gt;val;
+        if (root-&gt;left == nullptr &amp;&amp; root-&gt;right == nullptr)
+            return val;
+        
+        return dfs(root-&gt;left, val) &#43; dfs(root-&gt;right, val);
+    }
+
+    int sumRootToLeaf(TreeNode* root) {
+        return dfs(root, 0);    
+    }
+};
+拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：">
 <meta name="author" content="Me">
-<link rel="canonical" href="http://localhost:1313/posts/readme/">
+<link rel="canonical" href="http://localhost:1313/posts/dfs/">
 <link crossorigin="anonymous" href="/assets/css/stylesheet.356fe55c5f1a2d8fb0dff96c300e8af0c6c552f3fdbc2fce279987f9c1b1e1d4.css" integrity="sha256-NW/lXF8aLY&#43;w3/lsMA6K8MbFUvP9vC/OJ5mH&#43;cGx4dQ=" rel="preload stylesheet" as="style">
 <link rel="icon" href="http://localhost:1313/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
@@ -23,7 +58,7 @@
 <link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/readme/">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/dfs/">
 <noscript>
     <style>
         #theme-toggle,
@@ -75,26 +110,64 @@
         document.querySelector("html").dataset.theme = 'light';
     }
 
-</script><meta property="og:url" content="http://localhost:1313/posts/readme/">
+</script><meta property="og:url" content="http://localhost:1313/posts/dfs/">
   <meta property="og:site_name" content="Kernel Notes">
-  <meta property="og:title" content="0.Readme">
-  <meta property="og:description" content="关于 把这里当成第一步，开始积累自己的东西，当有一天面对外部变化，能够从从容容、游刃有余。
-我是贾旭辉，我希望能够养成良好的习惯，开始随手记录一些工作中、生活中积累到的东西。
-种下一棵树最好的时间是十年前，其次就是现在了。
--- 2026.02.10 ">
+  <meta property="og:title" content="深度优先遍历">
+  <meta property="og:description" content="今天的每日一题：1202. 从根到叶的二进制数之和。
+简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：
+输入：root = [1,0,1,0,1,0,1] 输出：22 解释：(100) &#43; (101) &#43; (110) &#43; (111) = 4 &#43; 5 &#43; 6 &#43; 7 = 22 可以表示为：
+1 / \ 0 1 / \ / \ 0 1 0 1 思路就是使用dfs来遍历这个树，代码为：
+/** * Definition for a binary tree node. * struct TreeNode { * int val; * TreeNode *left; * TreeNode *right; * TreeNode() : val(0), left(nullptr), right(nullptr) {} * TreeNode(int x) : val(x), left(nullptr), right(nullptr) {} * TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {} * }; */ class Solution { public: int dfs(TreeNode *root, int val) { if (root == nullptr) return 0; val = val &lt;&lt; 1 | root-&gt;val; if (root-&gt;left == nullptr &amp;&amp; root-&gt;right == nullptr) return val; return dfs(root-&gt;left, val) &#43; dfs(root-&gt;right, val); } int sumRootToLeaf(TreeNode* root) { return dfs(root, 0); } }; 拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：">
   <meta property="og:locale" content="zh-cn">
   <meta property="og:type" content="article">
     <meta property="article:section" content="posts">
-    <meta property="article:published_time" content="2026-02-10T16:05:44+08:00">
-    <meta property="article:modified_time" content="2026-02-10T16:05:44+08:00">
+    <meta property="article:published_time" content="2026-02-24T12:02:52+08:00">
+    <meta property="article:modified_time" content="2026-02-24T12:02:52+08:00">
+    <meta property="article:tag" content="DFS">
+    <meta property="article:tag" content="LeetCode">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="0.Readme">
-<meta name="twitter:description" content="关于
-把这里当成第一步，开始积累自己的东西，当有一天面对外部变化，能够从从容容、游刃有余。
-我是贾旭辉，我希望能够养成良好的习惯，开始随手记录一些工作中、生活中积累到的东西。
-种下一棵树最好的时间是十年前，其次就是现在了。
-                                -- 2026.02.10
-">
+<meta name="twitter:title" content="深度优先遍历">
+<meta name="twitter:description" content="今天的每日一题：1202. 从根到叶的二进制数之和。
+简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：
+输入：root = [1,0,1,0,1,0,1]
+输出：22
+解释：(100) &#43; (101) &#43; (110) &#43; (111) = 4 &#43; 5 &#43; 6 &#43; 7 = 22
+可以表示为：
+    1
+   / \
+  0   1
+ / \  / \
+0  1  0  1
+思路就是使用dfs来遍历这个树，代码为：
+/**
+ * Definition for a binary tree node.
+ * struct TreeNode {
+ *     int val;
+ *     TreeNode *left;
+ *     TreeNode *right;
+ *     TreeNode() : val(0), left(nullptr), right(nullptr) {}
+ *     TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+ *     TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+ * };
+ */
+class Solution {
+public:
+    int dfs(TreeNode *root, int val) {
+        if (root == nullptr)
+            return 0;
+
+        val = val &lt;&lt; 1 | root-&gt;val;
+        if (root-&gt;left == nullptr &amp;&amp; root-&gt;right == nullptr)
+            return val;
+        
+        return dfs(root-&gt;left, val) &#43; dfs(root-&gt;right, val);
+    }
+
+    int sumRootToLeaf(TreeNode* root) {
+        return dfs(root, 0);    
+    }
+};
+拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：">
 
 
 <script type="application/ld+json">
@@ -111,8 +184,8 @@
     {
       "@type": "ListItem",
       "position":  2 ,
-      "name": "0.Readme",
-      "item": "http://localhost:1313/posts/readme/"
+      "name": "深度优先遍历",
+      "item": "http://localhost:1313/posts/dfs/"
     }
   ]
 }
@@ -121,24 +194,24 @@
 {
   "@context": "https://schema.org",
   "@type": "BlogPosting",
-  "headline": "0.Readme",
-  "name": "0.Readme",
-  "description": "关于 把这里当成第一步，开始积累自己的东西，当有一天面对外部变化，能够从从容容、游刃有余。\n我是贾旭辉，我希望能够养成良好的习惯，开始随手记录一些工作中、生活中积累到的东西。\n种下一棵树最好的时间是十年前，其次就是现在了。\n-- 2026.02.10 ",
+  "headline": "深度优先遍历",
+  "name": "深度优先遍历",
+  "description": "今天的每日一题：1202. 从根到叶的二进制数之和。\n简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：\n输入：root = [1,0,1,0,1,0,1] 输出：22 解释：(100) + (101) + (110) + (111) = 4 + 5 + 6 + 7 = 22 可以表示为：\n1 / \\ 0 1 / \\ / \\ 0 1 0 1 思路就是使用dfs来遍历这个树，代码为：\n/** * Definition for a binary tree node. * struct TreeNode { * int val; * TreeNode *left; * TreeNode *right; * TreeNode() : val(0), left(nullptr), right(nullptr) {} * TreeNode(int x) : val(x), left(nullptr), right(nullptr) {} * TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {} * }; */ class Solution { public: int dfs(TreeNode *root, int val) { if (root == nullptr) return 0; val = val \u0026lt;\u0026lt; 1 | root-\u0026gt;val; if (root-\u0026gt;left == nullptr \u0026amp;\u0026amp; root-\u0026gt;right == nullptr) return val; return dfs(root-\u0026gt;left, val) + dfs(root-\u0026gt;right, val); } int sumRootToLeaf(TreeNode* root) { return dfs(root, 0); } }; 拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：\n",
   "keywords": [
-    
+    "DFS", "LeetCode"
   ],
-  "articleBody": "关于 把这里当成第一步，开始积累自己的东西，当有一天面对外部变化，能够从从容容、游刃有余。\n我是贾旭辉，我希望能够养成良好的习惯，开始随手记录一些工作中、生活中积累到的东西。\n种下一棵树最好的时间是十年前，其次就是现在了。\n-- 2026.02.10 ",
-  "wordCount" : "6",
+  "articleBody": "今天的每日一题：1202. 从根到叶的二进制数之和。\n简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：\n输入：root = [1,0,1,0,1,0,1] 输出：22 解释：(100) + (101) + (110) + (111) = 4 + 5 + 6 + 7 = 22 可以表示为：\n1 / \\ 0 1 / \\ / \\ 0 1 0 1 思路就是使用dfs来遍历这个树，代码为：\n/** * Definition for a binary tree node. * struct TreeNode { * int val; * TreeNode *left; * TreeNode *right; * TreeNode() : val(0), left(nullptr), right(nullptr) {} * TreeNode(int x) : val(x), left(nullptr), right(nullptr) {} * TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {} * }; */ class Solution { public: int dfs(TreeNode *root, int val) { if (root == nullptr) return 0; val = val \u003c\u003c 1 | root-\u003eval; if (root-\u003eleft == nullptr \u0026\u0026 root-\u003eright == nullptr) return val; return dfs(root-\u003eleft, val) + dfs(root-\u003eright, val); } int sumRootToLeaf(TreeNode* root) { return dfs(root, 0); } }; 拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：\n1. root-\u003eval : 1 curr val : 1 goto dfs(root-\u003eleft, 1) 2. root-\u003eleft-\u003eval : 10 curr val : 10 goto dfs(root-\u003eleft-\u003eleft, 10) 3. root-\u003eleft-\u003eleft-\u003eval : 100 curr val : 100 return 100 4. goto 2 goto dfs(root-\u003eleft-\u003eright, 10) curr val : 10 5. root-\u003eleft-\u003eright-\u003eval : 101 curr val : 101 return 101 6. goto 2 return 100 + 101 curr val : 10 7. goto 1 curr val : 1 goto dfs(root-\u003eright, 1) 8. root-\u003eright-\u003eval : 11 curr val : 11 goto dfs(root-\u003eright-\u003eleft, 11) 9. root-\u003eright-\u003eleft-\u003eval : 110 curr val : 110 return 110 10. goto 8 curr val : 11 goto dfs(root-\u003eright-\u003eright, 11) 11. root-\u003eright-\u003eright-\u003eval : 111 curr val : 111 return 111 12. goto 7 curr val : 1 return 110 + 111 13 return 100 + 101 + 110 + 111 如此一来就可以得到最后的结果，虽然是一道easy，但还是想了很久，下次碰到类似题目，希望可以记住这样好的思路。\n",
+  "wordCount" : "275",
   "inLanguage": "en",
-  "datePublished": "2026-02-10T16:05:44+08:00",
-  "dateModified": "2026-02-10T16:05:44+08:00",
+  "datePublished": "2026-02-24T12:02:52+08:00",
+  "dateModified": "2026-02-24T12:02:52+08:00",
   "author":{
     "@type": "Person",
     "name": "Me"
   },
   "mainEntityOfPage": {
     "@type": "WebPage",
-    "@id": "http://localhost:1313/posts/readme/"
+    "@id": "http://localhost:1313/posts/dfs/"
   },
   "publisher": {
     "@type": "Organization",
@@ -208,10 +281,10 @@
   <header class="post-header">
     
     <h1 class="post-title">
-      0.Readme
+      深度优先遍历
     </h1>
     <div class="post-meta">
-      <span title='2026-02-10 16:05:44 +0800 CST'>February 10, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>6 words</span>&nbsp;·&nbsp;<span>Me</span>
+      <span title='2026-02-24 12:02:52 +0800 CST'>February 24, 2026</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>275 words</span>&nbsp;·&nbsp;<span>Me</span>
       
       
 
@@ -222,35 +295,95 @@
 
    
 
-  <div class="toc">
-    <details  open>
-        <summary accesskey="c" title="(Alt + C)">
-            <span class="details">Table of Contents</span>
-        </summary>
-
-        <div class="inner"><ul>
-                <li>
-                    <a href="#%e5%85%b3%e4%ba%8e" aria-label="关于">关于</a>
-                </li>
-            </ul>
-        </div>
-    </details>
-</div>
+  
 
 
   
-  <div class="post-content"><h1 id="关于">关于<a hidden class="anchor" aria-hidden="true" href="#关于">#</a></h1>
-<p>把这里当成第一步，开始积累自己的东西，当有一天面对外部变化，能够从从容容、游刃有余。</p>
-<p>我是贾旭辉，我希望能够养成良好的习惯，开始随手记录一些工作中、生活中积累到的东西。</p>
-<p>种下一棵树最好的时间是十年前，其次就是现在了。</p>
-<pre><code>                                -- 2026.02.10
-</code></pre>
+  <div class="post-content"><p>今天的每日一题：1202. 从根到叶的二进制数之和。</p>
+<p>简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">输入：root <span class="o">=</span> <span class="o">[</span>1,0,1,0,1,0,1<span class="o">]</span>
+</span></span><span class="line"><span class="cl">输出：22
+</span></span><span class="line"><span class="cl">解释：<span class="o">(</span>100<span class="o">)</span> + <span class="o">(</span>101<span class="o">)</span> + <span class="o">(</span>110<span class="o">)</span> + <span class="o">(</span>111<span class="o">)</span> <span class="o">=</span> <span class="m">4</span> + <span class="m">5</span> + <span class="m">6</span> + <span class="nv">7</span> <span class="o">=</span> <span class="m">22</span>
+</span></span></code></pre></div><p>可以表示为：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">    <span class="m">1</span>
+</span></span><span class="line"><span class="cl">   / <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="m">0</span>   <span class="m">1</span>
+</span></span><span class="line"><span class="cl"> / <span class="se">\ </span> / <span class="se">\
+</span></span></span><span class="line"><span class="cl"><span class="m">0</span>  <span class="m">1</span>  <span class="m">0</span>  <span class="m">1</span>
+</span></span></code></pre></div><p>思路就是使用dfs来遍历这个树，代码为：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-C++" data-lang="C++"><span class="line"><span class="cl"><span class="cm">/**
+</span></span></span><span class="line"><span class="cl"><span class="cm"> * Definition for a binary tree node.
+</span></span></span><span class="line"><span class="cl"><span class="cm"> * struct TreeNode {
+</span></span></span><span class="line"><span class="cl"><span class="cm"> *     int val;
+</span></span></span><span class="line"><span class="cl"><span class="cm"> *     TreeNode *left;
+</span></span></span><span class="line"><span class="cl"><span class="cm"> *     TreeNode *right;
+</span></span></span><span class="line"><span class="cl"><span class="cm"> *     TreeNode() : val(0), left(nullptr), right(nullptr) {}
+</span></span></span><span class="line"><span class="cl"><span class="cm"> *     TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+</span></span></span><span class="line"><span class="cl"><span class="cm"> *     TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+</span></span></span><span class="line"><span class="cl"><span class="cm"> * };
+</span></span></span><span class="line"><span class="cl"><span class="cm"> */</span>
+</span></span><span class="line"><span class="cl"><span class="k">class</span> <span class="nc">Solution</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl"><span class="k">public</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">dfs</span><span class="p">(</span><span class="n">TreeNode</span> <span class="o">*</span><span class="n">root</span><span class="p">,</span> <span class="kt">int</span> <span class="n">val</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="p">(</span><span class="n">root</span> <span class="o">==</span> <span class="k">nullptr</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="n">val</span> <span class="o">=</span> <span class="n">val</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span> <span class="o">|</span> <span class="n">root</span><span class="o">-&gt;</span><span class="n">val</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="p">(</span><span class="n">root</span><span class="o">-&gt;</span><span class="n">left</span> <span class="o">==</span> <span class="k">nullptr</span> <span class="o">&amp;&amp;</span> <span class="n">root</span><span class="o">-&gt;</span><span class="n">right</span> <span class="o">==</span> <span class="k">nullptr</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="k">return</span> <span class="n">val</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">        
+</span></span><span class="line"><span class="cl">        <span class="k">return</span> <span class="nf">dfs</span><span class="p">(</span><span class="n">root</span><span class="o">-&gt;</span><span class="n">left</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span> <span class="o">+</span> <span class="n">dfs</span><span class="p">(</span><span class="n">root</span><span class="o">-&gt;</span><span class="n">right</span><span class="p">,</span> <span class="n">val</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="nf">sumRootToLeaf</span><span class="p">(</span><span class="n">TreeNode</span><span class="o">*</span> <span class="n">root</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">        <span class="k">return</span> <span class="n">dfs</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>    
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl"><span class="p">};</span>
+</span></span></code></pre></div><p>拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">1. root-&gt;val : <span class="m">1</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">1</span>
+</span></span><span class="line"><span class="cl">    goto dfs<span class="o">(</span>root-&gt;left, 1<span class="o">)</span>
+</span></span><span class="line"><span class="cl">2. root-&gt;left-&gt;val : <span class="m">10</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">10</span>
+</span></span><span class="line"><span class="cl">    goto dfs<span class="o">(</span>root-&gt;left-&gt;left, 10<span class="o">)</span>
+</span></span><span class="line"><span class="cl">3. root-&gt;left-&gt;left-&gt;val : <span class="m">100</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">100</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="m">100</span>
+</span></span><span class="line"><span class="cl">4. goto <span class="m">2</span>
+</span></span><span class="line"><span class="cl">    goto dfs<span class="o">(</span>root-&gt;left-&gt;right, 10<span class="o">)</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">10</span>
+</span></span><span class="line"><span class="cl">5. root-&gt;left-&gt;right-&gt;val : <span class="m">101</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">101</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="m">101</span>
+</span></span><span class="line"><span class="cl">6. goto <span class="m">2</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="m">100</span> + <span class="m">101</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">10</span>
+</span></span><span class="line"><span class="cl">7. goto <span class="m">1</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">1</span>
+</span></span><span class="line"><span class="cl">    goto dfs<span class="o">(</span>root-&gt;right, 1<span class="o">)</span>
+</span></span><span class="line"><span class="cl">8. root-&gt;right-&gt;val : <span class="m">11</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">11</span>
+</span></span><span class="line"><span class="cl">    goto dfs<span class="o">(</span>root-&gt;right-&gt;left, 11<span class="o">)</span>
+</span></span><span class="line"><span class="cl">9. root-&gt;right-&gt;left-&gt;val : <span class="m">110</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">110</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="m">110</span>
+</span></span><span class="line"><span class="cl">10. goto <span class="m">8</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">11</span>
+</span></span><span class="line"><span class="cl">    goto dfs<span class="o">(</span>root-&gt;right-&gt;right, 11<span class="o">)</span>
+</span></span><span class="line"><span class="cl">11. root-&gt;right-&gt;right-&gt;val : <span class="m">111</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">111</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="m">111</span>
+</span></span><span class="line"><span class="cl">12. goto <span class="m">7</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">1</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="m">110</span> + <span class="m">111</span>
+</span></span><span class="line"><span class="cl"><span class="m">13</span> <span class="k">return</span> <span class="m">100</span> + <span class="m">101</span> + <span class="m">110</span> + <span class="m">111</span>
+</span></span></code></pre></div><p>如此一来就可以得到最后的结果，虽然是一道easy，但还是想了很久，下次碰到类似题目，希望可以记住这样好的思路。</p>
 
 
   </div>
 
   
-  <footer class="post-footer">
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/dfs/">DFS</a></li><li><a href="http://localhost:1313/tags/leetcode/">LeetCode</a></li></ul>
   </footer>
 
   
@@ -260,6 +393,14 @@
     
 
     
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./Algorithm</span><br>
+            
+        </div>
+    </div>
   </aside>
   
 
