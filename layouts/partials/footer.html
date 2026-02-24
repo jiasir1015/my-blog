@@ -188,19 +188,22 @@ function switchWeChatTab(tabName) {
 <script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
 
 <script>
-/* --- LeetCode IDE Logic --- */
+/* --- LeetCode Logic (Streak & Check-in System) --- */
 let lcDataGlobal = null;
 let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_last_solved_date';
+const STORAGE_KEY_STREAK = 'lc_streak_count';
 
-// 初始化获取数据
 document.addEventListener("DOMContentLoaded", function() {
     const lcWidget = document.getElementById('leetcode-widget');
     if (!lcWidget) return;
 
+    // 1. 初始化 Streak 显示
+    updateStreakDisplay();
+
     const PROXY_URL = 'https://corsproxy.io/?'; 
     const TARGET_URL = 'https://leetcode.com/graphql';
     
-    // 关键：增加了 content 字段获取 HTML
     const query = `
     query questionOfToday {
         activeDailyCodingChallengeQuestion {
@@ -211,7 +214,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 titleSlug
                 difficulty
                 content 
-                topicTags { name }
+                codeSnippets { langSlug code }
             }
         }
     }`;
@@ -225,18 +228,29 @@ document.addEventListener("DOMContentLoaded", function() {
     .then(result => {
         const data = result.data.activeDailyCodingChallengeQuestion;
         if (!data) throw new Error("Empty data");
-        lcDataGlobal = data; // 存到全局变量
+        lcDataGlobal = data;
 
-        // 填充 Widget 信息
+        // 停止 Loading
         document.querySelector('.leetcode-loading').style.display = 'none';
         document.querySelector('.leetcode-content').style.display = 'block';
-        document.getElementById('lc-date').innerText = data.date;
-        document.getElementById('lc-title').innerText = data.question.title;
-        document.getElementById('lc-link').href = "https://leetcode.com" + data.link;
 
-        const diffEl = document.getElementById('lc-difficulty');
-        diffEl.innerText = data.question.difficulty;
-        diffEl.className = `lc-difficulty diff-${data.question.difficulty.toLowerCase()}`;
+        // 2. 检查今天是否已完成
+        const todayDate = data.date; // "2026-02-24"
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        
+        if (lastSolved === todayDate) {
+            showSolvedState();
+        } else {
+            // 未完成，显示题目信息
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = data.date;
+            document.getElementById('lc-title').innerText = data.question.title;
+            document.getElementById('lc-link').href = "https://leetcode.com" + data.link;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            diffEl.innerText = data.question.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.question.difficulty.toLowerCase()}`;
+        }
     })
     .catch(err => {
         console.error(err);
@@ -244,47 +258,114 @@ document.addEventListener("DOMContentLoaded", function() {
     });
 });
 
-// 打开全屏 IDE
-function openLeetCodeModal() {
+// --- 核心功能函数 ---
+
+// 标记为已解决 (AC)
+function markAsSolved() {
     if (!lcDataGlobal) return;
     
-    document.getElementById('lc-modal').style.display = 'block';
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
     
-    // 填充题目内容
-    document.getElementById('modal-title').innerText = lcDataGlobal.question.title;
-    document.getElementById('modal-diff').innerText = lcDataGlobal.question.difficulty;
-    document.getElementById('modal-diff').className = `lc-difficulty diff-${lcDataGlobal.question.difficulty.toLowerCase()}`;
-    
-    // 渲染 HTML 内容
-    document.getElementById('modal-content').innerHTML = lcDataGlobal.question.content;
+    // 防止重复点击
+    if (lastSolved === today) {
+        alert("You have already checked in today! 🎉");
+        closeLeetCodeModal();
+        return;
+    }
 
-    // 初始化编辑器 (只初始化一次)
-    if (!flaskEditor) {
-        flaskEditor = new CodeFlask('#code-editor', {
-            language: 'clike', // C-like 语法高亮
-            lineNumbers: true,
-            readonly: false
-        });
-        // 默认写一段 C++ 代码模版
-        flaskEditor.updateCode(`#include <iostream>\n#include <vector>\nusing namespace std;\n\nclass Solution {\npublic:\n    // Write your solution here...\n    \n};`);
+    // 计算 Streak
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    // 判断日期连续性
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffTime = Math.abs(currDate - lastDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            // 连续签到
+            streak++;
+        } else if (diffDays > 1) {
+            // 断签了，重置为 1
+            streak = 1;
+        }
+        // 如果 diffDays === 0 (同一天)，逻辑上不应该走到这里，因为前面拦截了
+    } else {
+        // 第一次玩
+        streak = 1;
+    }
+
+    // 保存数据
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    // 更新 UI
+    alert(`Congratulations! Streak: ${streak} days 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+// 切换到已完成 UI 状态
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+// 更新右上角的火焰数字
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
     }
 }
 
-// 关闭 IDE
+// --- 以下是原有的 IDE 逻辑 ---
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.question.title;
+    const diffEl = document.getElementById('modal-diff');
+    diffEl.innerText = lcDataGlobal.question.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.question.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.question.content;
+
+    let codeTemplate = "// C++ snippet not found.";
+    if (lcDataGlobal.question.codeSnippets) {
+        const cppSnippet = lcDataGlobal.question.codeSnippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) codeTemplate = cppSnippet.code;
+    }
+
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+    }
+    flaskEditor.updateCode(codeTemplate);
+}
+
 function closeLeetCodeModal() {
     document.getElementById('lc-modal').style.display = 'none';
 }
 
-// 复制并跳转
 function copyAndGo() {
     const code = flaskEditor.getCode();
     navigator.clipboard.writeText(code).then(() => {
-        alert("Code copied! Redirecting to LeetCode...");
-        window.open("https://leetcode.com" + lcDataGlobal.link, '_blank');
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "Copied! Redirecting...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.com" + lcDataGlobal.link, '_blank');
+        }, 1000);
     });
 }
 
-// ESC 关闭
 document.onkeydown = function(e) {
     if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
         closeLeetCodeModal();

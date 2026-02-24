@@ -71,71 +71,81 @@
 
             </div>
         </div>
-        <!-- 5. LeetCode 每日一题 (增强版) -->
+        <!-- 5. LeetCode 每日一题 (打卡增强版) -->
         <div class="widget-box">
-            <h4 class="widget-title">>_ DAILY LEETCODE</h4>
+            <h4 class="widget-title">
+                >_ DAILY LEETCODE
+                <!-- 新增：连续打卡计数器 -->
+                <span id="lc-streak-badge" class="lc-streak-badge" style="display:none">
+                    🔥 <span id="lc-streak-count">0</span> Days
+                </span>
+            </h4>
+            
             <div id="leetcode-widget" class="leetcode-box">
                 <!-- Loading -->
                 <div class="leetcode-loading">
                     <span class="blink">_</span> System Initializing...
                 </div>
                 
-                <!-- 预览卡片 -->
+                <!-- 内容区域 -->
                 <div class="leetcode-content" style="display: none;">
-                    <div class="lc-header">
-                        <span id="lc-date" class="lc-date"></span>
-                        <span id="lc-difficulty" class="lc-difficulty"></span>
-                    </div>
-                    <div class="lc-title-area">
-                        <span id="lc-title" class="lc-title-text"></span>
-                    </div>
                     
-                    <!-- 两个按钮：直接去官网 / 在本站刷题 -->
-                    <div class="lc-actions">
-                        <button onclick="openLeetCodeModal()" class="lc-btn solve-btn">
-                            ⚡ Solve Here
-                        </button>
-                        <a id="lc-link" href="#" target="_blank" class="lc-link-btn">
-                            Source ↗
-                        </a>
+                    <!-- 状态 1: 未完成 (默认显示) -->
+                    <div id="lc-state-todo">
+                        <div class="lc-header">
+                            <span id="lc-date" class="lc-date"></span>
+                            <span id="lc-difficulty" class="lc-difficulty"></span>
+                        </div>
+                        <div class="lc-title-area">
+                            <span id="lc-title" class="lc-title-text"></span>
+                        </div>
+                        <div class="lc-actions">
+                            <button onclick="openLeetCodeModal()" class="lc-btn solve-btn">
+                                ⚡ Solve Here
+                            </button>
+                            <a id="lc-link" href="#" target="_blank" class="lc-link-btn">Source ↗</a>
+                        </div>
                     </div>
+
+                    <!-- 状态 2: 已完成 (打卡后显示) -->
+                    <div id="lc-state-done" style="display: none; text-align: center; padding: 10px 0;">
+                        <div style="font-size: 40px; margin-bottom: 10px;">🎉</div>
+                        <div style="font-weight: bold; color: #42b983; margin-bottom: 5px;">MISSION ACCOMPLISHED</div>
+                        <div style="font-size: 12px; color: var(--secondary);">See you tomorrow!</div>
+                    </div>
+
                 </div>
             </div>
         </div>
 
-        <!-- ============================================ -->
-        <!-- 全屏刷题模态框 (IDE Mode) -->
-        <!-- ============================================ -->
+        <!-- 全屏模态框 (保持结构，底部增加按钮) -->
         <div id="lc-modal" class="lc-modal">
             <div class="lc-ide-container">
-                <!-- 顶部栏 -->
                 <div class="lc-ide-header">
                     <span class="lc-ide-title">>_ VIM_MODE: INSERT</span>
                     <span class="lc-close" onclick="closeLeetCodeModal()">×</span>
                 </div>
-                
-                <!-- 内容区 -->
                 <div class="lc-ide-body">
-                    <!-- 左侧：题目详情 -->
                     <div class="lc-problem-pane">
                         <h2 id="modal-title">Loading...</h2>
                         <div class="lc-meta-tags">
                             <span id="modal-diff" class="lc-difficulty"></span>
-                            <span id="modal-tags"></span>
                         </div>
-                        <div id="modal-content" class="lc-problem-text">
-                            <!-- 题目 HTML 内容将注入这里 -->
-                        </div>
+                        <div id="modal-content" class="lc-problem-text"></div>
                     </div>
-                    
-                    <!-- 右侧：代码编辑器 -->
                     <div class="lc-editor-pane">
                         <div id="code-editor" class="code-editor"></div>
                         <div class="lc-editor-footer">
                             <span class="lang-select">Language: C++</span>
-                            <button class="lc-btn submit-btn" onclick="copyAndGo()">
-                                Copy & Submit 🚀
-                            </button>
+                            <!-- 新增：标记完成按钮 -->
+                            <div class="footer-actions">
+                                <button class="lc-btn check-btn" onclick="markAsSolved()">
+                                    ✅ Mark as AC
+                                </button>
+                                <button class="lc-btn submit-btn" onclick="copyAndGo()">
+                                    Copy & Submit 🚀
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -207,6 +217,8 @@
                 <p><span class="log-time">[2026-02-10]</span> Site initialized.</p>
                 <p><span class="log-time">[2026-02-11]</span> Kernel update: v6.1.</p>
                 <p><span class="log-time">[INFO]</span> Looking for bugs...</p>
+                <p><span class="log-time">[2026-02-24]</span> First day after Chinese new year...</p>
+                <p><span class="log-time">[INFO]</span> It is time to do some cool things...</p>
                 <p class="blink">_</p>
             </div>
         </div>
