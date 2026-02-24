@@ -15,14 +15,14 @@
       <guid>http://localhost:1313/posts/logical_replication/</guid>
       <description>&lt;h2 id=&#34;基本概念&#34;&gt;基本概念&lt;/h2&gt;
 &lt;p&gt;逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。&lt;/p&gt;
-&lt;h3 id=&#34;1-逻辑数据格式&#34;&gt;1. 逻辑数据格式&lt;/h3&gt;
+&lt;h3 id=&#34;逻辑数据格式&#34;&gt;逻辑数据格式&lt;/h3&gt;
 &lt;p&gt;逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：&lt;/p&gt;
 &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;o&#34;&gt;[&lt;/span&gt;MsgType：Insert，Relation：test，New Tuple：&lt;span class=&#34;o&#34;&gt;[&lt;/span&gt;a, int, 100&lt;span class=&#34;o&#34;&gt;]]&lt;/span&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：&lt;strong&gt;无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步&lt;/strong&gt;。&lt;/p&gt;
 &lt;p&gt;接上例，通过一定的解析步骤，我们总能够得到：&lt;/p&gt;
 &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;Insert&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;into&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;test&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;a&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;values&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;100&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;::&lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;int&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。&lt;/p&gt;
-&lt;h3 id=&#34;2-与物理复制的区别&#34;&gt;2. 与物理复制的区别&lt;/h3&gt;
+&lt;h3 id=&#34;与物理复制的区别&#34;&gt;与物理复制的区别&lt;/h3&gt;
 &lt;p&gt;逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。&lt;/p&gt;
 &lt;p&gt;几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：&lt;/p&gt;
 &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;--------------
@@ -53,7 +53,24 @@
 &lt;/blockquote&gt;
 &lt;h2 id=&#34;架构&#34;&gt;架构&lt;/h2&gt;
 &lt;p&gt;&lt;img alt=&#34;alt text&#34; loading=&#34;lazy&#34; src=&#34;image.png&#34;&gt;&lt;/p&gt;
-&lt;p&gt;如图所示，&lt;/p&gt;</description>
+&lt;p&gt;如图所示，逻辑复制功能，是两个实例（或生产者与消费者）之间完成的数据同步，通常我们把作为数据源端的实例，称为发布端（Publisher），而准备接收数据并进行回放的实例称为订阅端（Subscriber）。&lt;/p&gt;
+&lt;h3 id=&#34;发布端&#34;&gt;发布端&lt;/h3&gt;
+&lt;p&gt;发布端的组成部分，共分为以下几个部分：WALReader、Decoder、Sender，通常是由三个独立的线程，按照其角色完成不同的工作：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;WALReader：主要完成对Xlog日志的读取，即从磁盘上将当前已罗盘的Xlog record读取到内存，并发送给Decoder；&lt;/li&gt;
+&lt;li&gt;Decoder：解码线程，由于WALReader发送来的数据，是物理层面的记录，Decoder会按照特定的规则，将物理信息转换为逻辑信息，从内存上看，使用一个结构体，保存Xlog record中的xid、LSN、DMLType等信息。同时，Decoder还需要将这些信息，按照约定好的协议（Protocol）将数据进行打包，其中应用最广泛的端到端协议是pgoutput（后面会介绍他的协议格式以及细节实现）。Decoder会将这些按照协议进行拼接的逻辑数据存储到私有内存中，当达到一定条件时，将数据发送给Sender线程执行发送。&lt;/li&gt;
+&lt;li&gt;Sender：将Decoder发送来的数据通过网络发送给订阅端。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id=&#34;发布端如何保证事务一致性&#34;&gt;发布端如何保证事务一致性&lt;/h4&gt;
+&lt;p&gt;对于数据同步来说，最重要的是事务一致性，如果不能保证一致性，那么逻辑复制将是毫无意义的。而要保证事务一致性，通常主要责任在于发布端，发布端需要确保自己发送逻辑信息的顺序，是严格的，即使不能保证发送顺序一定与WAL日志写入顺序完全一致，但必须保证事务的最终一致性。为了保证事务一致性，在发布端，通常会有以下几个部分保证：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;严格按照commit顺序进行事务发送：事务的提交顺序非常重要，Decoder解码到一条逻辑数据时，并不会立刻发送给Sender，而是将条变更存储起来，直到解码到该事务对应的commit，才将整个事务完发送；&lt;/li&gt;
+&lt;li&gt;错误重发：当订阅端接收到一个事务的commit时，即代表这个事务经传输完毕，订阅端会发送一个确认LSN给发布端，发布端需要确认LSN是在当前处理LSN的前面，如果此时LSN发生错乱，发布端会立即这条返回的LSN开始，重新发送这些变更；&lt;/li&gt;
+&lt;li&gt;commit时间确认：在Decoder将Xlog信息解码为逻辑协议信息时对于某些类型的消息，会携带commit timestampz，这是该事务提时的瞬时时间戳；&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id=&#34;发布端对于内存的管理&#34;&gt;发布端对于内存的管理&lt;/h4&gt;
+&lt;p&gt;在业务系统中，有时不可避免的会出现大事务，通常包含几M甚至百M的事务变更数据，在逻辑复制模块中，上文提到，通常是将所有事务存储于内存，当遇到该事务的commit时，才进行发送。对于这种大事务来说，如果多几条，可能很容易造成内存压力，引起CPU抖动，有影响系统整体性能的可能性。&lt;/p&gt;
+&lt;p&gt;为了保证系统整体性能，当遇到这种大事务的时候，通常会设计一个内存阈值，当在内存中已经存储了多条事务变更时，一旦当前内存占用达到阈值，发布端会选择当前内存中一个最大的事务（不一定是完整的，只是transaction size最大）spill to disk；诚然，这会带来一定的IO开销，因为当我们读到被spill的事务的commit时，需要把它从磁盘上读出来，但相比于其带来的内存负荷，这是合理的取舍。&lt;/p&gt;</description>
     </item>
     <item>
       <title>0.AboutMe</title>

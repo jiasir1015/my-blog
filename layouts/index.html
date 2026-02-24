@@ -180,6 +180,31 @@
                 </a>
 
             </div>
+            <!-- 5. LeetCode 每日一题组件 -->
+        <div class="widget-box">
+            <h4 class="widget-title">>_ DAILY LEETCODE</h4>
+            <div id="leetcode-widget" class="leetcode-box">
+                <!-- 加载动画/占位符 -->
+                <div class="leetcode-loading">
+                    <span class="blink">_</span> Fetching data...
+                </div>
+                
+                <!-- 实际内容容器 (默认隐藏，JS填充后显示) -->
+                <div class="leetcode-content" style="display: none;">
+                    <div class="lc-header">
+                        <span id="lc-date" class="lc-date"></span>
+                        <span id="lc-difficulty" class="lc-difficulty"></span>
+                    </div>
+                    <a id="lc-link" href="#" target="_blank" class="lc-title-link">
+                        <span id="lc-title"></span>
+                    </a>
+                    <div class="lc-meta">
+                        <span>Acceptance: <span id="lc-rate"></span></span>
+                        <span id="lc-tags" class="lc-tags"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </aside>
 
 </div>

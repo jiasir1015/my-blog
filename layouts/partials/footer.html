@@ -183,4 +183,53 @@ function switchWeChatTab(tabName) {
     });
     document.getElementById('tab-' + tabName).classList.add('active');
 }
+
+/* --- LeetCode Daily Question Fetcher --- */
+document.addEventListener("DOMContentLoaded", function() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return; // 如果页面上没有这个组件就不执行
+
+    // 使用 alfa-leetcode-api 获取每日一题
+    // API文档: https://alfa-leetcode-api.onrender.com/
+    fetch('https://alfa-leetcode-api.onrender.com/daily')
+        .then(response => response.json())
+        .then(data => {
+            // 隐藏 Loading
+            document.querySelector('.leetcode-loading').style.display = 'none';
+            document.querySelector('.leetcode-content').style.display = 'block';
+
+            // 1. 设置日期
+            const date = new Date(data.date);
+            document.getElementById('lc-date').innerText = date.toISOString().split('T')[0];
+
+            // 2. 设置标题和链接
+            const titleEl = document.getElementById('lc-title');
+            const linkEl = document.getElementById('lc-link');
+            titleEl.innerText = data.questionTitle;
+            linkEl.href = data.questionLink;
+
+            // 3. 设置难度颜色
+            const diffEl = document.getElementById('lc-difficulty');
+            const diff = data.difficulty; // "Easy", "Medium", "Hard"
+            diffEl.innerText = diff;
+            if (diff === 'Easy') diffEl.className += ' diff-easy';
+            else if (diff === 'Medium') diffEl.className += ' diff-medium';
+            else diffEl.className += ' diff-hard';
+
+            // 4. 设置通过率
+            document.getElementById('lc-rate').innerText = data.acceptanceRate + "%";
+
+            // 5. 设置标签 (只显示前2个，防止太长)
+            if (data.topicTags && data.topicTags.length > 0) {
+                const tagsHtml = data.topicTags.slice(0, 2).map(tag => 
+                    `<span class="lc-tag-item">#${tag.name}</span>`
+                ).join('');
+                document.getElementById('lc-tags').innerHTML = tagsHtml;
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching LeetCode data:', error);
+            document.querySelector('.leetcode-loading').innerText = "Failed to load data :(";
+        });
+});
 </script>

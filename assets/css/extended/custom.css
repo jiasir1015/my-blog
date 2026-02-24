@@ -652,3 +652,102 @@
     display: inline-block;
     margin-right: 5px;
 }
+
+/* =======================================================
+   LeetCode Widget Styles
+   ======================================================= */
+.leetcode-box {
+    background: var(--entry);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 15px;
+    font-family: 'Menlo', monospace;
+    min-height: 100px;
+    position: relative;
+    transition: all 0.2s;
+}
+
+.leetcode-box:hover {
+    border-color: var(--primary);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.leetcode-loading {
+    color: var(--secondary);
+    font-size: 12px;
+    text-align: center;
+    padding: 20px 0;
+}
+
+.lc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.lc-date {
+    font-size: 11px;
+    color: var(--secondary);
+}
+
+/* 难度标签样式 */
+.lc-difficulty {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+.diff-easy { color: #00b8a3; background: rgba(0, 184, 163, 0.1); }
+.diff-medium { color: #ffc01e; background: rgba(255, 192, 30, 0.1); }
+.diff-hard { color: #ff375f; background: rgba(255, 55, 95, 0.1); }
+
+.lc-title-link {
+    display: block;
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--content);
+    text-decoration: none;
+    margin-bottom: 10px;
+    line-height: 1.4;
+    transition: color 0.2s;
+}
+
+.lc-title-link:hover {
+    color: var(--primary);
+    text-decoration: underline;
+}
+
+.lc-meta {
+    font-size: 11px;
+    color: var(--secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.lc-tags {
+    margin-top: 4px;
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.lc-tag-item {
+    background: var(--border);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+}
+
+/* --- 修复组件间距不足 --- */
+/* 强制给 LeetCode 组件所在的父容器顶部增加 40px 间距 */
+#leetcode-widget {
+    margin-top: 20px; /* 组件内部微调 */
+}
+
+/* 增加右侧边栏所有 Widget 之间的距离 */
+.dashboard-sidebar-right .widget-box {
+    margin-bottom: 40px !important; /* 强制拉大间距 */
+}
