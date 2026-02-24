@@ -71,6 +71,76 @@
 
             </div>
         </div>
+        <!-- 5. LeetCode 每日一题 (增强版) -->
+        <div class="widget-box">
+            <h4 class="widget-title">>_ DAILY LEETCODE</h4>
+            <div id="leetcode-widget" class="leetcode-box">
+                <!-- Loading -->
+                <div class="leetcode-loading">
+                    <span class="blink">_</span> System Initializing...
+                </div>
+                
+                <!-- 预览卡片 -->
+                <div class="leetcode-content" style="display: none;">
+                    <div class="lc-header">
+                        <span id="lc-date" class="lc-date"></span>
+                        <span id="lc-difficulty" class="lc-difficulty"></span>
+                    </div>
+                    <div class="lc-title-area">
+                        <span id="lc-title" class="lc-title-text"></span>
+                    </div>
+                    
+                    <!-- 两个按钮：直接去官网 / 在本站刷题 -->
+                    <div class="lc-actions">
+                        <button onclick="openLeetCodeModal()" class="lc-btn solve-btn">
+                            ⚡ Solve Here
+                        </button>
+                        <a id="lc-link" href="#" target="_blank" class="lc-link-btn">
+                            Source ↗
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- 全屏刷题模态框 (IDE Mode) -->
+        <!-- ============================================ -->
+        <div id="lc-modal" class="lc-modal">
+            <div class="lc-ide-container">
+                <!-- 顶部栏 -->
+                <div class="lc-ide-header">
+                    <span class="lc-ide-title">>_ VIM_MODE: INSERT</span>
+                    <span class="lc-close" onclick="closeLeetCodeModal()">×</span>
+                </div>
+                
+                <!-- 内容区 -->
+                <div class="lc-ide-body">
+                    <!-- 左侧：题目详情 -->
+                    <div class="lc-problem-pane">
+                        <h2 id="modal-title">Loading...</h2>
+                        <div class="lc-meta-tags">
+                            <span id="modal-diff" class="lc-difficulty"></span>
+                            <span id="modal-tags"></span>
+                        </div>
+                        <div id="modal-content" class="lc-problem-text">
+                            <!-- 题目 HTML 内容将注入这里 -->
+                        </div>
+                    </div>
+                    
+                    <!-- 右侧：代码编辑器 -->
+                    <div class="lc-editor-pane">
+                        <div id="code-editor" class="code-editor"></div>
+                        <div class="lc-editor-footer">
+                            <span class="lang-select">Language: C++</span>
+                            <button class="lc-btn submit-btn" onclick="copyAndGo()">
+                                Copy & Submit 🚀
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </aside>
 
 
@@ -180,31 +250,6 @@
                 </a>
 
             </div>
-            <!-- 5. LeetCode 每日一题组件 -->
-        <div class="widget-box">
-            <h4 class="widget-title">>_ DAILY LEETCODE</h4>
-            <div id="leetcode-widget" class="leetcode-box">
-                <!-- 加载动画/占位符 -->
-                <div class="leetcode-loading">
-                    <span class="blink">_</span> Fetching data...
-                </div>
-                
-                <!-- 实际内容容器 (默认隐藏，JS填充后显示) -->
-                <div class="leetcode-content" style="display: none;">
-                    <div class="lc-header">
-                        <span id="lc-date" class="lc-date"></span>
-                        <span id="lc-difficulty" class="lc-difficulty"></span>
-                    </div>
-                    <a id="lc-link" href="#" target="_blank" class="lc-title-link">
-                        <span id="lc-title"></span>
-                    </a>
-                    <div class="lc-meta">
-                        <span>Acceptance: <span id="lc-rate"></span></span>
-                        <span id="lc-tags" class="lc-tags"></span>
-                    </div>
-                </div>
-            </div>
-        </div>
     </aside>
 
 </div>

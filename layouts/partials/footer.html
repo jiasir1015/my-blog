@@ -183,53 +183,111 @@ function switchWeChatTab(tabName) {
     });
     document.getElementById('tab-' + tabName).classList.add('active');
 }
+</script>
 
-/* --- LeetCode Daily Question Fetcher --- */
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+/* --- LeetCode IDE Logic --- */
+let lcDataGlobal = null;
+let flaskEditor = null;
+
+// 初始化获取数据
 document.addEventListener("DOMContentLoaded", function() {
     const lcWidget = document.getElementById('leetcode-widget');
-    if (!lcWidget) return; // 如果页面上没有这个组件就不执行
+    if (!lcWidget) return;
 
-    // 使用 alfa-leetcode-api 获取每日一题
-    // API文档: https://alfa-leetcode-api.onrender.com/
-    fetch('https://alfa-leetcode-api.onrender.com/daily')
-        .then(response => response.json())
-        .then(data => {
-            // 隐藏 Loading
-            document.querySelector('.leetcode-loading').style.display = 'none';
-            document.querySelector('.leetcode-content').style.display = 'block';
-
-            // 1. 设置日期
-            const date = new Date(data.date);
-            document.getElementById('lc-date').innerText = date.toISOString().split('T')[0];
-
-            // 2. 设置标题和链接
-            const titleEl = document.getElementById('lc-title');
-            const linkEl = document.getElementById('lc-link');
-            titleEl.innerText = data.questionTitle;
-            linkEl.href = data.questionLink;
-
-            // 3. 设置难度颜色
-            const diffEl = document.getElementById('lc-difficulty');
-            const diff = data.difficulty; // "Easy", "Medium", "Hard"
-            diffEl.innerText = diff;
-            if (diff === 'Easy') diffEl.className += ' diff-easy';
-            else if (diff === 'Medium') diffEl.className += ' diff-medium';
-            else diffEl.className += ' diff-hard';
-
-            // 4. 设置通过率
-            document.getElementById('lc-rate').innerText = data.acceptanceRate + "%";
-
-            // 5. 设置标签 (只显示前2个，防止太长)
-            if (data.topicTags && data.topicTags.length > 0) {
-                const tagsHtml = data.topicTags.slice(0, 2).map(tag => 
-                    `<span class="lc-tag-item">#${tag.name}</span>`
-                ).join('');
-                document.getElementById('lc-tags').innerHTML = tagsHtml;
+    const PROXY_URL = 'https://corsproxy.io/?'; 
+    const TARGET_URL = 'https://leetcode.com/graphql';
+    
+    // 关键：增加了 content 字段获取 HTML
+    const query = `
+    query questionOfToday {
+        activeDailyCodingChallengeQuestion {
+            date
+            link
+            question {
+                title
+                titleSlug
+                difficulty
+                content 
+                topicTags { name }
             }
-        })
-        .catch(error => {
-            console.error('Error fetching LeetCode data:', error);
-            document.querySelector('.leetcode-loading').innerText = "Failed to load data :(";
-        });
+        }
+    }`;
+
+    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: query })
+    })
+    .then(response => response.json())
+    .then(result => {
+        const data = result.data.activeDailyCodingChallengeQuestion;
+        if (!data) throw new Error("Empty data");
+        lcDataGlobal = data; // 存到全局变量
+
+        // 填充 Widget 信息
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+        document.getElementById('lc-date').innerText = data.date;
+        document.getElementById('lc-title').innerText = data.question.title;
+        document.getElementById('lc-link').href = "https://leetcode.com" + data.link;
+
+        const diffEl = document.getElementById('lc-difficulty');
+        diffEl.innerText = data.question.difficulty;
+        diffEl.className = `lc-difficulty diff-${data.question.difficulty.toLowerCase()}`;
+    })
+    .catch(err => {
+        console.error(err);
+        document.querySelector('.leetcode-loading').innerText = "Network Error :(";
+    });
 });
+
+// 打开全屏 IDE
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    // 填充题目内容
+    document.getElementById('modal-title').innerText = lcDataGlobal.question.title;
+    document.getElementById('modal-diff').innerText = lcDataGlobal.question.difficulty;
+    document.getElementById('modal-diff').className = `lc-difficulty diff-${lcDataGlobal.question.difficulty.toLowerCase()}`;
+    
+    // 渲染 HTML 内容
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.question.content;
+
+    // 初始化编辑器 (只初始化一次)
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike', // C-like 语法高亮
+            lineNumbers: true,
+            readonly: false
+        });
+        // 默认写一段 C++ 代码模版
+        flaskEditor.updateCode(`#include <iostream>\n#include <vector>\nusing namespace std;\n\nclass Solution {\npublic:\n    // Write your solution here...\n    \n};`);
+    }
+}
+
+// 关闭 IDE
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+// 复制并跳转
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        alert("Code copied! Redirecting to LeetCode...");
+        window.open("https://leetcode.com" + lcDataGlobal.link, '_blank');
+    });
+}
+
+// ESC 关闭
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
 </script>
