@@ -10,7 +10,7 @@
 <meta name="description" content="">
 <meta name="author" content="Me">
 <link rel="canonical" href="http://localhost:1313/categories/">
-<link crossorigin="anonymous" href="/assets/css/stylesheet.0e5cd49122a234a223fa70e2a8791de392eba65fd8e662c020f6529063b6d7b1.css" integrity="sha256-DlzUkSKiNKIj&#43;nDiqHkd45Lrpl/Y5mLAIPZSkGO217E=" rel="preload stylesheet" as="style">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.356fe55c5f1a2d8fb0dff96c300e8af0c6c552f3fdbc2fce279987f9c1b1e1d4.css" integrity="sha256-NW/lXF8aLY&#43;w3/lsMA6K8MbFUvP9vC/OJ5mH&#43;cGx4dQ=" rel="preload stylesheet" as="style">
 <link rel="icon" href="http://localhost:1313/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
@@ -139,6 +139,9 @@
 </header>
 
 <ul class="terms-tags">
+    <li>
+        <a href="http://localhost:1313/categories/algorithm/">Algorithm <sup><strong><sup>1</sup></strong></sup> </a>
+    </li>
     <li>
         <a href="http://localhost:1313/categories/database/">Database <sup><strong><sup>1</sup></strong></sup> </a>
     </li>
@@ -332,78 +335,101 @@
 
  
 .cat-modal {
-    display: none; 
+    display: none;  
     position: fixed; 
     z-index: 10000; 
     left: 0;
     top: 0;
     width: 100%; 
     height: 100%; 
-    overflow: hidden; 
     background-color: rgba(0,0,0,0.85);  
-    backdrop-filter: blur(5px);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
     animation: fadeIn 0.3s;
 }
 
 .cat-modal-content {
     position: relative;
-    margin: auto;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 90%;
-    max-width: 700px;
-    text-align: center;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .cat-image-container img {
-    max-width: 100%;
-    max-height: 80vh;
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
     border-radius: 8px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     border: 4px solid #fff;
+    display: block;  
 }
 
 .cat-caption {
     color: #fff;
     font-family: 'Menlo', monospace;
     margin-top: 15px;
-    font-size: 14px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
 }
-
- 
-.cat-close {
-    position: absolute;
-    top: -40px;
-    right: 0;
-    color: #f1f1f1;
-    font-size: 35px;
-    font-weight: bold;
-    cursor: pointer;
-    transition: 0.3s;
-}
-.cat-close:hover { color: var(--primary); }
 
  
 .cat-nav {
     cursor: pointer;
     position: absolute;
     top: 50%;
-    width: auto;
-    padding: 16px;
-    margin-top: -50px;
+    transform: translateY(-50%);  
+    padding: 20px;
     color: white;
     font-weight: bold;
-    font-size: 24px;
-    transition: 0.6s ease;
-    border-radius: 3px;
-    user-select: none;
-    background: transparent;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
     border: none;
+    z-index: 10001;  
 }
 
-.prev { left: 0; }
-.next { right: 0; }
-.cat-nav:hover { background-color: rgba(255,255,255,0.2); }
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
 
 @keyframes fadeIn {
     from {opacity: 0} 
@@ -432,7 +458,8 @@ const closeBtn = document.getElementsByClassName("cat-close")[0];
 
 
 widget.onclick = function() {
-    modal.style.display = "block";
+    
+    modal.style.display = "flex"; 
     showCat(currentCatIndex);
 }
 
@@ -450,7 +477,7 @@ window.onclick = function(event) {
 
 
 document.onkeydown = function(e) {
-    if (modal.style.display === "block") {
+    if (modal.style.display === "flex") {
         if (e.key === "Escape") modal.style.display = "none";
         if (e.key === "ArrowLeft") changeCat(-1);
         if (e.key === "ArrowRight") changeCat(1);
@@ -505,6 +532,257 @@ function switchWeChatTab(tabName) {
         content.classList.remove('active');
     });
     document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+ 
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        console.log("Checking submission status...");
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    updateStreakDisplay();
+
+    const PROXY_URL = 'https://corsproxy.io/?'; 
+    const TARGET_URL = 'https://leetcode.cn/graphql';
+    
+    const query = `
+    query questionOfToday {
+        todayRecord {
+            date
+            question {
+                questionFrontendId
+                titleSlug
+                translatedTitle 
+                difficulty
+                translatedContent
+                topicTags { translatedName }
+                codeSnippets { langSlug code }
+            }
+        }
+    }`;
+
+    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: query })
+    })
+    .then(response => response.json())
+    .then(result => {
+        const record = result.data.todayRecord[0];
+        if (!record) throw new Error("Empty data");
+        
+        lcDataGlobal = {
+            date: record.date,
+            titleSlug: record.question.titleSlug, 
+            link: `/problems/${record.question.titleSlug}/description/`,
+            title: record.question.translatedTitle,
+            difficulty: record.question.difficulty,
+            content: record.question.translatedContent,
+            snippets: record.question.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === record.date) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = record.date;
+            document.getElementById('lc-title').innerText = `${record.question.questionFrontendId}. ${record.question.translatedTitle}`;
+            document.getElementById('lc-link').href = "https://leetcode.cn" + lcDataGlobal.link;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[record.question.difficulty] || record.question.difficulty;
+            diffEl.className = `lc-difficulty diff-${record.question.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("Init Error:", err);
+    });
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    const PROXY_URL = 'https://corsproxy.io/?'; 
+    const TARGET_URL = 'https://leetcode.cn/graphql';
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question {
+                titleSlug
+            }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) {
+        checkBtn.innerText = "⏳ Verifying...";
+        checkBtn.disabled = true;
+    }
+
+    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    let codeTemplate = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) codeTemplate = cppSnippet.code;
+    }
+
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+    }
+    flaskEditor.updateCode(codeTemplate);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
 }
 </script>
 </body>

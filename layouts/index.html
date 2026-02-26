@@ -139,9 +139,11 @@
                             <span class="lang-select">Language: C++</span>
                             <!-- 新增：标记完成按钮 -->
                             <div class="footer-actions">
-                                <button class="lc-btn check-btn" onclick="markAsSolved()">
-                                    ✅ Mark as AC
+                                <!-- 旧的按钮删掉，换成这个 -->
+                                <button id="btn-check-status" class="lc-btn check-btn" onclick="checkSubmissionStatus()">
+                                    🔄 Verify Status
                                 </button>
+                                
                                 <button class="lc-btn submit-btn" onclick="copyAndGo()">
                                     Copy & Submit 🚀
                                 </button>
@@ -162,20 +164,30 @@
             {{ partial "home_info.html" . }}
         {{ end }}
 
-        <!-- 分类卡片区域 (你之前的逻辑) -->
+        <!-- 分类展示区 (自动读取全站分类) -->
         <div class="home-category-container">
-            <!-- 修改这里：自定义你的分类 -->
-            {{ $display_categories := slice "Database" "Storage Engine" "VastBase" "Linux" "Algorithm" }}
 
-            {{ range $category := $display_categories }}
-                {{ $posts := where $.Site.RegularPages "Params.categories" "intersect" (slice .) }}
+            <!-- 1. 获取全站所有分类，并按文章数量从多到少排序 -->
+            <!-- 2. 只取前 6 个分类，避免首页太长 (你可以修改 first 6) -->
+            {{ range first 6 .Site.Taxonomies.categories.ByCount }}
+
+                <!-- .Name 是分类名 (如 "Linux") -->
+                {{ $category_name := .Name }}
+                <!-- .Pages 是该分类下的文章列表 -->
+                {{ $posts := .Pages }}
+
+                <!-- 只有当分类下有文章时才显示 -->
                 {{ if gt (len $posts) 0 }}
                 <div class="category-section">
                     <div class="category-header">
-                        <h3 class="category-title">>_ {{ $category | upper }}</h3>
-                        <a class="category-more" href="{{ "categories/" | absURL }}{{ $category | urlize }}">All →</a>
+                        <!-- 自动转大写标题 -->
+                        <h3 class="category-title">>_ {{ $category_name | upper }}</h3>
+                        <!-- 生成 View All 链接 -->
+                        <a class="category-more" href="{{ "categories/" | absURL }}{{ $category_name | urlize }}">View All →</a>
                     </div>
+
                     <div class="category-post-list">
+                        <!-- 取该分类下最新的 3 篇文章 -->
                         {{ range first 3 $posts }}
                         <article class="category-post-entry">
                             <span class="post-date">{{ .Date.Format "2006-01-02" }}</span>
@@ -188,11 +200,20 @@
                 </div>
                 {{ end }}
             {{ end }}
+            
+            <!-- 如果没有任何分类，显示提示 (方便调试) -->
+            {{ if eq (len .Site.Taxonomies.categories) 0 }}
+            <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: #888;">
+                [DEBUG] No categories found. <br>
+                Please check if your posts have <code>categories = ["Name"]</code> in Front Matter.<br>
+                And ensure <code>draft = false</code>.
+            </div>
+            {{ end }}
         </div>
         
         <!-- 底部按钮 -->
         <div style="text-align: center; margin-top: 30px;">
-            <a href="/archives" class="view-all-button">Explore All Posts</a>
+            <a href="/posts/" class="view-all-button">Explore All Posts</a>
         </div>
     </div>
 

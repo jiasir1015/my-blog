@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>逻辑复制 | Kernel Notes</title>
+<meta name="keywords" content="MVCC, PostgreSQL, Transaction, Logical Replication">
+<meta name="description" content="基本概念
+逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。
+逻辑数据格式
+逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：
+[MsgType：Insert，Relation：test，New Tuple：[a, int, 100]]
+从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步。
+接上例，通过一定的解析步骤，我们总能够得到：
+Insert into test(a) values 100::int;
+对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。
+与物理复制的区别
+逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。
+几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：
+--------------
+Page Header
+--------------
+Tuple 1 for r1
+--------------
+Tuple 2 for r1
+--------------
+Tuple 1 for r2
+--------------
+Tuple 1 for r3
+--------------
+Tuple 2 for r2
+--------------
+如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。
+逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。
+Reader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。
+逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：
+
+应用场景
+
+某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换；
+某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异；
+某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递；
+&hellip;
+
+
+架构
+
+如图所示，逻辑复制功能，是两个实例（或生产者与消费者）之间完成的数据同步，通常我们把作为数据源端的实例，称为发布端（Publisher），而准备接收数据并进行回放的实例称为订阅端（Subscriber）。
+发布端
+发布端的组成部分，共分为以下几个部分：WALReader、Decoder、Sender，通常是由三个独立的线程，按照其角色完成不同的工作：
+
+WALReader：主要完成对Xlog日志的读取，即从磁盘上将当前已罗盘的Xlog record读取到内存，并发送给Decoder；
+Decoder：解码线程，由于WALReader发送来的数据，是物理层面的记录，Decoder会按照特定的规则，将物理信息转换为逻辑信息，从内存上看，使用一个结构体，保存Xlog record中的xid、LSN、DMLType等信息。同时，Decoder还需要将这些信息，按照约定好的协议（Protocol）将数据进行打包，其中应用最广泛的端到端协议是pgoutput（后面会介绍他的协议格式以及细节实现）。Decoder会将这些按照协议进行拼接的逻辑数据存储到私有内存中，当达到一定条件时，将数据发送给Sender线程执行发送。
+Sender：将Decoder发送来的数据通过网络发送给订阅端。
+
+发布端如何保证事务一致性
+对于数据同步来说，最重要的是事务一致性，如果不能保证一致性，那么逻辑复制将是毫无意义的。而要保证事务一致性，通常主要责任在于发布端，发布端需要确保自己发送逻辑信息的顺序，是严格的，即使不能保证发送顺序一定与WAL日志写入顺序完全一致，但必须保证事务的最终一致性。为了保证事务一致性，在发布端，通常会有以下几个部分保证：
+
+严格按照commit顺序进行事务发送：事务的提交顺序非常重要，Decoder解码到一条逻辑数据时，并不会立刻发送给Sender，而是将条变更存储起来，直到解码到该事务对应的commit，才将整个事务完发送；
+错误重发：当订阅端接收到一个事务的commit时，即代表这个事务经传输完毕，订阅端会发送一个确认LSN给发布端，发布端需要确认LSN是在当前处理LSN的前面，如果此时LSN发生错乱，发布端会立即这条返回的LSN开始，重新发送这些变更；
+commit时间确认：在Decoder将Xlog信息解码为逻辑协议信息时对于某些类型的消息，会携带commit timestampz，这是该事务提时的瞬时时间戳；
+
+发布端对于内存的管理
+在业务系统中，有时不可避免的会出现大事务，通常包含几M甚至百M的事务变更数据，在逻辑复制模块中，上文提到，通常是将所有事务存储于内存，当遇到该事务的commit时，才进行发送。对于这种大事务来说，如果多几条，可能很容易造成内存压力，引起CPU抖动，有影响系统整体性能的可能性。
+为了保证系统整体性能，当遇到这种大事务的时候，通常会设计一个内存阈值，当在内存中已经存储了多条事务变更时，一旦当前内存占用达到阈值，发布端会选择当前内存中一个最大的事务（不一定是完整的，只是transaction size最大）spill to disk；诚然，这会带来一定的IO开销，因为当我们读到被spill的事务的commit时，需要把它从磁盘上读出来，但相比于其带来的内存负荷，这是合理的取舍。">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/database/logical_replication/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.356fe55c5f1a2d8fb0dff96c300e8af0c6c552f3fdbc2fce279987f9c1b1e1d4.css" integrity="sha256-NW/lXF8aLY&#43;w3/lsMA6K8MbFUvP9vC/OJ5mH&#43;cGx4dQ=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/database/logical_replication/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/database/logical_replication/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="逻辑复制">
+  <meta property="og:description" content="基本概念 逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。
+逻辑数据格式 逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：
+[MsgType：Insert，Relation：test，New Tuple：[a, int, 100]] 从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步。
+接上例，通过一定的解析步骤，我们总能够得到：
+Insert into test(a) values 100::int; 对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。
+与物理复制的区别 逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。
+几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：
+-------------- Page Header -------------- Tuple 1 for r1 -------------- Tuple 2 for r1 -------------- Tuple 1 for r2 -------------- Tuple 1 for r3 -------------- Tuple 2 for r2 -------------- 如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。
+逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。
+Reader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。
+逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：
+应用场景
+某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换； 某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异； 某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递； … 架构 如图所示，逻辑复制功能，是两个实例（或生产者与消费者）之间完成的数据同步，通常我们把作为数据源端的实例，称为发布端（Publisher），而准备接收数据并进行回放的实例称为订阅端（Subscriber）。
+发布端 发布端的组成部分，共分为以下几个部分：WALReader、Decoder、Sender，通常是由三个独立的线程，按照其角色完成不同的工作：
+WALReader：主要完成对Xlog日志的读取，即从磁盘上将当前已罗盘的Xlog record读取到内存，并发送给Decoder； Decoder：解码线程，由于WALReader发送来的数据，是物理层面的记录，Decoder会按照特定的规则，将物理信息转换为逻辑信息，从内存上看，使用一个结构体，保存Xlog record中的xid、LSN、DMLType等信息。同时，Decoder还需要将这些信息，按照约定好的协议（Protocol）将数据进行打包，其中应用最广泛的端到端协议是pgoutput（后面会介绍他的协议格式以及细节实现）。Decoder会将这些按照协议进行拼接的逻辑数据存储到私有内存中，当达到一定条件时，将数据发送给Sender线程执行发送。 Sender：将Decoder发送来的数据通过网络发送给订阅端。 发布端如何保证事务一致性 对于数据同步来说，最重要的是事务一致性，如果不能保证一致性，那么逻辑复制将是毫无意义的。而要保证事务一致性，通常主要责任在于发布端，发布端需要确保自己发送逻辑信息的顺序，是严格的，即使不能保证发送顺序一定与WAL日志写入顺序完全一致，但必须保证事务的最终一致性。为了保证事务一致性，在发布端，通常会有以下几个部分保证：
+严格按照commit顺序进行事务发送：事务的提交顺序非常重要，Decoder解码到一条逻辑数据时，并不会立刻发送给Sender，而是将条变更存储起来，直到解码到该事务对应的commit，才将整个事务完发送； 错误重发：当订阅端接收到一个事务的commit时，即代表这个事务经传输完毕，订阅端会发送一个确认LSN给发布端，发布端需要确认LSN是在当前处理LSN的前面，如果此时LSN发生错乱，发布端会立即这条返回的LSN开始，重新发送这些变更； commit时间确认：在Decoder将Xlog信息解码为逻辑协议信息时对于某些类型的消息，会携带commit timestampz，这是该事务提时的瞬时时间戳； 发布端对于内存的管理 在业务系统中，有时不可避免的会出现大事务，通常包含几M甚至百M的事务变更数据，在逻辑复制模块中，上文提到，通常是将所有事务存储于内存，当遇到该事务的commit时，才进行发送。对于这种大事务来说，如果多几条，可能很容易造成内存压力，引起CPU抖动，有影响系统整体性能的可能性。
+为了保证系统整体性能，当遇到这种大事务的时候，通常会设计一个内存阈值，当在内存中已经存储了多条事务变更时，一旦当前内存占用达到阈值，发布端会选择当前内存中一个最大的事务（不一定是完整的，只是transaction size最大）spill to disk；诚然，这会带来一定的IO开销，因为当我们读到被spill的事务的commit时，需要把它从磁盘上读出来，但相比于其带来的内存负荷，这是合理的取舍。">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-02-10T16:15:52+08:00">
+    <meta property="article:modified_time" content="2026-02-10T16:15:52+08:00">
+    <meta property="article:tag" content="MVCC">
+    <meta property="article:tag" content="PostgreSQL">
+    <meta property="article:tag" content="Transaction">
+    <meta property="article:tag" content="Logical Replication">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="逻辑复制">
+<meta name="twitter:description" content="基本概念
+逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。
+逻辑数据格式
+逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：
+[MsgType：Insert，Relation：test，New Tuple：[a, int, 100]]
+从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步。
+接上例，通过一定的解析步骤，我们总能够得到：
+Insert into test(a) values 100::int;
+对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。
+与物理复制的区别
+逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。
+几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：
+--------------
+Page Header
+--------------
+Tuple 1 for r1
+--------------
+Tuple 2 for r1
+--------------
+Tuple 1 for r2
+--------------
+Tuple 1 for r3
+--------------
+Tuple 2 for r2
+--------------
+如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。
+逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。
+Reader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。
+逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：
+
+应用场景
+
+某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换；
+某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异；
+某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递；
+&hellip;
+
+
+架构
+
+如图所示，逻辑复制功能，是两个实例（或生产者与消费者）之间完成的数据同步，通常我们把作为数据源端的实例，称为发布端（Publisher），而准备接收数据并进行回放的实例称为订阅端（Subscriber）。
+发布端
+发布端的组成部分，共分为以下几个部分：WALReader、Decoder、Sender，通常是由三个独立的线程，按照其角色完成不同的工作：
+
+WALReader：主要完成对Xlog日志的读取，即从磁盘上将当前已罗盘的Xlog record读取到内存，并发送给Decoder；
+Decoder：解码线程，由于WALReader发送来的数据，是物理层面的记录，Decoder会按照特定的规则，将物理信息转换为逻辑信息，从内存上看，使用一个结构体，保存Xlog record中的xid、LSN、DMLType等信息。同时，Decoder还需要将这些信息，按照约定好的协议（Protocol）将数据进行打包，其中应用最广泛的端到端协议是pgoutput（后面会介绍他的协议格式以及细节实现）。Decoder会将这些按照协议进行拼接的逻辑数据存储到私有内存中，当达到一定条件时，将数据发送给Sender线程执行发送。
+Sender：将Decoder发送来的数据通过网络发送给订阅端。
+
+发布端如何保证事务一致性
+对于数据同步来说，最重要的是事务一致性，如果不能保证一致性，那么逻辑复制将是毫无意义的。而要保证事务一致性，通常主要责任在于发布端，发布端需要确保自己发送逻辑信息的顺序，是严格的，即使不能保证发送顺序一定与WAL日志写入顺序完全一致，但必须保证事务的最终一致性。为了保证事务一致性，在发布端，通常会有以下几个部分保证：
+
+严格按照commit顺序进行事务发送：事务的提交顺序非常重要，Decoder解码到一条逻辑数据时，并不会立刻发送给Sender，而是将条变更存储起来，直到解码到该事务对应的commit，才将整个事务完发送；
+错误重发：当订阅端接收到一个事务的commit时，即代表这个事务经传输完毕，订阅端会发送一个确认LSN给发布端，发布端需要确认LSN是在当前处理LSN的前面，如果此时LSN发生错乱，发布端会立即这条返回的LSN开始，重新发送这些变更；
+commit时间确认：在Decoder将Xlog信息解码为逻辑协议信息时对于某些类型的消息，会携带commit timestampz，这是该事务提时的瞬时时间戳；
+
+发布端对于内存的管理
+在业务系统中，有时不可避免的会出现大事务，通常包含几M甚至百M的事务变更数据，在逻辑复制模块中，上文提到，通常是将所有事务存储于内存，当遇到该事务的commit时，才进行发送。对于这种大事务来说，如果多几条，可能很容易造成内存压力，引起CPU抖动，有影响系统整体性能的可能性。
+为了保证系统整体性能，当遇到这种大事务的时候，通常会设计一个内存阈值，当在内存中已经存储了多条事务变更时，一旦当前内存占用达到阈值，发布端会选择当前内存中一个最大的事务（不一定是完整的，只是transaction size最大）spill to disk；诚然，这会带来一定的IO开销，因为当我们读到被spill的事务的commit时，需要把它从磁盘上读出来，但相比于其带来的内存负荷，这是合理的取舍。">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "逻辑复制",
+      "item": "http://localhost:1313/posts/database/logical_replication/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "逻辑复制",
+  "name": "逻辑复制",
+  "description": "基本概念 逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。\n逻辑数据格式 逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：\n[MsgType：Insert，Relation：test，New Tuple：[a, int, 100]] 从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步。\n接上例，通过一定的解析步骤，我们总能够得到：\nInsert into test(a) values 100::int; 对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。\n与物理复制的区别 逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。\n几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：\n-------------- Page Header -------------- Tuple 1 for r1 -------------- Tuple 2 for r1 -------------- Tuple 1 for r2 -------------- Tuple 1 for r3 -------------- Tuple 2 for r2 -------------- 如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。\n逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。\nReader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。\n逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：\n应用场景\n某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换； 某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异； 某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递； \u0026hellip; 架构 如图所示，逻辑复制功能，是两个实例（或生产者与消费者）之间完成的数据同步，通常我们把作为数据源端的实例，称为发布端（Publisher），而准备接收数据并进行回放的实例称为订阅端（Subscriber）。\n发布端 发布端的组成部分，共分为以下几个部分：WALReader、Decoder、Sender，通常是由三个独立的线程，按照其角色完成不同的工作：\nWALReader：主要完成对Xlog日志的读取，即从磁盘上将当前已罗盘的Xlog record读取到内存，并发送给Decoder； Decoder：解码线程，由于WALReader发送来的数据，是物理层面的记录，Decoder会按照特定的规则，将物理信息转换为逻辑信息，从内存上看，使用一个结构体，保存Xlog record中的xid、LSN、DMLType等信息。同时，Decoder还需要将这些信息，按照约定好的协议（Protocol）将数据进行打包，其中应用最广泛的端到端协议是pgoutput（后面会介绍他的协议格式以及细节实现）。Decoder会将这些按照协议进行拼接的逻辑数据存储到私有内存中，当达到一定条件时，将数据发送给Sender线程执行发送。 Sender：将Decoder发送来的数据通过网络发送给订阅端。 发布端如何保证事务一致性 对于数据同步来说，最重要的是事务一致性，如果不能保证一致性，那么逻辑复制将是毫无意义的。而要保证事务一致性，通常主要责任在于发布端，发布端需要确保自己发送逻辑信息的顺序，是严格的，即使不能保证发送顺序一定与WAL日志写入顺序完全一致，但必须保证事务的最终一致性。为了保证事务一致性，在发布端，通常会有以下几个部分保证：\n严格按照commit顺序进行事务发送：事务的提交顺序非常重要，Decoder解码到一条逻辑数据时，并不会立刻发送给Sender，而是将条变更存储起来，直到解码到该事务对应的commit，才将整个事务完发送； 错误重发：当订阅端接收到一个事务的commit时，即代表这个事务经传输完毕，订阅端会发送一个确认LSN给发布端，发布端需要确认LSN是在当前处理LSN的前面，如果此时LSN发生错乱，发布端会立即这条返回的LSN开始，重新发送这些变更； commit时间确认：在Decoder将Xlog信息解码为逻辑协议信息时对于某些类型的消息，会携带commit timestampz，这是该事务提时的瞬时时间戳； 发布端对于内存的管理 在业务系统中，有时不可避免的会出现大事务，通常包含几M甚至百M的事务变更数据，在逻辑复制模块中，上文提到，通常是将所有事务存储于内存，当遇到该事务的commit时，才进行发送。对于这种大事务来说，如果多几条，可能很容易造成内存压力，引起CPU抖动，有影响系统整体性能的可能性。\n为了保证系统整体性能，当遇到这种大事务的时候，通常会设计一个内存阈值，当在内存中已经存储了多条事务变更时，一旦当前内存占用达到阈值，发布端会选择当前内存中一个最大的事务（不一定是完整的，只是transaction size最大）spill to disk；诚然，这会带来一定的IO开销，因为当我们读到被spill的事务的commit时，需要把它从磁盘上读出来，但相比于其带来的内存负荷，这是合理的取舍。\n",
+  "keywords": [
+    "MVCC", "PostgreSQL", "Transaction", "Logical Replication"
+  ],
+  "articleBody": "基本概念 逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。\n逻辑数据格式 逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：\n[MsgType：Insert，Relation：test，New Tuple：[a, int, 100]] 从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步。\n接上例，通过一定的解析步骤，我们总能够得到：\nInsert into test(a) values 100::int; 对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。\n与物理复制的区别 逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。\n几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：\n-------------- Page Header -------------- Tuple 1 for r1 -------------- Tuple 2 for r1 -------------- Tuple 1 for r2 -------------- Tuple 1 for r3 -------------- Tuple 2 for r2 -------------- 如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。\n逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。\nReader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。\n逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：\n应用场景\n某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换； 某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异； 某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递； … 架构 如图所示，逻辑复制功能，是两个实例（或生产者与消费者）之间完成的数据同步，通常我们把作为数据源端的实例，称为发布端（Publisher），而准备接收数据并进行回放的实例称为订阅端（Subscriber）。\n发布端 发布端的组成部分，共分为以下几个部分：WALReader、Decoder、Sender，通常是由三个独立的线程，按照其角色完成不同的工作：\nWALReader：主要完成对Xlog日志的读取，即从磁盘上将当前已罗盘的Xlog record读取到内存，并发送给Decoder； Decoder：解码线程，由于WALReader发送来的数据，是物理层面的记录，Decoder会按照特定的规则，将物理信息转换为逻辑信息，从内存上看，使用一个结构体，保存Xlog record中的xid、LSN、DMLType等信息。同时，Decoder还需要将这些信息，按照约定好的协议（Protocol）将数据进行打包，其中应用最广泛的端到端协议是pgoutput（后面会介绍他的协议格式以及细节实现）。Decoder会将这些按照协议进行拼接的逻辑数据存储到私有内存中，当达到一定条件时，将数据发送给Sender线程执行发送。 Sender：将Decoder发送来的数据通过网络发送给订阅端。 发布端如何保证事务一致性 对于数据同步来说，最重要的是事务一致性，如果不能保证一致性，那么逻辑复制将是毫无意义的。而要保证事务一致性，通常主要责任在于发布端，发布端需要确保自己发送逻辑信息的顺序，是严格的，即使不能保证发送顺序一定与WAL日志写入顺序完全一致，但必须保证事务的最终一致性。为了保证事务一致性，在发布端，通常会有以下几个部分保证：\n严格按照commit顺序进行事务发送：事务的提交顺序非常重要，Decoder解码到一条逻辑数据时，并不会立刻发送给Sender，而是将条变更存储起来，直到解码到该事务对应的commit，才将整个事务完发送； 错误重发：当订阅端接收到一个事务的commit时，即代表这个事务经传输完毕，订阅端会发送一个确认LSN给发布端，发布端需要确认LSN是在当前处理LSN的前面，如果此时LSN发生错乱，发布端会立即这条返回的LSN开始，重新发送这些变更； commit时间确认：在Decoder将Xlog信息解码为逻辑协议信息时对于某些类型的消息，会携带commit timestampz，这是该事务提时的瞬时时间戳； 发布端对于内存的管理 在业务系统中，有时不可避免的会出现大事务，通常包含几M甚至百M的事务变更数据，在逻辑复制模块中，上文提到，通常是将所有事务存储于内存，当遇到该事务的commit时，才进行发送。对于这种大事务来说，如果多几条，可能很容易造成内存压力，引起CPU抖动，有影响系统整体性能的可能性。\n为了保证系统整体性能，当遇到这种大事务的时候，通常会设计一个内存阈值，当在内存中已经存储了多条事务变更时，一旦当前内存占用达到阈值，发布端会选择当前内存中一个最大的事务（不一定是完整的，只是transaction size最大）spill to disk；诚然，这会带来一定的IO开销，因为当我们读到被spill的事务的commit时，需要把它从磁盘上读出来，但相比于其带来的内存负荷，这是合理的取舍。\n发布端的性能瓶颈 通过这个架构，我们不难看出一个性能瓶颈，那就是整个流程，都是串行完成的：\nWALReader在串行的读取Xlog； Decoder在串行的对Xlog record进行解码； Sender在串行的发送解码好的逻辑信息； 根据测试，在每秒大约100MB/s的Xlog写入负载下，单线程解码的速度只有～9MB/s，这对于一些使用逻辑复制的场景来说，是不可接受的，因为差异如此大的性能，如果在数据源端负载不停的情况下，数据同步端将永远没有追赶上的可能性，Lag会累积越来越大，最终将导致不得不停止业务负载，等待同步，这对于一些实时性要求高的业务来说是完全不可接受的。\n所以单线程解码的瓶颈，立即成为制约整个逻辑复制模块的关键点。\n发布端并行解码 由于单线程解码的性能无法满足使用要求，所以多线程并行解码，就成为一个解决问题的途径。\n并行解码的本质，是依靠Reader本身读取的快速性能（仅有Read操作，性能几乎完全取决于物理磁盘性能），快速的读取Xlog record，并将其传递给并行的解码线程。\n但是这里有一个关键的问题：我们应该如何进行分发？线程之间相互独立，彼此不可能知道对方的状态（除非使用线程间通信，然而这样并行的优势会被大大缩小），如果将事务变更随机发送，由于线程的调度问题，有的线程快，有的线程慢，那么保证事务一致性是一个非常困难的问题。或许增加一个收集（Collector）线程，来将所有的解码信息进行整合，并按照事务顺序进行重排序是一个方案，然而重排序的代价非常大，会十分影响高并发的性能。\n对于这个问题，OG使用的方式是对HASH XID，将所有相同XID事务变更都交给同一个线程处理，由此来保证事务内的相对顺序是严格的。而事务间的相对顺序，则交由单线程的Sender保证：当Deocder完成本事务的处理，发送给Sender后，Sender内部会按照commit的顺序，对事务进行排序，严格按照提交顺序发送，确保事务一致性。\n订阅端 在数据同步端，订阅端，基本是由两个部分组成：recieve与apply。\nreceive：负责接收发布端传输的逻辑信息（或心跳信息），发送相应的确认LSN与心跳reply，通常发布端发送的逻辑信息是一个batch，其中包含了一个事务的所有变更操作，receive负责将这写batch拆解为一个个独立的变更操作，并将这些独立的变更发送给apply。 apply：对receive发来的每条独立的变更进行回放，通常是Insert、Update、Delete操作，apply负责解析这些逻辑数据中的关键部分，例如：Insert信息中通常包含relation信息，new tuple信息等等，apply将这些信息重组为对应的内存变量，发送给heap_insert。 订阅端的性能瓶颈 从功能实现上看，事务一致性大多数是由发布端保证的，只要发布端\n",
+  "wordCount" : "100",
+  "inLanguage": "en",
+  "datePublished": "2026-02-10T16:15:52+08:00",
+  "dateModified": "2026-02-10T16:15:52+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/database/logical_replication/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      逻辑复制
+    </h1>
+    <div class="post-meta">
+      <span title='2026-02-10 16:15:52 +0800 CST'>February 10, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>100 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#%e5%9f%ba%e6%9c%ac%e6%a6%82%e5%bf%b5" aria-label="基本概念">基本概念</a><ul>
+                        
+                <li>
+                    <a href="#%e9%80%bb%e8%be%91%e6%95%b0%e6%8d%ae%e6%a0%bc%e5%bc%8f" aria-label="逻辑数据格式">逻辑数据格式</a></li>
+                <li>
+                    <a href="#%e4%b8%8e%e7%89%a9%e7%90%86%e5%a4%8d%e5%88%b6%e7%9a%84%e5%8c%ba%e5%88%ab" aria-label="与物理复制的区别">与物理复制的区别</a></li></ul>
+                </li>
+                <li>
+                    <a href="#%e6%9e%b6%e6%9e%84" aria-label="架构">架构</a><ul>
+                        
+                <li>
+                    <a href="#%e5%8f%91%e5%b8%83%e7%ab%af" aria-label="发布端">发布端</a><ul>
+                        
+                <li>
+                    <a href="#%e5%8f%91%e5%b8%83%e7%ab%af%e5%a6%82%e4%bd%95%e4%bf%9d%e8%af%81%e4%ba%8b%e5%8a%a1%e4%b8%80%e8%87%b4%e6%80%a7" aria-label="发布端如何保证事务一致性">发布端如何保证事务一致性</a></li>
+                <li>
+                    <a href="#%e5%8f%91%e5%b8%83%e7%ab%af%e5%af%b9%e4%ba%8e%e5%86%85%e5%ad%98%e7%9a%84%e7%ae%a1%e7%90%86" aria-label="发布端对于内存的管理">发布端对于内存的管理</a></li>
+                <li>
+                    <a href="#%e5%8f%91%e5%b8%83%e7%ab%af%e7%9a%84%e6%80%a7%e8%83%bd%e7%93%b6%e9%a2%88" aria-label="发布端的性能瓶颈">发布端的性能瓶颈</a></li>
+                <li>
+                    <a href="#%e5%8f%91%e5%b8%83%e7%ab%af%e5%b9%b6%e8%a1%8c%e8%a7%a3%e7%a0%81" aria-label="发布端并行解码">发布端并行解码</a></li></ul>
+                </li>
+                <li>
+                    <a href="#%e8%ae%a2%e9%98%85%e7%ab%af" aria-label="订阅端">订阅端</a><ul>
+                        
+                <li>
+                    <a href="#%e8%ae%a2%e9%98%85%e7%ab%af%e7%9a%84%e6%80%a7%e8%83%bd%e7%93%b6%e9%a2%88" aria-label="订阅端的性能瓶颈">订阅端的性能瓶颈</a>
+                </li>
+            </ul>
+            </li>
+            </ul>
+            </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h2 id="基本概念">基本概念<a hidden class="anchor" aria-hidden="true" href="#基本概念">#</a></h2>
+<p>逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。</p>
+<h3 id="逻辑数据格式">逻辑数据格式<a hidden class="anchor" aria-hidden="true" href="#逻辑数据格式">#</a></h3>
+<p>逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="o">[</span>MsgType：Insert，Relation：test，New Tuple：<span class="o">[</span>a, int, 100<span class="o">]]</span>
+</span></span></code></pre></div><p>从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：<strong>无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步</strong>。</p>
+<p>接上例，通过一定的解析步骤，我们总能够得到：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">Insert</span><span class="w"> </span><span class="k">into</span><span class="w"> </span><span class="n">test</span><span class="p">(</span><span class="n">a</span><span class="p">)</span><span class="w"> </span><span class="k">values</span><span class="w"> </span><span class="mi">100</span><span class="p">::</span><span class="nb">int</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><p>对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。</p>
+<h3 id="与物理复制的区别">与物理复制的区别<a hidden class="anchor" aria-hidden="true" href="#与物理复制的区别">#</a></h3>
+<p>逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。</p>
+<p>几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">--------------
+</span></span><span class="line"><span class="cl">Page Header
+</span></span><span class="line"><span class="cl">--------------
+</span></span><span class="line"><span class="cl">Tuple <span class="m">1</span> <span class="k">for</span> r1
+</span></span><span class="line"><span class="cl">--------------
+</span></span><span class="line"><span class="cl">Tuple <span class="m">2</span> <span class="k">for</span> r1
+</span></span><span class="line"><span class="cl">--------------
+</span></span><span class="line"><span class="cl">Tuple <span class="m">1</span> <span class="k">for</span> r2
+</span></span><span class="line"><span class="cl">--------------
+</span></span><span class="line"><span class="cl">Tuple <span class="m">1</span> <span class="k">for</span> r3
+</span></span><span class="line"><span class="cl">--------------
+</span></span><span class="line"><span class="cl">Tuple <span class="m">2</span> <span class="k">for</span> r2
+</span></span><span class="line"><span class="cl">--------------
+</span></span></code></pre></div><p>如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。</p>
+<p>逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。</p>
+<p>Reader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。</p>
+<p>逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：</p>
+<blockquote>
+<p><strong>应用场景</strong></p>
+<ol>
+<li>某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换；</li>
+<li>某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异；</li>
+<li>某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递；
+&hellip;</li>
+</ol>
+</blockquote>
+<h2 id="架构">架构<a hidden class="anchor" aria-hidden="true" href="#架构">#</a></h2>
+<p><img alt="alt text" loading="lazy" src="image.png"></p>
+<p>如图所示，逻辑复制功能，是两个实例（或生产者与消费者）之间完成的数据同步，通常我们把作为数据源端的实例，称为发布端（Publisher），而准备接收数据并进行回放的实例称为订阅端（Subscriber）。</p>
+<h3 id="发布端">发布端<a hidden class="anchor" aria-hidden="true" href="#发布端">#</a></h3>
+<p>发布端的组成部分，共分为以下几个部分：WALReader、Decoder、Sender，通常是由三个独立的线程，按照其角色完成不同的工作：</p>
+<ul>
+<li>WALReader：主要完成对Xlog日志的读取，即从磁盘上将当前已罗盘的Xlog record读取到内存，并发送给Decoder；</li>
+<li>Decoder：解码线程，由于WALReader发送来的数据，是物理层面的记录，Decoder会按照特定的规则，将物理信息转换为逻辑信息，从内存上看，使用一个结构体，保存Xlog record中的xid、LSN、DMLType等信息。同时，Decoder还需要将这些信息，按照约定好的协议（Protocol）将数据进行打包，其中应用最广泛的端到端协议是pgoutput（后面会介绍他的协议格式以及细节实现）。Decoder会将这些按照协议进行拼接的逻辑数据存储到私有内存中，当达到一定条件时，将数据发送给Sender线程执行发送。</li>
+<li>Sender：将Decoder发送来的数据通过网络发送给订阅端。</li>
+</ul>
+<h4 id="发布端如何保证事务一致性">发布端如何保证事务一致性<a hidden class="anchor" aria-hidden="true" href="#发布端如何保证事务一致性">#</a></h4>
+<p>对于数据同步来说，最重要的是事务一致性，如果不能保证一致性，那么逻辑复制将是毫无意义的。而要保证事务一致性，通常主要责任在于发布端，发布端需要确保自己发送逻辑信息的顺序，是严格的，即使不能保证发送顺序一定与WAL日志写入顺序完全一致，但必须保证事务的最终一致性。为了保证事务一致性，在发布端，通常会有以下几个部分保证：</p>
+<ul>
+<li>严格按照commit顺序进行事务发送：事务的提交顺序非常重要，Decoder解码到一条逻辑数据时，并不会立刻发送给Sender，而是将条变更存储起来，直到解码到该事务对应的commit，才将整个事务完发送；</li>
+<li>错误重发：当订阅端接收到一个事务的commit时，即代表这个事务经传输完毕，订阅端会发送一个确认LSN给发布端，发布端需要确认LSN是在当前处理LSN的前面，如果此时LSN发生错乱，发布端会立即这条返回的LSN开始，重新发送这些变更；</li>
+<li>commit时间确认：在Decoder将Xlog信息解码为逻辑协议信息时对于某些类型的消息，会携带commit timestampz，这是该事务提时的瞬时时间戳；</li>
+</ul>
+<h4 id="发布端对于内存的管理">发布端对于内存的管理<a hidden class="anchor" aria-hidden="true" href="#发布端对于内存的管理">#</a></h4>
+<p>在业务系统中，有时不可避免的会出现大事务，通常包含几M甚至百M的事务变更数据，在逻辑复制模块中，上文提到，通常是将所有事务存储于内存，当遇到该事务的commit时，才进行发送。对于这种大事务来说，如果多几条，可能很容易造成内存压力，引起CPU抖动，有影响系统整体性能的可能性。</p>
+<p>为了保证系统整体性能，当遇到这种大事务的时候，通常会设计一个内存阈值，当在内存中已经存储了多条事务变更时，一旦当前内存占用达到阈值，发布端会选择当前内存中一个最大的事务（不一定是完整的，只是transaction size最大）spill to disk；诚然，这会带来一定的IO开销，因为当我们读到被spill的事务的commit时，需要把它从磁盘上读出来，但相比于其带来的内存负荷，这是合理的取舍。</p>
+<h4 id="发布端的性能瓶颈">发布端的性能瓶颈<a hidden class="anchor" aria-hidden="true" href="#发布端的性能瓶颈">#</a></h4>
+<p>通过这个架构，我们不难看出一个性能瓶颈，那就是整个流程，都是串行完成的：</p>
+<ul>
+<li>WALReader在串行的读取Xlog；</li>
+<li>Decoder在串行的对Xlog record进行解码；</li>
+<li>Sender在串行的发送解码好的逻辑信息；</li>
+</ul>
+<p>根据测试，在每秒大约100MB/s的Xlog写入负载下，单线程解码的速度只有～9MB/s，这对于一些使用逻辑复制的场景来说，是不可接受的，因为差异如此大的性能，如果在数据源端负载不停的情况下，数据同步端将永远没有追赶上的可能性，Lag会累积越来越大，最终将导致不得不停止业务负载，等待同步，这对于一些实时性要求高的业务来说是完全不可接受的。</p>
+<p>所以单线程解码的瓶颈，立即成为制约整个逻辑复制模块的关键点。</p>
+<h4 id="发布端并行解码">发布端并行解码<a hidden class="anchor" aria-hidden="true" href="#发布端并行解码">#</a></h4>
+<p>由于单线程解码的性能无法满足使用要求，所以多线程并行解码，就成为一个解决问题的途径。</p>
+<p>并行解码的本质，是依靠Reader本身读取的快速性能（仅有Read操作，性能几乎完全取决于物理磁盘性能），快速的读取Xlog record，并将其传递给并行的解码线程。</p>
+<p>但是这里有一个关键的问题：我们应该如何进行分发？线程之间相互独立，彼此不可能知道对方的状态（除非使用线程间通信，然而这样并行的优势会被大大缩小），如果将事务变更随机发送，由于线程的调度问题，有的线程快，有的线程慢，那么保证事务一致性是一个非常困难的问题。或许增加一个收集（Collector）线程，来将所有的解码信息进行整合，并按照事务顺序进行重排序是一个方案，然而重排序的代价非常大，会十分影响高并发的性能。</p>
+<p>对于这个问题，OG使用的方式是对HASH XID，将所有相同XID事务变更都交给同一个线程处理，由此来保证事务内的相对顺序是严格的。而事务间的相对顺序，则交由单线程的Sender保证：当Deocder完成本事务的处理，发送给Sender后，Sender内部会按照commit的顺序，对事务进行排序，严格按照提交顺序发送，确保事务一致性。</p>
+<h3 id="订阅端">订阅端<a hidden class="anchor" aria-hidden="true" href="#订阅端">#</a></h3>
+<p>在数据同步端，订阅端，基本是由两个部分组成：recieve与apply。</p>
+<ul>
+<li>receive：负责接收发布端传输的逻辑信息（或心跳信息），发送相应的确认LSN与心跳reply，通常发布端发送的逻辑信息是一个batch，其中包含了一个事务的所有变更操作，receive负责将这写batch拆解为一个个独立的变更操作，并将这些独立的变更发送给apply。</li>
+<li>apply：对receive发来的每条独立的变更进行回放，通常是Insert、Update、Delete操作，apply负责解析这些逻辑数据中的关键部分，例如：Insert信息中通常包含relation信息，new tuple信息等等，apply将这些信息重组为对应的内存变量，发送给heap_insert。</li>
+</ul>
+<h4 id="订阅端的性能瓶颈">订阅端的性能瓶颈<a hidden class="anchor" aria-hidden="true" href="#订阅端的性能瓶颈">#</a></h4>
+<p>从功能实现上看，事务一致性大多数是由发布端保证的，只要发布端</p>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/mvcc/">MVCC</a></li><li><a href="http://localhost:1313/tags/postgresql/">PostgreSQL</a></li><li><a href="http://localhost:1313/tags/transaction/">Transaction</a></li><li><a href="http://localhost:1313/tags/logical-replication/">Logical Replication</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/database/forbid-extension/">避免用户错误使用到pg插件</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./Database</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+ 
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        console.log("Checking submission status...");
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    updateStreakDisplay();
+
+    const PROXY_URL = 'https://corsproxy.io/?'; 
+    const TARGET_URL = 'https://leetcode.cn/graphql';
+    
+    const query = `
+    query questionOfToday {
+        todayRecord {
+            date
+            question {
+                questionFrontendId
+                titleSlug
+                translatedTitle 
+                difficulty
+                translatedContent
+                topicTags { translatedName }
+                codeSnippets { langSlug code }
+            }
+        }
+    }`;
+
+    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: query })
+    })
+    .then(response => response.json())
+    .then(result => {
+        const record = result.data.todayRecord[0];
+        if (!record) throw new Error("Empty data");
+        
+        lcDataGlobal = {
+            date: record.date,
+            titleSlug: record.question.titleSlug, 
+            link: `/problems/${record.question.titleSlug}/description/`,
+            title: record.question.translatedTitle,
+            difficulty: record.question.difficulty,
+            content: record.question.translatedContent,
+            snippets: record.question.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === record.date) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = record.date;
+            document.getElementById('lc-title').innerText = `${record.question.questionFrontendId}. ${record.question.translatedTitle}`;
+            document.getElementById('lc-link').href = "https://leetcode.cn" + lcDataGlobal.link;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[record.question.difficulty] || record.question.difficulty;
+            diffEl.className = `lc-difficulty diff-${record.question.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("Init Error:", err);
+    });
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    const PROXY_URL = 'https://corsproxy.io/?'; 
+    const TARGET_URL = 'https://leetcode.cn/graphql';
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question {
+                titleSlug
+            }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) {
+        checkBtn.innerText = "⏳ Verifying...";
+        checkBtn.disabled = true;
+    }
+
+    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    let codeTemplate = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) codeTemplate = cppSnippet.code;
+    }
+
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+    }
+    flaskEditor.updateCode(codeTemplate);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+</script>
+</body>
+
+</html>

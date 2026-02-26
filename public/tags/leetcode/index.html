@@ -146,10 +146,15 @@
     </h2>
   </header>
   <div class="entry-content">
-    <p></p>
+    <p>今天的每日一题：1202. 从根到叶的二进制数之和。
+简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：
+输入：root = [1,0,1,0,1,0,1] 输出：22 解释：(100) &#43; (101) &#43; (110) &#43; (111) = 4 &#43; 5 &#43; 6 &#43; 7 = 22 可以表示为：
+1 / \ 0 1 / \ / \ 0 1 0 1 思路就是使用dfs来遍历这个树，代码为：
+/** * Definition for a binary tree node. * struct TreeNode { * int val; * TreeNode *left; * TreeNode *right; * TreeNode() : val(0), left(nullptr), right(nullptr) {} * TreeNode(int x) : val(x), left(nullptr), right(nullptr) {} * TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {} * }; */ class Solution { public: int dfs(TreeNode *root, int val) { if (root == nullptr) return 0; val = val &lt;&lt; 1 | root-&gt;val; if (root-&gt;left == nullptr &amp;&amp; root-&gt;right == nullptr) return val; return dfs(root-&gt;left, val) &#43; dfs(root-&gt;right, val); } int sumRootToLeaf(TreeNode* root) { return dfs(root, 0); } }; 拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：
+...</p>
   </div>
-  <footer class="entry-footer"><span title='2026-02-24 12:02:52 +0800 CST'>February 24, 2026</span>&nbsp;·&nbsp;<span>0 min</span>&nbsp;·&nbsp;<span>0 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
-  <a class="entry-link" aria-label="post link to 深度优先遍历" href="http://localhost:1313/posts/dfs/"></a>
+  <footer class="entry-footer"><span title='2026-02-24 12:02:52 +0800 CST'>February 24, 2026</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>275 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 深度优先遍历" href="http://localhost:1313/posts/algorithm/dfs/"></a>
 </article>
     </main>
     
@@ -544,31 +549,44 @@ function switchWeChatTab(tabName) {
 
 <script>
  
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+
 let lcDataGlobal = null;
 let flaskEditor = null;
-const STORAGE_KEY_LAST_DATE = 'lc_last_solved_date';
-const STORAGE_KEY_STREAK = 'lc_streak_count';
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
 
 document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        console.log("Checking submission status...");
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
     const lcWidget = document.getElementById('leetcode-widget');
     if (!lcWidget) return;
 
-    
     updateStreakDisplay();
 
     const PROXY_URL = 'https://corsproxy.io/?'; 
-    const TARGET_URL = 'https://leetcode.com/graphql';
+    const TARGET_URL = 'https://leetcode.cn/graphql';
     
     const query = `
     query questionOfToday {
-        activeDailyCodingChallengeQuestion {
+        todayRecord {
             date
-            link
             question {
-                title
+                questionFrontendId
                 titleSlug
+                translatedTitle 
                 difficulty
-                content 
+                translatedContent
+                topicTags { translatedName }
                 codeSnippets { langSlug code }
             }
         }
@@ -581,95 +599,144 @@ document.addEventListener("DOMContentLoaded", function() {
     })
     .then(response => response.json())
     .then(result => {
-        const data = result.data.activeDailyCodingChallengeQuestion;
-        if (!data) throw new Error("Empty data");
-        lcDataGlobal = data;
-
+        const record = result.data.todayRecord[0];
+        if (!record) throw new Error("Empty data");
         
+        lcDataGlobal = {
+            date: record.date,
+            titleSlug: record.question.titleSlug, 
+            link: `/problems/${record.question.titleSlug}/description/`,
+            title: record.question.translatedTitle,
+            difficulty: record.question.difficulty,
+            content: record.question.translatedContent,
+            snippets: record.question.codeSnippets
+        };
+
         document.querySelector('.leetcode-loading').style.display = 'none';
         document.querySelector('.leetcode-content').style.display = 'block';
 
-        
-        const todayDate = data.date; 
         const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
-        
-        if (lastSolved === todayDate) {
+        if (lastSolved === record.date) {
             showSolvedState();
         } else {
-            
             document.getElementById('lc-state-todo').style.display = 'block';
-            document.getElementById('lc-date').innerText = data.date;
-            document.getElementById('lc-title').innerText = data.question.title;
-            document.getElementById('lc-link').href = "https://leetcode.com" + data.link;
+            document.getElementById('lc-date').innerText = record.date;
+            document.getElementById('lc-title').innerText = `${record.question.questionFrontendId}. ${record.question.translatedTitle}`;
+            document.getElementById('lc-link').href = "https://leetcode.cn" + lcDataGlobal.link;
             
             const diffEl = document.getElementById('lc-difficulty');
-            diffEl.innerText = data.question.difficulty;
-            diffEl.className = `lc-difficulty diff-${data.question.difficulty.toLowerCase()}`;
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[record.question.difficulty] || record.question.difficulty;
+            diffEl.className = `lc-difficulty diff-${record.question.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("Init Error:", err);
+    });
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    const PROXY_URL = 'https://corsproxy.io/?'; 
+    const TARGET_URL = 'https://leetcode.cn/graphql';
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question {
+                titleSlug
+            }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) {
+        checkBtn.innerText = "⏳ Verifying...";
+        checkBtn.disabled = true;
+    }
+
+    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
         }
     })
     .catch(err => {
         console.error(err);
-        document.querySelector('.leetcode-loading').innerText = "Network Error :(";
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
     });
-});
+}
 
-
-
-
-function markAsSolved() {
-    if (!lcDataGlobal) return;
-    
+function markAsSolvedAuto() {
     const today = lcDataGlobal.date;
     const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
     
-    
     if (lastSolved === today) {
-        alert("You have already checked in today! 🎉");
         closeLeetCodeModal();
         return;
     }
 
-    
     let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
-    
-    
     if (lastSolved) {
         const lastDate = new Date(lastSolved);
         const currDate = new Date(today);
-        const diffTime = Math.abs(currDate - lastDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-
-        if (diffDays === 1) {
-            
-            streak++;
-        } else if (diffDays > 1) {
-            
-            streak = 1;
-        }
-        
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
     } else {
-        
         streak = 1;
     }
 
-    
     localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
     localStorage.setItem(STORAGE_KEY_STREAK, streak);
 
-    
-    alert(`Congratulations! Streak: ${streak} days 🔥`);
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
     closeLeetCodeModal();
     showSolvedState();
     updateStreakDisplay();
 }
-
 
 function showSolvedState() {
     document.getElementById('lc-state-todo').style.display = 'none';
     document.getElementById('lc-state-done').style.display = 'block';
     document.getElementById('leetcode-widget').classList.add('status-done');
 }
-
 
 function updateStreakDisplay() {
     const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
@@ -679,20 +746,21 @@ function updateStreakDisplay() {
     }
 }
 
-
 function openLeetCodeModal() {
     if (!lcDataGlobal) return;
     document.getElementById('lc-modal').style.display = 'block';
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
     
-    document.getElementById('modal-title').innerText = lcDataGlobal.question.title;
     const diffEl = document.getElementById('modal-diff');
-    diffEl.innerText = lcDataGlobal.question.difficulty;
-    diffEl.className = `lc-difficulty diff-${lcDataGlobal.question.difficulty.toLowerCase()}`;
-    document.getElementById('modal-content').innerHTML = lcDataGlobal.question.content;
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
 
     let codeTemplate = "// C++ snippet not found.";
-    if (lcDataGlobal.question.codeSnippets) {
-        const cppSnippet = lcDataGlobal.question.codeSnippets.find(s => s.langSlug === 'cpp');
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
         if (cppSnippet) codeTemplate = cppSnippet.code;
     }
 
@@ -713,10 +781,10 @@ function copyAndGo() {
     const code = flaskEditor.getCode();
     navigator.clipboard.writeText(code).then(() => {
         const btn = document.querySelector('.submit-btn');
-        btn.innerText = "Copied! Redirecting...";
+        btn.innerText = "已复制! 跳转中...";
         setTimeout(() => { 
             btn.innerText = "Copy & Submit 🚀"; 
-            window.open("https://leetcode.com" + lcDataGlobal.link, '_blank');
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
         }, 1000);
     });
 }

@@ -10,7 +10,7 @@
 <meta name="description" content="">
 <meta name="author" content="Me">
 <link rel="canonical" href="http://localhost:1313/tags/transaction/">
-<link crossorigin="anonymous" href="/assets/css/stylesheet.0e5cd49122a234a223fa70e2a8791de392eba65fd8e662c020f6529063b6d7b1.css" integrity="sha256-DlzUkSKiNKIj&#43;nDiqHkd45Lrpl/Y5mLAIPZSkGO217E=" rel="preload stylesheet" as="style">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.356fe55c5f1a2d8fb0dff96c300e8af0c6c552f3fdbc2fce279987f9c1b1e1d4.css" integrity="sha256-NW/lXF8aLY&#43;w3/lsMA6K8MbFUvP9vC/OJ5mH&#43;cGx4dQ=" rel="preload stylesheet" as="style">
 <link rel="icon" href="http://localhost:1313/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
@@ -147,22 +147,26 @@
   </header>
   <div class="entry-content">
     <p>基本概念 逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。
-1. 逻辑数据格式 逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：
+逻辑数据格式 逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：
 [MsgType：Insert，Relation：test，New Tuple：[a, int, 100]] 从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步。
 接上例，通过一定的解析步骤，我们总能够得到：
 Insert into test(a) values 100::int; 对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。
-2. 与物理复制的区别 逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。
+与物理复制的区别 逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。
 几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：
 -------------- Page Header -------------- Tuple 1 for r1 -------------- Tuple 2 for r1 -------------- Tuple 1 for r2 -------------- Tuple 1 for r3 -------------- Tuple 2 for r2 -------------- 如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。
 逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。
 Reader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。
 逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：
 应用场景
-某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换； 某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异； 某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递； … 架构 如图所示，
-</p>
+某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换； 某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异； 某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递； … 架构 如图所示，逻辑复制功能，是两个实例（或生产者与消费者）之间完成的数据同步，通常我们把作为数据源端的实例，称为发布端（Publisher），而准备接收数据并进行回放的实例称为订阅端（Subscriber）。
+发布端 发布端的组成部分，共分为以下几个部分：WALReader、Decoder、Sender，通常是由三个独立的线程，按照其角色完成不同的工作：
+WALReader：主要完成对Xlog日志的读取，即从磁盘上将当前已罗盘的Xlog record读取到内存，并发送给Decoder； Decoder：解码线程，由于WALReader发送来的数据，是物理层面的记录，Decoder会按照特定的规则，将物理信息转换为逻辑信息，从内存上看，使用一个结构体，保存Xlog record中的xid、LSN、DMLType等信息。同时，Decoder还需要将这些信息，按照约定好的协议（Protocol）将数据进行打包，其中应用最广泛的端到端协议是pgoutput（后面会介绍他的协议格式以及细节实现）。Decoder会将这些按照协议进行拼接的逻辑数据存储到私有内存中，当达到一定条件时，将数据发送给Sender线程执行发送。 Sender：将Decoder发送来的数据通过网络发送给订阅端。 发布端如何保证事务一致性 对于数据同步来说，最重要的是事务一致性，如果不能保证一致性，那么逻辑复制将是毫无意义的。而要保证事务一致性，通常主要责任在于发布端，发布端需要确保自己发送逻辑信息的顺序，是严格的，即使不能保证发送顺序一定与WAL日志写入顺序完全一致，但必须保证事务的最终一致性。为了保证事务一致性，在发布端，通常会有以下几个部分保证：
+严格按照commit顺序进行事务发送：事务的提交顺序非常重要，Decoder解码到一条逻辑数据时，并不会立刻发送给Sender，而是将条变更存储起来，直到解码到该事务对应的commit，才将整个事务完发送； 错误重发：当订阅端接收到一个事务的commit时，即代表这个事务经传输完毕，订阅端会发送一个确认LSN给发布端，发布端需要确认LSN是在当前处理LSN的前面，如果此时LSN发生错乱，发布端会立即这条返回的LSN开始，重新发送这些变更； commit时间确认：在Decoder将Xlog信息解码为逻辑协议信息时对于某些类型的消息，会携带commit timestampz，这是该事务提时的瞬时时间戳； 发布端对于内存的管理 在业务系统中，有时不可避免的会出现大事务，通常包含几M甚至百M的事务变更数据，在逻辑复制模块中，上文提到，通常是将所有事务存储于内存，当遇到该事务的commit时，才进行发送。对于这种大事务来说，如果多几条，可能很容易造成内存压力，引起CPU抖动，有影响系统整体性能的可能性。
+为了保证系统整体性能，当遇到这种大事务的时候，通常会设计一个内存阈值，当在内存中已经存储了多条事务变更时，一旦当前内存占用达到阈值，发布端会选择当前内存中一个最大的事务（不一定是完整的，只是transaction size最大）spill to disk；诚然，这会带来一定的IO开销，因为当我们读到被spill的事务的commit时，需要把它从磁盘上读出来，但相比于其带来的内存负荷，这是合理的取舍。
+...</p>
   </div>
-  <footer class="entry-footer"><span title='2026-02-10 16:15:52 +0800 CST'>February 10, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>61 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
-  <a class="entry-link" aria-label="post link to 逻辑复制" href="http://localhost:1313/posts/logical_replication/"></a>
+  <footer class="entry-footer"><span title='2026-02-10 16:15:52 +0800 CST'>February 10, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>100 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 逻辑复制" href="http://localhost:1313/posts/database/logical_replication/"></a>
 </article>
     </main>
     
@@ -353,78 +357,101 @@ Reader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，�
 
  
 .cat-modal {
-    display: none; 
+    display: none;  
     position: fixed; 
     z-index: 10000; 
     left: 0;
     top: 0;
     width: 100%; 
     height: 100%; 
-    overflow: hidden; 
     background-color: rgba(0,0,0,0.85);  
-    backdrop-filter: blur(5px);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
     animation: fadeIn 0.3s;
 }
 
 .cat-modal-content {
     position: relative;
-    margin: auto;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 90%;
-    max-width: 700px;
-    text-align: center;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .cat-image-container img {
-    max-width: 100%;
-    max-height: 80vh;
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
     border-radius: 8px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     border: 4px solid #fff;
+    display: block;  
 }
 
 .cat-caption {
     color: #fff;
     font-family: 'Menlo', monospace;
     margin-top: 15px;
-    font-size: 14px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
 }
-
- 
-.cat-close {
-    position: absolute;
-    top: -40px;
-    right: 0;
-    color: #f1f1f1;
-    font-size: 35px;
-    font-weight: bold;
-    cursor: pointer;
-    transition: 0.3s;
-}
-.cat-close:hover { color: var(--primary); }
 
  
 .cat-nav {
     cursor: pointer;
     position: absolute;
     top: 50%;
-    width: auto;
-    padding: 16px;
-    margin-top: -50px;
+    transform: translateY(-50%);  
+    padding: 20px;
     color: white;
     font-weight: bold;
-    font-size: 24px;
-    transition: 0.6s ease;
-    border-radius: 3px;
-    user-select: none;
-    background: transparent;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
     border: none;
+    z-index: 10001;  
 }
 
-.prev { left: 0; }
-.next { right: 0; }
-.cat-nav:hover { background-color: rgba(255,255,255,0.2); }
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
 
 @keyframes fadeIn {
     from {opacity: 0} 
@@ -453,7 +480,8 @@ const closeBtn = document.getElementsByClassName("cat-close")[0];
 
 
 widget.onclick = function() {
-    modal.style.display = "block";
+    
+    modal.style.display = "flex"; 
     showCat(currentCatIndex);
 }
 
@@ -471,7 +499,7 @@ window.onclick = function(event) {
 
 
 document.onkeydown = function(e) {
-    if (modal.style.display === "block") {
+    if (modal.style.display === "flex") {
         if (e.key === "Escape") modal.style.display = "none";
         if (e.key === "ArrowLeft") changeCat(-1);
         if (e.key === "ArrowRight") changeCat(1);
@@ -526,6 +554,257 @@ function switchWeChatTab(tabName) {
         content.classList.remove('active');
     });
     document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+ 
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        console.log("Checking submission status...");
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    updateStreakDisplay();
+
+    const PROXY_URL = 'https://corsproxy.io/?'; 
+    const TARGET_URL = 'https://leetcode.cn/graphql';
+    
+    const query = `
+    query questionOfToday {
+        todayRecord {
+            date
+            question {
+                questionFrontendId
+                titleSlug
+                translatedTitle 
+                difficulty
+                translatedContent
+                topicTags { translatedName }
+                codeSnippets { langSlug code }
+            }
+        }
+    }`;
+
+    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: query })
+    })
+    .then(response => response.json())
+    .then(result => {
+        const record = result.data.todayRecord[0];
+        if (!record) throw new Error("Empty data");
+        
+        lcDataGlobal = {
+            date: record.date,
+            titleSlug: record.question.titleSlug, 
+            link: `/problems/${record.question.titleSlug}/description/`,
+            title: record.question.translatedTitle,
+            difficulty: record.question.difficulty,
+            content: record.question.translatedContent,
+            snippets: record.question.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === record.date) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = record.date;
+            document.getElementById('lc-title').innerText = `${record.question.questionFrontendId}. ${record.question.translatedTitle}`;
+            document.getElementById('lc-link').href = "https://leetcode.cn" + lcDataGlobal.link;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[record.question.difficulty] || record.question.difficulty;
+            diffEl.className = `lc-difficulty diff-${record.question.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("Init Error:", err);
+    });
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    const PROXY_URL = 'https://corsproxy.io/?'; 
+    const TARGET_URL = 'https://leetcode.cn/graphql';
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question {
+                titleSlug
+            }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) {
+        checkBtn.innerText = "⏳ Verifying...";
+        checkBtn.disabled = true;
+    }
+
+    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    let codeTemplate = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) codeTemplate = cppSnippet.code;
+    }
+
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+    }
+    flaskEditor.updateCode(codeTemplate);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
 }
 </script>
 </body>

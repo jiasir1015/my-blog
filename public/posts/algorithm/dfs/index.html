@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>深度优先遍历 | Kernel Notes</title>
+<meta name="keywords" content="DFS, LeetCode">
+<meta name="description" content="今天的每日一题：1202. 从根到叶的二进制数之和。
+简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：
+输入：root = [1,0,1,0,1,0,1]
+输出：22
+解释：(100) &#43; (101) &#43; (110) &#43; (111) = 4 &#43; 5 &#43; 6 &#43; 7 = 22
+可以表示为：
+    1
+   / \
+  0   1
+ / \  / \
+0  1  0  1
+思路就是使用dfs来遍历这个树，代码为：
+/**
+ * Definition for a binary tree node.
+ * struct TreeNode {
+ *     int val;
+ *     TreeNode *left;
+ *     TreeNode *right;
+ *     TreeNode() : val(0), left(nullptr), right(nullptr) {}
+ *     TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+ *     TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+ * };
+ */
+class Solution {
+public:
+    int dfs(TreeNode *root, int val) {
+        if (root == nullptr)
+            return 0;
+
+        val = val &lt;&lt; 1 | root-&gt;val;
+        if (root-&gt;left == nullptr &amp;&amp; root-&gt;right == nullptr)
+            return val;
+        
+        return dfs(root-&gt;left, val) &#43; dfs(root-&gt;right, val);
+    }
+
+    int sumRootToLeaf(TreeNode* root) {
+        return dfs(root, 0);    
+    }
+};
+拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/algorithm/dfs/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.356fe55c5f1a2d8fb0dff96c300e8af0c6c552f3fdbc2fce279987f9c1b1e1d4.css" integrity="sha256-NW/lXF8aLY&#43;w3/lsMA6K8MbFUvP9vC/OJ5mH&#43;cGx4dQ=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/algorithm/dfs/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/algorithm/dfs/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="深度优先遍历">
+  <meta property="og:description" content="今天的每日一题：1202. 从根到叶的二进制数之和。
+简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：
+输入：root = [1,0,1,0,1,0,1] 输出：22 解释：(100) &#43; (101) &#43; (110) &#43; (111) = 4 &#43; 5 &#43; 6 &#43; 7 = 22 可以表示为：
+1 / \ 0 1 / \ / \ 0 1 0 1 思路就是使用dfs来遍历这个树，代码为：
+/** * Definition for a binary tree node. * struct TreeNode { * int val; * TreeNode *left; * TreeNode *right; * TreeNode() : val(0), left(nullptr), right(nullptr) {} * TreeNode(int x) : val(x), left(nullptr), right(nullptr) {} * TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {} * }; */ class Solution { public: int dfs(TreeNode *root, int val) { if (root == nullptr) return 0; val = val &lt;&lt; 1 | root-&gt;val; if (root-&gt;left == nullptr &amp;&amp; root-&gt;right == nullptr) return val; return dfs(root-&gt;left, val) &#43; dfs(root-&gt;right, val); } int sumRootToLeaf(TreeNode* root) { return dfs(root, 0); } }; 拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-02-24T12:02:52+08:00">
+    <meta property="article:modified_time" content="2026-02-24T12:02:52+08:00">
+    <meta property="article:tag" content="DFS">
+    <meta property="article:tag" content="LeetCode">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="深度优先遍历">
+<meta name="twitter:description" content="今天的每日一题：1202. 从根到叶的二进制数之和。
+简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：
+输入：root = [1,0,1,0,1,0,1]
+输出：22
+解释：(100) &#43; (101) &#43; (110) &#43; (111) = 4 &#43; 5 &#43; 6 &#43; 7 = 22
+可以表示为：
+    1
+   / \
+  0   1
+ / \  / \
+0  1  0  1
+思路就是使用dfs来遍历这个树，代码为：
+/**
+ * Definition for a binary tree node.
+ * struct TreeNode {
+ *     int val;
+ *     TreeNode *left;
+ *     TreeNode *right;
+ *     TreeNode() : val(0), left(nullptr), right(nullptr) {}
+ *     TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+ *     TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+ * };
+ */
+class Solution {
+public:
+    int dfs(TreeNode *root, int val) {
+        if (root == nullptr)
+            return 0;
+
+        val = val &lt;&lt; 1 | root-&gt;val;
+        if (root-&gt;left == nullptr &amp;&amp; root-&gt;right == nullptr)
+            return val;
+        
+        return dfs(root-&gt;left, val) &#43; dfs(root-&gt;right, val);
+    }
+
+    int sumRootToLeaf(TreeNode* root) {
+        return dfs(root, 0);    
+    }
+};
+拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "深度优先遍历",
+      "item": "http://localhost:1313/posts/algorithm/dfs/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "深度优先遍历",
+  "name": "深度优先遍历",
+  "description": "今天的每日一题：1202. 从根到叶的二进制数之和。\n简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：\n输入：root = [1,0,1,0,1,0,1] 输出：22 解释：(100) + (101) + (110) + (111) = 4 + 5 + 6 + 7 = 22 可以表示为：\n1 / \\ 0 1 / \\ / \\ 0 1 0 1 思路就是使用dfs来遍历这个树，代码为：\n/** * Definition for a binary tree node. * struct TreeNode { * int val; * TreeNode *left; * TreeNode *right; * TreeNode() : val(0), left(nullptr), right(nullptr) {} * TreeNode(int x) : val(x), left(nullptr), right(nullptr) {} * TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {} * }; */ class Solution { public: int dfs(TreeNode *root, int val) { if (root == nullptr) return 0; val = val \u0026lt;\u0026lt; 1 | root-\u0026gt;val; if (root-\u0026gt;left == nullptr \u0026amp;\u0026amp; root-\u0026gt;right == nullptr) return val; return dfs(root-\u0026gt;left, val) + dfs(root-\u0026gt;right, val); } int sumRootToLeaf(TreeNode* root) { return dfs(root, 0); } }; 拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：\n",
+  "keywords": [
+    "DFS", "LeetCode"
+  ],
+  "articleBody": "今天的每日一题：1202. 从根到叶的二进制数之和。\n简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：\n输入：root = [1,0,1,0,1,0,1] 输出：22 解释：(100) + (101) + (110) + (111) = 4 + 5 + 6 + 7 = 22 可以表示为：\n1 / \\ 0 1 / \\ / \\ 0 1 0 1 思路就是使用dfs来遍历这个树，代码为：\n/** * Definition for a binary tree node. * struct TreeNode { * int val; * TreeNode *left; * TreeNode *right; * TreeNode() : val(0), left(nullptr), right(nullptr) {} * TreeNode(int x) : val(x), left(nullptr), right(nullptr) {} * TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {} * }; */ class Solution { public: int dfs(TreeNode *root, int val) { if (root == nullptr) return 0; val = val \u003c\u003c 1 | root-\u003eval; if (root-\u003eleft == nullptr \u0026\u0026 root-\u003eright == nullptr) return val; return dfs(root-\u003eleft, val) + dfs(root-\u003eright, val); } int sumRootToLeaf(TreeNode* root) { return dfs(root, 0); } }; 拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：\n1. root-\u003eval : 1 curr val : 1 goto dfs(root-\u003eleft, 1) 2. root-\u003eleft-\u003eval : 10 curr val : 10 goto dfs(root-\u003eleft-\u003eleft, 10) 3. root-\u003eleft-\u003eleft-\u003eval : 100 curr val : 100 return 100 4. goto 2 goto dfs(root-\u003eleft-\u003eright, 10) curr val : 10 5. root-\u003eleft-\u003eright-\u003eval : 101 curr val : 101 return 101 6. goto 2 return 100 + 101 curr val : 10 7. goto 1 curr val : 1 goto dfs(root-\u003eright, 1) 8. root-\u003eright-\u003eval : 11 curr val : 11 goto dfs(root-\u003eright-\u003eleft, 11) 9. root-\u003eright-\u003eleft-\u003eval : 110 curr val : 110 return 110 10. goto 8 curr val : 11 goto dfs(root-\u003eright-\u003eright, 11) 11. root-\u003eright-\u003eright-\u003eval : 111 curr val : 111 return 111 12. goto 7 curr val : 1 return 110 + 111 13 return 100 + 101 + 110 + 111 如此一来就可以得到最后的结果，虽然是一道easy，但还是想了很久，下次碰到类似题目，希望可以记住这样好的思路。\n",
+  "wordCount" : "275",
+  "inLanguage": "en",
+  "datePublished": "2026-02-24T12:02:52+08:00",
+  "dateModified": "2026-02-24T12:02:52+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/algorithm/dfs/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      深度优先遍历
+    </h1>
+    <div class="post-meta">
+      <span title='2026-02-24 12:02:52 +0800 CST'>February 24, 2026</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>275 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  
+
+
+  
+  <div class="post-content"><p>今天的每日一题：1202. 从根到叶的二进制数之和。</p>
+<p>简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">输入：root <span class="o">=</span> <span class="o">[</span>1,0,1,0,1,0,1<span class="o">]</span>
+</span></span><span class="line"><span class="cl">输出：22
+</span></span><span class="line"><span class="cl">解释：<span class="o">(</span>100<span class="o">)</span> + <span class="o">(</span>101<span class="o">)</span> + <span class="o">(</span>110<span class="o">)</span> + <span class="o">(</span>111<span class="o">)</span> <span class="o">=</span> <span class="m">4</span> + <span class="m">5</span> + <span class="m">6</span> + <span class="nv">7</span> <span class="o">=</span> <span class="m">22</span>
+</span></span></code></pre></div><p>可以表示为：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">    <span class="m">1</span>
+</span></span><span class="line"><span class="cl">   / <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="m">0</span>   <span class="m">1</span>
+</span></span><span class="line"><span class="cl"> / <span class="se">\ </span> / <span class="se">\
+</span></span></span><span class="line"><span class="cl"><span class="m">0</span>  <span class="m">1</span>  <span class="m">0</span>  <span class="m">1</span>
+</span></span></code></pre></div><p>思路就是使用dfs来遍历这个树，代码为：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-C++" data-lang="C++"><span class="line"><span class="cl"><span class="cm">/**
+</span></span></span><span class="line"><span class="cl"><span class="cm"> * Definition for a binary tree node.
+</span></span></span><span class="line"><span class="cl"><span class="cm"> * struct TreeNode {
+</span></span></span><span class="line"><span class="cl"><span class="cm"> *     int val;
+</span></span></span><span class="line"><span class="cl"><span class="cm"> *     TreeNode *left;
+</span></span></span><span class="line"><span class="cl"><span class="cm"> *     TreeNode *right;
+</span></span></span><span class="line"><span class="cl"><span class="cm"> *     TreeNode() : val(0), left(nullptr), right(nullptr) {}
+</span></span></span><span class="line"><span class="cl"><span class="cm"> *     TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+</span></span></span><span class="line"><span class="cl"><span class="cm"> *     TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+</span></span></span><span class="line"><span class="cl"><span class="cm"> * };
+</span></span></span><span class="line"><span class="cl"><span class="cm"> */</span>
+</span></span><span class="line"><span class="cl"><span class="k">class</span> <span class="nc">Solution</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl"><span class="k">public</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">dfs</span><span class="p">(</span><span class="n">TreeNode</span> <span class="o">*</span><span class="n">root</span><span class="p">,</span> <span class="kt">int</span> <span class="n">val</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="p">(</span><span class="n">root</span> <span class="o">==</span> <span class="k">nullptr</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="n">val</span> <span class="o">=</span> <span class="n">val</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span> <span class="o">|</span> <span class="n">root</span><span class="o">-&gt;</span><span class="n">val</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="p">(</span><span class="n">root</span><span class="o">-&gt;</span><span class="n">left</span> <span class="o">==</span> <span class="k">nullptr</span> <span class="o">&amp;&amp;</span> <span class="n">root</span><span class="o">-&gt;</span><span class="n">right</span> <span class="o">==</span> <span class="k">nullptr</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="k">return</span> <span class="n">val</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">        
+</span></span><span class="line"><span class="cl">        <span class="k">return</span> <span class="nf">dfs</span><span class="p">(</span><span class="n">root</span><span class="o">-&gt;</span><span class="n">left</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span> <span class="o">+</span> <span class="n">dfs</span><span class="p">(</span><span class="n">root</span><span class="o">-&gt;</span><span class="n">right</span><span class="p">,</span> <span class="n">val</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="nf">sumRootToLeaf</span><span class="p">(</span><span class="n">TreeNode</span><span class="o">*</span> <span class="n">root</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">        <span class="k">return</span> <span class="n">dfs</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>    
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl"><span class="p">};</span>
+</span></span></code></pre></div><p>拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">1. root-&gt;val : <span class="m">1</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">1</span>
+</span></span><span class="line"><span class="cl">    goto dfs<span class="o">(</span>root-&gt;left, 1<span class="o">)</span>
+</span></span><span class="line"><span class="cl">2. root-&gt;left-&gt;val : <span class="m">10</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">10</span>
+</span></span><span class="line"><span class="cl">    goto dfs<span class="o">(</span>root-&gt;left-&gt;left, 10<span class="o">)</span>
+</span></span><span class="line"><span class="cl">3. root-&gt;left-&gt;left-&gt;val : <span class="m">100</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">100</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="m">100</span>
+</span></span><span class="line"><span class="cl">4. goto <span class="m">2</span>
+</span></span><span class="line"><span class="cl">    goto dfs<span class="o">(</span>root-&gt;left-&gt;right, 10<span class="o">)</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">10</span>
+</span></span><span class="line"><span class="cl">5. root-&gt;left-&gt;right-&gt;val : <span class="m">101</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">101</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="m">101</span>
+</span></span><span class="line"><span class="cl">6. goto <span class="m">2</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="m">100</span> + <span class="m">101</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">10</span>
+</span></span><span class="line"><span class="cl">7. goto <span class="m">1</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">1</span>
+</span></span><span class="line"><span class="cl">    goto dfs<span class="o">(</span>root-&gt;right, 1<span class="o">)</span>
+</span></span><span class="line"><span class="cl">8. root-&gt;right-&gt;val : <span class="m">11</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">11</span>
+</span></span><span class="line"><span class="cl">    goto dfs<span class="o">(</span>root-&gt;right-&gt;left, 11<span class="o">)</span>
+</span></span><span class="line"><span class="cl">9. root-&gt;right-&gt;left-&gt;val : <span class="m">110</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">110</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="m">110</span>
+</span></span><span class="line"><span class="cl">10. goto <span class="m">8</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">11</span>
+</span></span><span class="line"><span class="cl">    goto dfs<span class="o">(</span>root-&gt;right-&gt;right, 11<span class="o">)</span>
+</span></span><span class="line"><span class="cl">11. root-&gt;right-&gt;right-&gt;val : <span class="m">111</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">111</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="m">111</span>
+</span></span><span class="line"><span class="cl">12. goto <span class="m">7</span>
+</span></span><span class="line"><span class="cl">    curr val : <span class="m">1</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="m">110</span> + <span class="m">111</span>
+</span></span><span class="line"><span class="cl"><span class="m">13</span> <span class="k">return</span> <span class="m">100</span> + <span class="m">101</span> + <span class="m">110</span> + <span class="m">111</span>
+</span></span></code></pre></div><p>如此一来就可以得到最后的结果，虽然是一道easy，但还是想了很久，下次碰到类似题目，希望可以记住这样好的思路。</p>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/dfs/">DFS</a></li><li><a href="http://localhost:1313/tags/leetcode/">LeetCode</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./Algorithm</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+ 
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        console.log("Checking submission status...");
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    updateStreakDisplay();
+
+    const PROXY_URL = 'https://corsproxy.io/?'; 
+    const TARGET_URL = 'https://leetcode.cn/graphql';
+    
+    const query = `
+    query questionOfToday {
+        todayRecord {
+            date
+            question {
+                questionFrontendId
+                titleSlug
+                translatedTitle 
+                difficulty
+                translatedContent
+                topicTags { translatedName }
+                codeSnippets { langSlug code }
+            }
+        }
+    }`;
+
+    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: query })
+    })
+    .then(response => response.json())
+    .then(result => {
+        const record = result.data.todayRecord[0];
+        if (!record) throw new Error("Empty data");
+        
+        lcDataGlobal = {
+            date: record.date,
+            titleSlug: record.question.titleSlug, 
+            link: `/problems/${record.question.titleSlug}/description/`,
+            title: record.question.translatedTitle,
+            difficulty: record.question.difficulty,
+            content: record.question.translatedContent,
+            snippets: record.question.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === record.date) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = record.date;
+            document.getElementById('lc-title').innerText = `${record.question.questionFrontendId}. ${record.question.translatedTitle}`;
+            document.getElementById('lc-link').href = "https://leetcode.cn" + lcDataGlobal.link;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[record.question.difficulty] || record.question.difficulty;
+            diffEl.className = `lc-difficulty diff-${record.question.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("Init Error:", err);
+    });
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    const PROXY_URL = 'https://corsproxy.io/?'; 
+    const TARGET_URL = 'https://leetcode.cn/graphql';
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question {
+                titleSlug
+            }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) {
+        checkBtn.innerText = "⏳ Verifying...";
+        checkBtn.disabled = true;
+    }
+
+    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    let codeTemplate = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) codeTemplate = cppSnippet.code;
+    }
+
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+    }
+    flaskEditor.updateCode(codeTemplate);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+</script>
+</body>
+
+</html>

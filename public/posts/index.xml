@@ -6,23 +6,100 @@
     <description>Recent content in Posts on Kernel Notes</description>
     <generator>Hugo -- 0.155.3</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Tue, 10 Feb 2026 16:15:52 +0800</lastBuildDate>
+    <lastBuildDate>Wed, 25 Feb 2026 10:15:33 +0800</lastBuildDate>
     <atom:link href="http://localhost:1313/posts/index.xml" rel="self" type="application/rss+xml" />
     <item>
+      <title>避免用户错误使用到pg插件</title>
+      <link>http://localhost:1313/posts/database/forbid-extension/</link>
+      <pubDate>Wed, 25 Feb 2026 10:15:33 +0800</pubDate>
+      <guid>http://localhost:1313/posts/database/forbid-extension/</guid>
+      <description>&lt;h2 id=&#34;基本概念&#34;&gt;基本概念&lt;/h2&gt;
+&lt;p&gt;这里是融合版的一个需求，属于兼容性需求类别，主要实现的是一个黑名单，是要把一个列表中的多个插件不允许在MSSQL兼容安装包中出现，或只能在5432端口（PG模式）中使用，不能在1433端口（MSSQL模式）中使用。&lt;/p&gt;
+&lt;h2 id=&#34;初步分析&#34;&gt;初步分析&lt;/h2&gt;
+&lt;p&gt;根据需求列表，可以基本将需要修改的插件分为三类：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;禁止在双端口安装使用；&lt;/li&gt;
+&lt;li&gt;在5432端口允许使用，1433端口禁止安装使用；&lt;/li&gt;
+&lt;li&gt;双端口都允许使用；&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;其中，需求描述特别提到，允许在编译阶段进行修改，由此可以对应的提出三类插件的修改方案：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;在编译阶段不安装，也就是在contrib/Makefile中的SUBDIR安装插件，删除这些不允许在双端口安装的插件；&lt;/li&gt;
+&lt;li&gt;在hooks.c中增加一个名单，名单中包含这些允许在5432不允许在1433安装的插件，首先检测当前dialect是否为tsql，如果为tsql，检查是否是T_CreExtensionStmt，如果是则检查插件名单是否在这个名单之内，如果没有则放行，有则报错；&lt;/li&gt;
+&lt;li&gt;不做任何处理；&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;理论上，以上方案实施后，能够达到双端口不可用则直接无法找到插件，用户自行安装则不保证可能出现的任何问题；对于5432可用1433不可用，会进行报错；其他类型不做处理；应该可以达到需求描述的目的实现；&lt;/p&gt;
+&lt;h2 id=&#34;边界考虑&#34;&gt;边界考虑&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;由于删除了某些插件编译且对某些插件在一定场景进行了屏蔽，考虑数据库升级场景，如果以前使用过此插件，现在进行了屏蔽，可能导致升级失败；&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;灵活性&#34;&gt;灵活性&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;现在的屏蔽方式是使用直接修改编译文件与硬编码名单的方式实现，如果在一个版本内，由于某些特殊原因想启用已屏蔽的插件，则在当前版本是无法实现的。如果将名单作成guc参数，则可以提供灵活性，但是一旦被手动篡改，则无法预料可能产生的问题；&lt;/li&gt;
+&lt;/ul&gt;</description>
+    </item>
+    <item>
+      <title>深度优先遍历</title>
+      <link>http://localhost:1313/posts/algorithm/dfs/</link>
+      <pubDate>Tue, 24 Feb 2026 12:02:52 +0800</pubDate>
+      <guid>http://localhost:1313/posts/algorithm/dfs/</guid>
+      <description>&lt;p&gt;今天的每日一题：1202. 从根到叶的二进制数之和。&lt;/p&gt;
+&lt;p&gt;简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;输入：root &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;[&lt;/span&gt;1,0,1,0,1,0,1&lt;span class=&#34;o&#34;&gt;]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;输出：22
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;解释：&lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;100&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; + &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;101&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; + &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;110&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; + &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;111&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;4&lt;/span&gt; + &lt;span class=&#34;m&#34;&gt;5&lt;/span&gt; + &lt;span class=&#34;m&#34;&gt;6&lt;/span&gt; + &lt;span class=&#34;nv&#34;&gt;7&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;22&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;可以表示为：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;m&#34;&gt;1&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;   / &lt;span class=&#34;se&#34;&gt;\
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;  &lt;span class=&#34;m&#34;&gt;0&lt;/span&gt;   &lt;span class=&#34;m&#34;&gt;1&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt; / &lt;span class=&#34;se&#34;&gt;\ &lt;/span&gt; / &lt;span class=&#34;se&#34;&gt;\
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;m&#34;&gt;0&lt;/span&gt;  &lt;span class=&#34;m&#34;&gt;1&lt;/span&gt;  &lt;span class=&#34;m&#34;&gt;0&lt;/span&gt;  &lt;span class=&#34;m&#34;&gt;1&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;思路就是使用dfs来遍历这个树，代码为：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-C++&#34; data-lang=&#34;C++&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;cm&#34;&gt;/**
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;cm&#34;&gt; * Definition for a binary tree node.
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;cm&#34;&gt; * struct TreeNode {
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;cm&#34;&gt; *     int val;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;cm&#34;&gt; *     TreeNode *left;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;cm&#34;&gt; *     TreeNode *right;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;cm&#34;&gt; *     TreeNode() : val(0), left(nullptr), right(nullptr) {}
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;cm&#34;&gt; *     TreeNode(int x) : val(x), left(nullptr), right(nullptr) {}
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;cm&#34;&gt; *     TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {}
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;cm&#34;&gt; * };
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;cm&#34;&gt; */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;class&lt;/span&gt; &lt;span class=&#34;nc&#34;&gt;Solution&lt;/span&gt; &lt;span class=&#34;p&#34;&gt;{&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;public&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;kt&#34;&gt;int&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;dfs&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;TreeNode&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;*&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;root&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt; &lt;span class=&#34;kt&#34;&gt;int&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;val&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt; &lt;span class=&#34;p&#34;&gt;{&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        &lt;span class=&#34;k&#34;&gt;if&lt;/span&gt; &lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;root&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;==&lt;/span&gt; &lt;span class=&#34;k&#34;&gt;nullptr&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;            &lt;span class=&#34;k&#34;&gt;return&lt;/span&gt; &lt;span class=&#34;mi&#34;&gt;0&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        &lt;span class=&#34;n&#34;&gt;val&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;val&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span class=&#34;mi&#34;&gt;1&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;|&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;root&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;val&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        &lt;span class=&#34;k&#34;&gt;if&lt;/span&gt; &lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;root&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;left&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;==&lt;/span&gt; &lt;span class=&#34;k&#34;&gt;nullptr&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;root&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;right&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;==&lt;/span&gt; &lt;span class=&#34;k&#34;&gt;nullptr&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;            &lt;span class=&#34;k&#34;&gt;return&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;val&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        &lt;span class=&#34;k&#34;&gt;return&lt;/span&gt; &lt;span class=&#34;nf&#34;&gt;dfs&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;root&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;left&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;val&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;+&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;dfs&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;root&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;right&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;val&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;p&#34;&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;kt&#34;&gt;int&lt;/span&gt; &lt;span class=&#34;nf&#34;&gt;sumRootToLeaf&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;TreeNode&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;*&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;root&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt; &lt;span class=&#34;p&#34;&gt;{&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        &lt;span class=&#34;k&#34;&gt;return&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;dfs&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;root&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt; &lt;span class=&#34;mi&#34;&gt;0&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;    
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;p&#34;&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;};&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：&lt;/p&gt;</description>
+    </item>
+    <item>
       <title>逻辑复制</title>
-      <link>http://localhost:1313/posts/logical_replication/</link>
+      <link>http://localhost:1313/posts/database/logical_replication/</link>
       <pubDate>Tue, 10 Feb 2026 16:15:52 +0800</pubDate>
-      <guid>http://localhost:1313/posts/logical_replication/</guid>
+      <guid>http://localhost:1313/posts/database/logical_replication/</guid>
       <description>&lt;h2 id=&#34;基本概念&#34;&gt;基本概念&lt;/h2&gt;
 &lt;p&gt;逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。&lt;/p&gt;
-&lt;h3 id=&#34;1-逻辑数据格式&#34;&gt;1. 逻辑数据格式&lt;/h3&gt;
+&lt;h3 id=&#34;逻辑数据格式&#34;&gt;逻辑数据格式&lt;/h3&gt;
 &lt;p&gt;逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：&lt;/p&gt;
 &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;o&#34;&gt;[&lt;/span&gt;MsgType：Insert，Relation：test，New Tuple：&lt;span class=&#34;o&#34;&gt;[&lt;/span&gt;a, int, 100&lt;span class=&#34;o&#34;&gt;]]&lt;/span&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：&lt;strong&gt;无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步&lt;/strong&gt;。&lt;/p&gt;
 &lt;p&gt;接上例，通过一定的解析步骤，我们总能够得到：&lt;/p&gt;
 &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;Insert&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;into&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;test&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;a&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;values&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;100&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;::&lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;int&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。&lt;/p&gt;
-&lt;h3 id=&#34;2-与物理复制的区别&#34;&gt;2. 与物理复制的区别&lt;/h3&gt;
+&lt;h3 id=&#34;与物理复制的区别&#34;&gt;与物理复制的区别&lt;/h3&gt;
 &lt;p&gt;逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。&lt;/p&gt;
 &lt;p&gt;几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：&lt;/p&gt;
 &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;--------------
@@ -53,7 +130,24 @@
 &lt;/blockquote&gt;
 &lt;h2 id=&#34;架构&#34;&gt;架构&lt;/h2&gt;
 &lt;p&gt;&lt;img alt=&#34;alt text&#34; loading=&#34;lazy&#34; src=&#34;image.png&#34;&gt;&lt;/p&gt;
-&lt;p&gt;如图所示，&lt;/p&gt;</description>
+&lt;p&gt;如图所示，逻辑复制功能，是两个实例（或生产者与消费者）之间完成的数据同步，通常我们把作为数据源端的实例，称为发布端（Publisher），而准备接收数据并进行回放的实例称为订阅端（Subscriber）。&lt;/p&gt;
+&lt;h3 id=&#34;发布端&#34;&gt;发布端&lt;/h3&gt;
+&lt;p&gt;发布端的组成部分，共分为以下几个部分：WALReader、Decoder、Sender，通常是由三个独立的线程，按照其角色完成不同的工作：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;WALReader：主要完成对Xlog日志的读取，即从磁盘上将当前已罗盘的Xlog record读取到内存，并发送给Decoder；&lt;/li&gt;
+&lt;li&gt;Decoder：解码线程，由于WALReader发送来的数据，是物理层面的记录，Decoder会按照特定的规则，将物理信息转换为逻辑信息，从内存上看，使用一个结构体，保存Xlog record中的xid、LSN、DMLType等信息。同时，Decoder还需要将这些信息，按照约定好的协议（Protocol）将数据进行打包，其中应用最广泛的端到端协议是pgoutput（后面会介绍他的协议格式以及细节实现）。Decoder会将这些按照协议进行拼接的逻辑数据存储到私有内存中，当达到一定条件时，将数据发送给Sender线程执行发送。&lt;/li&gt;
+&lt;li&gt;Sender：将Decoder发送来的数据通过网络发送给订阅端。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id=&#34;发布端如何保证事务一致性&#34;&gt;发布端如何保证事务一致性&lt;/h4&gt;
+&lt;p&gt;对于数据同步来说，最重要的是事务一致性，如果不能保证一致性，那么逻辑复制将是毫无意义的。而要保证事务一致性，通常主要责任在于发布端，发布端需要确保自己发送逻辑信息的顺序，是严格的，即使不能保证发送顺序一定与WAL日志写入顺序完全一致，但必须保证事务的最终一致性。为了保证事务一致性，在发布端，通常会有以下几个部分保证：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;严格按照commit顺序进行事务发送：事务的提交顺序非常重要，Decoder解码到一条逻辑数据时，并不会立刻发送给Sender，而是将条变更存储起来，直到解码到该事务对应的commit，才将整个事务完发送；&lt;/li&gt;
+&lt;li&gt;错误重发：当订阅端接收到一个事务的commit时，即代表这个事务经传输完毕，订阅端会发送一个确认LSN给发布端，发布端需要确认LSN是在当前处理LSN的前面，如果此时LSN发生错乱，发布端会立即这条返回的LSN开始，重新发送这些变更；&lt;/li&gt;
+&lt;li&gt;commit时间确认：在Decoder将Xlog信息解码为逻辑协议信息时对于某些类型的消息，会携带commit timestampz，这是该事务提时的瞬时时间戳；&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id=&#34;发布端对于内存的管理&#34;&gt;发布端对于内存的管理&lt;/h4&gt;
+&lt;p&gt;在业务系统中，有时不可避免的会出现大事务，通常包含几M甚至百M的事务变更数据，在逻辑复制模块中，上文提到，通常是将所有事务存储于内存，当遇到该事务的commit时，才进行发送。对于这种大事务来说，如果多几条，可能很容易造成内存压力，引起CPU抖动，有影响系统整体性能的可能性。&lt;/p&gt;
+&lt;p&gt;为了保证系统整体性能，当遇到这种大事务的时候，通常会设计一个内存阈值，当在内存中已经存储了多条事务变更时，一旦当前内存占用达到阈值，发布端会选择当前内存中一个最大的事务（不一定是完整的，只是transaction size最大）spill to disk；诚然，这会带来一定的IO开销，因为当我们读到被spill的事务的commit时，需要把它从磁盘上读出来，但相比于其带来的内存负荷，这是合理的取舍。&lt;/p&gt;</description>
     </item>
     <item>
       <title>0.Readme</title>
