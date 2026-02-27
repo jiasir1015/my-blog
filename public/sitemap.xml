@@ -2,40 +2,52 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>http://localhost:1313/categories/algorithm/</loc>
-    <lastmod>2026-02-24T12:02:52+08:00</lastmod>
+    <loc>http://localhost:1313/tags/bubblefish/</loc>
+    <lastmod>2026-02-25T10:15:33+08:00</lastmod>
   </url><url>
     <loc>http://localhost:1313/categories/</loc>
+    <lastmod>2026-02-25T10:15:33+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/categories/database/</loc>
+    <lastmod>2026-02-25T10:15:33+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/extension/</loc>
+    <lastmod>2026-02-25T10:15:33+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/</loc>
+    <lastmod>2026-02-25T10:15:33+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/postgresql/</loc>
+    <lastmod>2026-02-25T10:15:33+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/posts/</loc>
+    <lastmod>2026-02-25T10:15:33+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/sqlserver/</loc>
+    <lastmod>2026-02-25T10:15:33+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/</loc>
+    <lastmod>2026-02-25T10:15:33+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/posts/database/forbid-extension/</loc>
+    <lastmod>2026-02-25T10:15:33+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/categories/algorithm/</loc>
     <lastmod>2026-02-24T12:02:52+08:00</lastmod>
   </url><url>
     <loc>http://localhost:1313/tags/dfs/</loc>
     <lastmod>2026-02-24T12:02:52+08:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/</loc>
-    <lastmod>2026-02-24T12:02:52+08:00</lastmod>
-  </url><url>
     <loc>http://localhost:1313/tags/leetcode/</loc>
-    <lastmod>2026-02-24T12:02:52+08:00</lastmod>
-  </url><url>
-    <loc>http://localhost:1313/posts/</loc>
-    <lastmod>2026-02-24T12:02:52+08:00</lastmod>
-  </url><url>
-    <loc>http://localhost:1313/tags/</loc>
     <lastmod>2026-02-24T12:02:52+08:00</lastmod>
   </url><url>
     <loc>http://localhost:1313/posts/algorithm/dfs/</loc>
     <lastmod>2026-02-24T12:02:52+08:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/categories/database/</loc>
-    <lastmod>2026-02-10T16:15:52+08:00</lastmod>
-  </url><url>
     <loc>http://localhost:1313/tags/logical-replication/</loc>
     <lastmod>2026-02-10T16:15:52+08:00</lastmod>
   </url><url>
     <loc>http://localhost:1313/tags/mvcc/</loc>
-    <lastmod>2026-02-10T16:15:52+08:00</lastmod>
-  </url><url>
-    <loc>http://localhost:1313/tags/postgresql/</loc>
     <lastmod>2026-02-10T16:15:52+08:00</lastmod>
   </url><url>
     <loc>http://localhost:1313/tags/transaction/</loc>

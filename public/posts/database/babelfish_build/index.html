@@ -1,0 +1,1503 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>Babelfish搭建指南 | Kernel Notes</title>
+<meta name="keywords" content="">
+<meta name="description" content="Babelfish 编译环境搭建指南
+
+适用环境：CentOS 7，离线环境，vastbase-server &#43; sqlserver-extensions
+
+
+一、创建用户
+# 创建用户并设置密码
+useradd vast
+echo &#34;vast:gauss@123&#34; | chpasswd
+
+# 授予 sudo 权限（加入 wheel 组）
+usermod -aG wheel vast
+
+# 验证
+id vast
+
+二、配置环境变量
+将以下内容写入 ~/.bash_profile，每次登录自动生效：
+cat &gt;&gt; ~/.bash_profile &lt;&lt; &#39;EOF&#39;
+# Babelfish 基础路径
+export BABELFISH_HOME=~/vastbase-server/install
+export BINARYLIBS=~/vastbase-server/binarylibs
+export GCC_PATH=$BINARYLIBS/buildtools/gcc7.3
+
+# 编译器
+export CC=$GCC_PATH/gcc/bin/gcc
+export CXX=$GCC_PATH/gcc/bin/g&#43;&#43;
+
+# cmake（优先使用项目自带版本，放在 PATH 最前面）
+export PATH=$BINARYLIBS/buildtools/cmake/bin:$GCC_PATH/gcc/bin:$BABELFISH_HOME/bin:$PATH
+
+# 动态库路径
+export LD_LIBRARY_PATH=$GCC_PATH/gcc/lib64:$BABELFISH_HOME/lib:$BINARYLIBS/kernel/dependency/openssl/comm/lib:$LD_LIBRARY_PATH
+
+# cmake 变量（防止 Makefile 调用系统旧版本）
+export cmake=$(which cmake)
+
+# PG 相关
+export PG_CONFIG=$BABELFISH_HOME/bin/pg_config
+export PG_SRC=`pwd`
+EOF
+
+source ~/.bash_profile
+验证工具版本：">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/database/babelfish_build/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.cc1a7a72a1bc0646d1795a84408fdee4b59a3718ab8eaf8c076fdc6394b5648d.css" integrity="sha256-zBp6cqG8BkbReVqEQI/e5LWaNxirjq&#43;MB2/cY5S1ZI0=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/database/babelfish_build/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/database/babelfish_build/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="Babelfish搭建指南">
+  <meta property="og:description" content="Babelfish 编译环境搭建指南 适用环境：CentOS 7，离线环境，vastbase-server &#43; sqlserver-extensions
+一、创建用户 # 创建用户并设置密码 useradd vast echo &#34;vast:gauss@123&#34; | chpasswd # 授予 sudo 权限（加入 wheel 组） usermod -aG wheel vast # 验证 id vast 二、配置环境变量 将以下内容写入 ~/.bash_profile，每次登录自动生效：
+cat &gt;&gt; ~/.bash_profile &lt;&lt; &#39;EOF&#39; # Babelfish 基础路径 export BABELFISH_HOME=~/vastbase-server/install export BINARYLIBS=~/vastbase-server/binarylibs export GCC_PATH=$BINARYLIBS/buildtools/gcc7.3 # 编译器 export CC=$GCC_PATH/gcc/bin/gcc export CXX=$GCC_PATH/gcc/bin/g&#43;&#43; # cmake（优先使用项目自带版本，放在 PATH 最前面） export PATH=$BINARYLIBS/buildtools/cmake/bin:$GCC_PATH/gcc/bin:$BABELFISH_HOME/bin:$PATH # 动态库路径 export LD_LIBRARY_PATH=$GCC_PATH/gcc/lib64:$BABELFISH_HOME/lib:$BINARYLIBS/kernel/dependency/openssl/comm/lib:$LD_LIBRARY_PATH # cmake 变量（防止 Makefile 调用系统旧版本） export cmake=$(which cmake) # PG 相关 export PG_CONFIG=$BABELFISH_HOME/bin/pg_config export PG_SRC=`pwd` EOF source ~/.bash_profile 验证工具版本：">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-02-27T14:30:01+08:00">
+    <meta property="article:modified_time" content="2026-02-27T14:30:01+08:00">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Babelfish搭建指南">
+<meta name="twitter:description" content="Babelfish 编译环境搭建指南
+
+适用环境：CentOS 7，离线环境，vastbase-server &#43; sqlserver-extensions
+
+
+一、创建用户
+# 创建用户并设置密码
+useradd vast
+echo &#34;vast:gauss@123&#34; | chpasswd
+
+# 授予 sudo 权限（加入 wheel 组）
+usermod -aG wheel vast
+
+# 验证
+id vast
+
+二、配置环境变量
+将以下内容写入 ~/.bash_profile，每次登录自动生效：
+cat &gt;&gt; ~/.bash_profile &lt;&lt; &#39;EOF&#39;
+# Babelfish 基础路径
+export BABELFISH_HOME=~/vastbase-server/install
+export BINARYLIBS=~/vastbase-server/binarylibs
+export GCC_PATH=$BINARYLIBS/buildtools/gcc7.3
+
+# 编译器
+export CC=$GCC_PATH/gcc/bin/gcc
+export CXX=$GCC_PATH/gcc/bin/g&#43;&#43;
+
+# cmake（优先使用项目自带版本，放在 PATH 最前面）
+export PATH=$BINARYLIBS/buildtools/cmake/bin:$GCC_PATH/gcc/bin:$BABELFISH_HOME/bin:$PATH
+
+# 动态库路径
+export LD_LIBRARY_PATH=$GCC_PATH/gcc/lib64:$BABELFISH_HOME/lib:$BINARYLIBS/kernel/dependency/openssl/comm/lib:$LD_LIBRARY_PATH
+
+# cmake 变量（防止 Makefile 调用系统旧版本）
+export cmake=$(which cmake)
+
+# PG 相关
+export PG_CONFIG=$BABELFISH_HOME/bin/pg_config
+export PG_SRC=`pwd`
+EOF
+
+source ~/.bash_profile
+验证工具版本：">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "Babelfish搭建指南",
+      "item": "http://localhost:1313/posts/database/babelfish_build/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Babelfish搭建指南",
+  "name": "Babelfish搭建指南",
+  "description": "Babelfish 编译环境搭建指南 适用环境：CentOS 7，离线环境，vastbase-server + sqlserver-extensions\n一、创建用户 # 创建用户并设置密码 useradd vast echo \u0026#34;vast:gauss@123\u0026#34; | chpasswd # 授予 sudo 权限（加入 wheel 组） usermod -aG wheel vast # 验证 id vast 二、配置环境变量 将以下内容写入 ~/.bash_profile，每次登录自动生效：\ncat \u0026gt;\u0026gt; ~/.bash_profile \u0026lt;\u0026lt; \u0026#39;EOF\u0026#39; # Babelfish 基础路径 export BABELFISH_HOME=~/vastbase-server/install export BINARYLIBS=~/vastbase-server/binarylibs export GCC_PATH=$BINARYLIBS/buildtools/gcc7.3 # 编译器 export CC=$GCC_PATH/gcc/bin/gcc export CXX=$GCC_PATH/gcc/bin/g++ # cmake（优先使用项目自带版本，放在 PATH 最前面） export PATH=$BINARYLIBS/buildtools/cmake/bin:$GCC_PATH/gcc/bin:$BABELFISH_HOME/bin:$PATH # 动态库路径 export LD_LIBRARY_PATH=$GCC_PATH/gcc/lib64:$BABELFISH_HOME/lib:$BINARYLIBS/kernel/dependency/openssl/comm/lib:$LD_LIBRARY_PATH # cmake 变量（防止 Makefile 调用系统旧版本） export cmake=$(which cmake) # PG 相关 export PG_CONFIG=$BABELFISH_HOME/bin/pg_config export PG_SRC=`pwd` EOF source ~/.bash_profile 验证工具版本：\n",
+  "keywords": [
+    
+  ],
+  "articleBody": "Babelfish 编译环境搭建指南 适用环境：CentOS 7，离线环境，vastbase-server + sqlserver-extensions\n一、创建用户 # 创建用户并设置密码 useradd vast echo \"vast:gauss@123\" | chpasswd # 授予 sudo 权限（加入 wheel 组） usermod -aG wheel vast # 验证 id vast 二、配置环境变量 将以下内容写入 ~/.bash_profile，每次登录自动生效：\ncat \u003e\u003e ~/.bash_profile \u003c\u003c 'EOF' # Babelfish 基础路径 export BABELFISH_HOME=~/vastbase-server/install export BINARYLIBS=~/vastbase-server/binarylibs export GCC_PATH=$BINARYLIBS/buildtools/gcc7.3 # 编译器 export CC=$GCC_PATH/gcc/bin/gcc export CXX=$GCC_PATH/gcc/bin/g++ # cmake（优先使用项目自带版本，放在 PATH 最前面） export PATH=$BINARYLIBS/buildtools/cmake/bin:$GCC_PATH/gcc/bin:$BABELFISH_HOME/bin:$PATH # 动态库路径 export LD_LIBRARY_PATH=$GCC_PATH/gcc/lib64:$BABELFISH_HOME/lib:$BINARYLIBS/kernel/dependency/openssl/comm/lib:$LD_LIBRARY_PATH # cmake 变量（防止 Makefile 调用系统旧版本） export cmake=$(which cmake) # PG 相关 export PG_CONFIG=$BABELFISH_HOME/bin/pg_config export PG_SRC=`pwd` EOF source ~/.bash_profile 验证工具版本：\ncmake --version # 应为 3.21.x gcc --version # 应为 7.3.x 三、配置系统动态库（需 root） 3.1 添加 OpenSSL 库路径 sudo bash -c 'echo \"/home/binarylibs/kernel/dependency/openssl/comm/lib\" \u003e /etc/ld.so.conf.d/vastbase-openssl.conf' sudo bash -c 'echo \"/home/vast/vastbase-server/binarylibs/buildtools/gcc7.3/gcc/lib64\" \u003e\u003e /etc/ld.so.conf.d/vastbase-openssl.conf' sudo ldconfig 验证：\nldconfig -p | grep libcrypto ldconfig -p | grep libstdc++ 3.2 创建 antlr4 软链接 ln -s $BABELFISH_HOME/lib/libantlr4-runtime.so.4.13.2 $BABELFISH_HOME/lib/libantlr4-runtime.so 3.3 将 antlr4 头文件拷贝到系统目录（需 root） # 找到头文件位置 find ~/vastbase-server -path \"*/antlr4*/*.h\" 2\u003e/dev/null | head -5 # 拷贝到系统 include sudo mkdir -p /usr/local/include/antlr4-runtime sudo cp -r /path/to/antlr4-runtime/include/* /usr/local/include/antlr4-runtime/ # 验证 ls /usr/local/include/antlr4-runtime/ 四、编译 vastbase-server（内核） cd ~/vastbase-server ./configure \\ CFLAGS=\"-ggdb\" \\ --prefix=$BABELFISH_HOME \\ --enable-debug \\ --with-ldap \\ --with-libxml \\ --with-pam \\ --with-uuid=ossp \\ --enable-nls \\ --with-libxslt \\ --with-icu \\ CC=$CC \\ CXX=$CXX make -j$(nproc) make install 五、编译 sqlserver-extensions（Babelfish 扩展） 5.1 编译顺序 必须按以下顺序编译安装：\n1. babelfishpg_money 2. babelfishpg_common 3. babelfishpg_tsql 4. babelfishpg_tds 5.2 通用编译命令 cd ~/sqlserver-extensions/contrib/\u003c插件名\u003e make \\ CFLAGS=\"-I$BINARYLIBS/kernel/dependency/openssl/comm/include\" \\ PG_CFLAGS=\"-I$BINARYLIBS/kernel/dependency/openssl/comm/include\" \\ PG_CXXFLAGS=\"-I$BINARYLIBS/kernel/dependency/openssl/comm/include\" \\ LDFLAGS=\"-L$BINARYLIBS/kernel/dependency/openssl/comm/lib\" \\ CC=$CC make install 5.3 babelfishpg_tsql 特殊处理 编译前需确保 antlr4 库和头文件就位：\ncd ~/sqlserver-extensions/contrib/babelfishpg_tsql # antlr4 runtime 软链接（如未创建） ls $BABELFISH_HOME/lib/libantlr4-runtime.so || \\ ln -s $BABELFISH_HOME/lib/libantlr4-runtime.so.4.13.2 $BABELFISH_HOME/lib/libantlr4-runtime.so make \\ CFLAGS=\"-I$BINARYLIBS/kernel/dependency/openssl/comm/include\" \\ PG_CXXFLAGS=\"-I$BINARYLIBS/kernel/dependency/openssl/comm/include\" \\ LDFLAGS=\"-L$BINARYLIBS/kernel/dependency/openssl/comm/lib -L$BABELFISH_HOME/lib\" \\ CC=$CC make install 六、初始化 Babelfish 数据库 6.1 初始化数据目录 initdb -D $PGDATA 6.2 启动数据库 pg_ctl start -D $PGDATA 6.3 执行初始化脚本 ./psql postgres \u003c\u003c 'EOF' CREATE USER babelfish_user WITH SUPERUSER CREATEDB CREATEROLE PASSWORD '12345678' INHERIT; DROP DATABASE IF EXISTS babelfish_db; CREATE DATABASE babelfish_db OWNER babelfish_user; \\c babelfish_db; CREATE EXTENSION IF NOT EXISTS \"babelfishpg_tds\" CASCADE; GRANT ALL ON SCHEMA sys TO babelfish_user; ALTER USER babelfish_user CREATEDB; ALTER SYSTEM SET babelfishpg_tsql.database_name = 'babelfish_db'; ALTER SYSTEM SET babelfishpg_tsql.migration_mode = 'multi-db'; SELECT pg_reload_conf(); CALL sys.initialize_babelfish('babelfish_user'); EOF 提示符变为 babelfish_db=\u003e 表示初始化成功。\n七、安装 mssql-tools（用于 1433 端口测试） 离线环境需提前准备以下 rpm 包：\nmsodbcsql17-*.rpm mssql-tools-*.rpm # 需要 root 安装 su - root rpm -ivh msodbcsql17-17.10.6.1-1.x86_64.rpm rpm -ivh mssql-tools-17.9.1.1-1.x86_64.rpm 安装后测试连接：\nexport PATH=$PATH:/opt/mssql-tools/bin sqlcmd -S 127.0.0.1,1433 -U babelfish_user -P 12345678 八、常见问题排查 错误信息 原因 解决方案 cannot find -lantlr4-runtime antlr4 库未找到 创建软链接，添加 LD_LIBRARY_PATH libcrypto.so.1.1: No such file OpenSSL 库路径未配置 添加到 /etc/ld.so.conf.d 并 ldconfig GLIBCXX_3.4.21 not found 系统 libstdc++ 版本过低 将 gcc7.3/lib64 加入 LD_LIBRARY_PATH CMake 3.7 or higher required 使用了系统旧版 cmake export cmake=$(which cmake)，确保 PATH 中项目 cmake 在前 openssl/sha.h: No such file OpenSSL 头文件路径未指定 添加 CFLAGS/PG_CFLAGS Permission denied (cmake) 用户无权访问 root 目录下的工具 chmod 755 /root 或将工具迁移到 vast 用户目录 schema \"sys\" does not exist babelfishpg_tsql 加载失败 先解决库依赖问题，重新执行初始化脚本 cannot drop active babelfish database 重复执行初始化脚本 先断开所有连接再执行，或忽略（不影响结果） 九、SSH Key 配置（用于 Git） ssh-keygen -t rsa -b 4096 -C \"your_email@example.com\" # 一路回车使用默认路径 # 查看公钥，添加到 Git 平台 cat ~/.ssh/id_rsa.pub ",
+  "wordCount" : "470",
+  "inLanguage": "en",
+  "datePublished": "2026-02-27T14:30:01+08:00",
+  "dateModified": "2026-02-27T14:30:01+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/database/babelfish_build/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      Babelfish搭建指南
+    </h1>
+    <div class="post-meta">
+      <span title='2026-02-27 14:30:01 +0800 CST'>February 27, 2026</span>&nbsp;·&nbsp;<span>3 min</span>&nbsp;·&nbsp;<span>470 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#babelfish-%e7%bc%96%e8%af%91%e7%8e%af%e5%a2%83%e6%90%ad%e5%bb%ba%e6%8c%87%e5%8d%97" aria-label="Babelfish 编译环境搭建指南">Babelfish 编译环境搭建指南</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e5%88%9b%e5%bb%ba%e7%94%a8%e6%88%b7" aria-label="一、创建用户">一、创建用户</a></li>
+                <li>
+                    <a href="#%e4%ba%8c%e9%85%8d%e7%bd%ae%e7%8e%af%e5%a2%83%e5%8f%98%e9%87%8f" aria-label="二、配置环境变量">二、配置环境变量</a></li>
+                <li>
+                    <a href="#%e4%b8%89%e9%85%8d%e7%bd%ae%e7%b3%bb%e7%bb%9f%e5%8a%a8%e6%80%81%e5%ba%93%e9%9c%80-root" aria-label="三、配置系统动态库（需 root）">三、配置系统动态库（需 root）</a><ul>
+                        
+                <li>
+                    <a href="#31-%e6%b7%bb%e5%8a%a0-openssl-%e5%ba%93%e8%b7%af%e5%be%84" aria-label="3.1 添加 OpenSSL 库路径">3.1 添加 OpenSSL 库路径</a></li>
+                <li>
+                    <a href="#32-%e5%88%9b%e5%bb%ba-antlr4-%e8%bd%af%e9%93%be%e6%8e%a5" aria-label="3.2 创建 antlr4 软链接">3.2 创建 antlr4 软链接</a></li>
+                <li>
+                    <a href="#33-%e5%b0%86-antlr4-%e5%a4%b4%e6%96%87%e4%bb%b6%e6%8b%b7%e8%b4%9d%e5%88%b0%e7%b3%bb%e7%bb%9f%e7%9b%ae%e5%bd%95%e9%9c%80-root" aria-label="3.3 将 antlr4 头文件拷贝到系统目录（需 root）">3.3 将 antlr4 头文件拷贝到系统目录（需 root）</a></li></ul>
+                </li>
+                <li>
+                    <a href="#%e5%9b%9b%e7%bc%96%e8%af%91-vastbase-server%e5%86%85%e6%a0%b8" aria-label="四、编译 vastbase-server（内核）">四、编译 vastbase-server（内核）</a></li>
+                <li>
+                    <a href="#%e4%ba%94%e7%bc%96%e8%af%91-sqlserver-extensionsbabelfish-%e6%89%a9%e5%b1%95" aria-label="五、编译 sqlserver-extensions（Babelfish 扩展）">五、编译 sqlserver-extensions（Babelfish 扩展）</a><ul>
+                        
+                <li>
+                    <a href="#51-%e7%bc%96%e8%af%91%e9%a1%ba%e5%ba%8f" aria-label="5.1 编译顺序">5.1 编译顺序</a></li>
+                <li>
+                    <a href="#52-%e9%80%9a%e7%94%a8%e7%bc%96%e8%af%91%e5%91%bd%e4%bb%a4" aria-label="5.2 通用编译命令">5.2 通用编译命令</a></li>
+                <li>
+                    <a href="#53-babelfishpg_tsql-%e7%89%b9%e6%ae%8a%e5%a4%84%e7%90%86" aria-label="5.3 babelfishpg_tsql 特殊处理">5.3 babelfishpg_tsql 特殊处理</a></li></ul>
+                </li>
+                <li>
+                    <a href="#%e5%85%ad%e5%88%9d%e5%a7%8b%e5%8c%96-babelfish-%e6%95%b0%e6%8d%ae%e5%ba%93" aria-label="六、初始化 Babelfish 数据库">六、初始化 Babelfish 数据库</a><ul>
+                        
+                <li>
+                    <a href="#61-%e5%88%9d%e5%a7%8b%e5%8c%96%e6%95%b0%e6%8d%ae%e7%9b%ae%e5%bd%95" aria-label="6.1 初始化数据目录">6.1 初始化数据目录</a></li>
+                <li>
+                    <a href="#62-%e5%90%af%e5%8a%a8%e6%95%b0%e6%8d%ae%e5%ba%93" aria-label="6.2 启动数据库">6.2 启动数据库</a></li>
+                <li>
+                    <a href="#63-%e6%89%a7%e8%a1%8c%e5%88%9d%e5%a7%8b%e5%8c%96%e8%84%9a%e6%9c%ac" aria-label="6.3 执行初始化脚本">6.3 执行初始化脚本</a></li></ul>
+                </li>
+                <li>
+                    <a href="#%e4%b8%83%e5%ae%89%e8%a3%85-mssql-tools%e7%94%a8%e4%ba%8e-1433-%e7%ab%af%e5%8f%a3%e6%b5%8b%e8%af%95" aria-label="七、安装 mssql-tools（用于 1433 端口测试）">七、安装 mssql-tools（用于 1433 端口测试）</a></li>
+                <li>
+                    <a href="#%e5%85%ab%e5%b8%b8%e8%a7%81%e9%97%ae%e9%a2%98%e6%8e%92%e6%9f%a5" aria-label="八、常见问题排查">八、常见问题排查</a></li>
+                <li>
+                    <a href="#%e4%b9%9dssh-key-%e9%85%8d%e7%bd%ae%e7%94%a8%e4%ba%8e-git" aria-label="九、SSH Key 配置（用于 Git）">九、SSH Key 配置（用于 Git）</a>
+                </li>
+            </ul>
+            </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h1 id="babelfish-编译环境搭建指南">Babelfish 编译环境搭建指南<a hidden class="anchor" aria-hidden="true" href="#babelfish-编译环境搭建指南">#</a></h1>
+<blockquote>
+<p>适用环境：CentOS 7，离线环境，vastbase-server + sqlserver-extensions</p>
+</blockquote>
+<hr>
+<h2 id="一创建用户">一、创建用户<a hidden class="anchor" aria-hidden="true" href="#一创建用户">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="c1"># 创建用户并设置密码</span>
+</span></span><span class="line"><span class="cl">useradd vast
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;vast:gauss@123&#34;</span> <span class="p">|</span> chpasswd
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 授予 sudo 权限（加入 wheel 组）</span>
+</span></span><span class="line"><span class="cl">usermod -aG wheel vast
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 验证</span>
+</span></span><span class="line"><span class="cl">id vast
+</span></span></code></pre></div><hr>
+<h2 id="二配置环境变量">二、配置环境变量<a hidden class="anchor" aria-hidden="true" href="#二配置环境变量">#</a></h2>
+<p>将以下内容写入 <code>~/.bash_profile</code>，<strong>每次登录自动生效</strong>：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">cat &gt;&gt; ~/.bash_profile <span class="s">&lt;&lt; &#39;EOF&#39;
+</span></span></span><span class="line"><span class="cl"><span class="s"># Babelfish 基础路径
+</span></span></span><span class="line"><span class="cl"><span class="s">export BABELFISH_HOME=~/vastbase-server/install
+</span></span></span><span class="line"><span class="cl"><span class="s">export BINARYLIBS=~/vastbase-server/binarylibs
+</span></span></span><span class="line"><span class="cl"><span class="s">export GCC_PATH=$BINARYLIBS/buildtools/gcc7.3
+</span></span></span><span class="line"><span class="cl"><span class="s">
+</span></span></span><span class="line"><span class="cl"><span class="s"># 编译器
+</span></span></span><span class="line"><span class="cl"><span class="s">export CC=$GCC_PATH/gcc/bin/gcc
+</span></span></span><span class="line"><span class="cl"><span class="s">export CXX=$GCC_PATH/gcc/bin/g++
+</span></span></span><span class="line"><span class="cl"><span class="s">
+</span></span></span><span class="line"><span class="cl"><span class="s"># cmake（优先使用项目自带版本，放在 PATH 最前面）
+</span></span></span><span class="line"><span class="cl"><span class="s">export PATH=$BINARYLIBS/buildtools/cmake/bin:$GCC_PATH/gcc/bin:$BABELFISH_HOME/bin:$PATH
+</span></span></span><span class="line"><span class="cl"><span class="s">
+</span></span></span><span class="line"><span class="cl"><span class="s"># 动态库路径
+</span></span></span><span class="line"><span class="cl"><span class="s">export LD_LIBRARY_PATH=$GCC_PATH/gcc/lib64:$BABELFISH_HOME/lib:$BINARYLIBS/kernel/dependency/openssl/comm/lib:$LD_LIBRARY_PATH
+</span></span></span><span class="line"><span class="cl"><span class="s">
+</span></span></span><span class="line"><span class="cl"><span class="s"># cmake 变量（防止 Makefile 调用系统旧版本）
+</span></span></span><span class="line"><span class="cl"><span class="s">export cmake=$(which cmake)
+</span></span></span><span class="line"><span class="cl"><span class="s">
+</span></span></span><span class="line"><span class="cl"><span class="s"># PG 相关
+</span></span></span><span class="line"><span class="cl"><span class="s">export PG_CONFIG=$BABELFISH_HOME/bin/pg_config
+</span></span></span><span class="line"><span class="cl"><span class="s">export PG_SRC=`pwd`
+</span></span></span><span class="line"><span class="cl"><span class="s">EOF</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nb">source</span> ~/.bash_profile
+</span></span></code></pre></div><p>验证工具版本：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">cmake --version   <span class="c1"># 应为 3.21.x</span>
+</span></span><span class="line"><span class="cl">gcc --version     <span class="c1"># 应为 7.3.x</span>
+</span></span></code></pre></div><hr>
+<h2 id="三配置系统动态库需-root">三、配置系统动态库（需 root）<a hidden class="anchor" aria-hidden="true" href="#三配置系统动态库需-root">#</a></h2>
+<h3 id="31-添加-openssl-库路径">3.1 添加 OpenSSL 库路径<a hidden class="anchor" aria-hidden="true" href="#31-添加-openssl-库路径">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">sudo bash -c <span class="s1">&#39;echo &#34;/home/binarylibs/kernel/dependency/openssl/comm/lib&#34; &gt; /etc/ld.so.conf.d/vastbase-openssl.conf&#39;</span>
+</span></span><span class="line"><span class="cl">sudo bash -c <span class="s1">&#39;echo &#34;/home/vast/vastbase-server/binarylibs/buildtools/gcc7.3/gcc/lib64&#34; &gt;&gt; /etc/ld.so.conf.d/vastbase-openssl.conf&#39;</span>
+</span></span><span class="line"><span class="cl">sudo ldconfig
+</span></span></code></pre></div><p>验证：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">ldconfig -p <span class="p">|</span> grep libcrypto
+</span></span><span class="line"><span class="cl">ldconfig -p <span class="p">|</span> grep libstdc++
+</span></span></code></pre></div><h3 id="32-创建-antlr4-软链接">3.2 创建 antlr4 软链接<a hidden class="anchor" aria-hidden="true" href="#32-创建-antlr4-软链接">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">ln -s <span class="nv">$BABELFISH_HOME</span>/lib/libantlr4-runtime.so.4.13.2 <span class="nv">$BABELFISH_HOME</span>/lib/libantlr4-runtime.so
+</span></span></code></pre></div><h3 id="33-将-antlr4-头文件拷贝到系统目录需-root">3.3 将 antlr4 头文件拷贝到系统目录（需 root）<a hidden class="anchor" aria-hidden="true" href="#33-将-antlr4-头文件拷贝到系统目录需-root">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="c1"># 找到头文件位置</span>
+</span></span><span class="line"><span class="cl">find ~/vastbase-server -path <span class="s2">&#34;*/antlr4*/*.h&#34;</span> 2&gt;/dev/null <span class="p">|</span> head -5
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 拷贝到系统 include</span>
+</span></span><span class="line"><span class="cl">sudo mkdir -p /usr/local/include/antlr4-runtime
+</span></span><span class="line"><span class="cl">sudo cp -r /path/to/antlr4-runtime/include/* /usr/local/include/antlr4-runtime/
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 验证</span>
+</span></span><span class="line"><span class="cl">ls /usr/local/include/antlr4-runtime/
+</span></span></code></pre></div><hr>
+<h2 id="四编译-vastbase-server内核">四、编译 vastbase-server（内核）<a hidden class="anchor" aria-hidden="true" href="#四编译-vastbase-server内核">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="nb">cd</span> ~/vastbase-server
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">./configure <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="nv">CFLAGS</span><span class="o">=</span><span class="s2">&#34;-ggdb&#34;</span> <span class="se">\
+</span></span></span><span class="line"><span class="cl">  --prefix<span class="o">=</span><span class="nv">$BABELFISH_HOME</span> <span class="se">\
+</span></span></span><span class="line"><span class="cl">  --enable-debug <span class="se">\
+</span></span></span><span class="line"><span class="cl">  --with-ldap <span class="se">\
+</span></span></span><span class="line"><span class="cl">  --with-libxml <span class="se">\
+</span></span></span><span class="line"><span class="cl">  --with-pam <span class="se">\
+</span></span></span><span class="line"><span class="cl">  --with-uuid<span class="o">=</span>ossp <span class="se">\
+</span></span></span><span class="line"><span class="cl">  --enable-nls <span class="se">\
+</span></span></span><span class="line"><span class="cl">  --with-libxslt <span class="se">\
+</span></span></span><span class="line"><span class="cl">  --with-icu <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="nv">CC</span><span class="o">=</span><span class="nv">$CC</span> <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="nv">CXX</span><span class="o">=</span><span class="nv">$CXX</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">make -j<span class="k">$(</span>nproc<span class="k">)</span>
+</span></span><span class="line"><span class="cl">make install
+</span></span></code></pre></div><hr>
+<h2 id="五编译-sqlserver-extensionsbabelfish-扩展">五、编译 sqlserver-extensions（Babelfish 扩展）<a hidden class="anchor" aria-hidden="true" href="#五编译-sqlserver-extensionsbabelfish-扩展">#</a></h2>
+<h3 id="51-编译顺序">5.1 编译顺序<a hidden class="anchor" aria-hidden="true" href="#51-编译顺序">#</a></h3>
+<p>必须按以下顺序编译安装：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-fallback" data-lang="fallback"><span class="line"><span class="cl">1. babelfishpg_money
+</span></span><span class="line"><span class="cl">2. babelfishpg_common
+</span></span><span class="line"><span class="cl">3. babelfishpg_tsql
+</span></span><span class="line"><span class="cl">4. babelfishpg_tds
+</span></span></code></pre></div><h3 id="52-通用编译命令">5.2 通用编译命令<a hidden class="anchor" aria-hidden="true" href="#52-通用编译命令">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="nb">cd</span> ~/sqlserver-extensions/contrib/&lt;插件名&gt;
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">make <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="nv">CFLAGS</span><span class="o">=</span><span class="s2">&#34;-I</span><span class="nv">$BINARYLIBS</span><span class="s2">/kernel/dependency/openssl/comm/include&#34;</span> <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="nv">PG_CFLAGS</span><span class="o">=</span><span class="s2">&#34;-I</span><span class="nv">$BINARYLIBS</span><span class="s2">/kernel/dependency/openssl/comm/include&#34;</span> <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="nv">PG_CXXFLAGS</span><span class="o">=</span><span class="s2">&#34;-I</span><span class="nv">$BINARYLIBS</span><span class="s2">/kernel/dependency/openssl/comm/include&#34;</span> <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="nv">LDFLAGS</span><span class="o">=</span><span class="s2">&#34;-L</span><span class="nv">$BINARYLIBS</span><span class="s2">/kernel/dependency/openssl/comm/lib&#34;</span> <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="nv">CC</span><span class="o">=</span><span class="nv">$CC</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">make install
+</span></span></code></pre></div><h3 id="53-babelfishpg_tsql-特殊处理">5.3 babelfishpg_tsql 特殊处理<a hidden class="anchor" aria-hidden="true" href="#53-babelfishpg_tsql-特殊处理">#</a></h3>
+<p>编译前需确保 antlr4 库和头文件就位：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="nb">cd</span> ~/sqlserver-extensions/contrib/babelfishpg_tsql
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># antlr4 runtime 软链接（如未创建）</span>
+</span></span><span class="line"><span class="cl">ls <span class="nv">$BABELFISH_HOME</span>/lib/libantlr4-runtime.so <span class="o">||</span> <span class="se">\
+</span></span></span><span class="line"><span class="cl">  ln -s <span class="nv">$BABELFISH_HOME</span>/lib/libantlr4-runtime.so.4.13.2 <span class="nv">$BABELFISH_HOME</span>/lib/libantlr4-runtime.so
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">make <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="nv">CFLAGS</span><span class="o">=</span><span class="s2">&#34;-I</span><span class="nv">$BINARYLIBS</span><span class="s2">/kernel/dependency/openssl/comm/include&#34;</span> <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="nv">PG_CXXFLAGS</span><span class="o">=</span><span class="s2">&#34;-I</span><span class="nv">$BINARYLIBS</span><span class="s2">/kernel/dependency/openssl/comm/include&#34;</span> <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="nv">LDFLAGS</span><span class="o">=</span><span class="s2">&#34;-L</span><span class="nv">$BINARYLIBS</span><span class="s2">/kernel/dependency/openssl/comm/lib -L</span><span class="nv">$BABELFISH_HOME</span><span class="s2">/lib&#34;</span> <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="nv">CC</span><span class="o">=</span><span class="nv">$CC</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">make install
+</span></span></code></pre></div><hr>
+<h2 id="六初始化-babelfish-数据库">六、初始化 Babelfish 数据库<a hidden class="anchor" aria-hidden="true" href="#六初始化-babelfish-数据库">#</a></h2>
+<h3 id="61-初始化数据目录">6.1 初始化数据目录<a hidden class="anchor" aria-hidden="true" href="#61-初始化数据目录">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">initdb -D <span class="nv">$PGDATA</span>
+</span></span></code></pre></div><h3 id="62-启动数据库">6.2 启动数据库<a hidden class="anchor" aria-hidden="true" href="#62-启动数据库">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">pg_ctl start -D <span class="nv">$PGDATA</span>
+</span></span></code></pre></div><h3 id="63-执行初始化脚本">6.3 执行初始化脚本<a hidden class="anchor" aria-hidden="true" href="#63-执行初始化脚本">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">./psql postgres <span class="s">&lt;&lt; &#39;EOF&#39;
+</span></span></span><span class="line"><span class="cl"><span class="s">CREATE USER babelfish_user WITH SUPERUSER CREATEDB CREATEROLE PASSWORD &#39;12345678&#39; INHERIT;
+</span></span></span><span class="line"><span class="cl"><span class="s">DROP DATABASE IF EXISTS babelfish_db;
+</span></span></span><span class="line"><span class="cl"><span class="s">CREATE DATABASE babelfish_db OWNER babelfish_user;
+</span></span></span><span class="line"><span class="cl"><span class="s">\c babelfish_db;
+</span></span></span><span class="line"><span class="cl"><span class="s">CREATE EXTENSION IF NOT EXISTS &#34;babelfishpg_tds&#34; CASCADE;
+</span></span></span><span class="line"><span class="cl"><span class="s">GRANT ALL ON SCHEMA sys TO babelfish_user;
+</span></span></span><span class="line"><span class="cl"><span class="s">ALTER USER babelfish_user CREATEDB;
+</span></span></span><span class="line"><span class="cl"><span class="s">ALTER SYSTEM SET babelfishpg_tsql.database_name = &#39;babelfish_db&#39;;
+</span></span></span><span class="line"><span class="cl"><span class="s">ALTER SYSTEM SET babelfishpg_tsql.migration_mode = &#39;multi-db&#39;;
+</span></span></span><span class="line"><span class="cl"><span class="s">SELECT pg_reload_conf();
+</span></span></span><span class="line"><span class="cl"><span class="s">CALL sys.initialize_babelfish(&#39;babelfish_user&#39;);
+</span></span></span><span class="line"><span class="cl"><span class="s">EOF</span>
+</span></span></code></pre></div><p>提示符变为 <code>babelfish_db=&gt;</code> 表示初始化成功。</p>
+<hr>
+<h2 id="七安装-mssql-tools用于-1433-端口测试">七、安装 mssql-tools（用于 1433 端口测试）<a hidden class="anchor" aria-hidden="true" href="#七安装-mssql-tools用于-1433-端口测试">#</a></h2>
+<p>离线环境需提前准备以下 rpm 包：</p>
+<ul>
+<li><code>msodbcsql17-*.rpm</code></li>
+<li><code>mssql-tools-*.rpm</code></li>
+</ul>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="c1"># 需要 root 安装</span>
+</span></span><span class="line"><span class="cl">su - root
+</span></span><span class="line"><span class="cl">rpm -ivh msodbcsql17-17.10.6.1-1.x86_64.rpm
+</span></span><span class="line"><span class="cl">rpm -ivh mssql-tools-17.9.1.1-1.x86_64.rpm
+</span></span></code></pre></div><p>安装后测试连接：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">PATH</span><span class="o">=</span><span class="nv">$PATH</span>:/opt/mssql-tools/bin
+</span></span><span class="line"><span class="cl">sqlcmd -S 127.0.0.1,1433 -U babelfish_user -P <span class="m">12345678</span>
+</span></span></code></pre></div><hr>
+<h2 id="八常见问题排查">八、常见问题排查<a hidden class="anchor" aria-hidden="true" href="#八常见问题排查">#</a></h2>
+<table>
+  <thead>
+      <tr>
+          <th>错误信息</th>
+          <th>原因</th>
+          <th>解决方案</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>cannot find -lantlr4-runtime</code></td>
+          <td>antlr4 库未找到</td>
+          <td>创建软链接，添加 LD_LIBRARY_PATH</td>
+      </tr>
+      <tr>
+          <td><code>libcrypto.so.1.1: No such file</code></td>
+          <td>OpenSSL 库路径未配置</td>
+          <td>添加到 /etc/ld.so.conf.d 并 ldconfig</td>
+      </tr>
+      <tr>
+          <td><code>GLIBCXX_3.4.21 not found</code></td>
+          <td>系统 libstdc++ 版本过低</td>
+          <td>将 gcc7.3/lib64 加入 LD_LIBRARY_PATH</td>
+      </tr>
+      <tr>
+          <td><code>CMake 3.7 or higher required</code></td>
+          <td>使用了系统旧版 cmake</td>
+          <td><code>export cmake=$(which cmake)</code>，确保 PATH 中项目 cmake 在前</td>
+      </tr>
+      <tr>
+          <td><code>openssl/sha.h: No such file</code></td>
+          <td>OpenSSL 头文件路径未指定</td>
+          <td>添加 CFLAGS/PG_CFLAGS</td>
+      </tr>
+      <tr>
+          <td><code>Permission denied</code> (cmake)</td>
+          <td>用户无权访问 root 目录下的工具</td>
+          <td><code>chmod 755 /root</code> 或将工具迁移到 vast 用户目录</td>
+      </tr>
+      <tr>
+          <td><code>schema &quot;sys&quot; does not exist</code></td>
+          <td>babelfishpg_tsql 加载失败</td>
+          <td>先解决库依赖问题，重新执行初始化脚本</td>
+      </tr>
+      <tr>
+          <td><code>cannot drop active babelfish database</code></td>
+          <td>重复执行初始化脚本</td>
+          <td>先断开所有连接再执行，或忽略（不影响结果）</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="九ssh-key-配置用于-git">九、SSH Key 配置（用于 Git）<a hidden class="anchor" aria-hidden="true" href="#九ssh-key-配置用于-git">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">ssh-keygen -t rsa -b <span class="m">4096</span> -C <span class="s2">&#34;your_email@example.com&#34;</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># 一路回车使用默认路径</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 查看公钥，添加到 Git 平台</span>
+</span></span><span class="line"><span class="cl">cat ~/.ssh/id_rsa.pub
+</span></span></code></pre></div>
+
+  </div>
+
+  
+  <footer class="post-footer">
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./Database</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        console.log("Checking submission status...");
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+
+    updateStreakDisplay();
+
+    
+    const PROXY_URL = 'https://corsproxy.io/?'; 
+    const TARGET_URL = 'https://leetcode.cn/graphql';
+    
+    const query = `
+    query questionOfToday {
+        todayRecord {
+            date
+            question {
+                questionFrontendId
+                titleSlug
+                translatedTitle 
+                difficulty
+                translatedContent
+                topicTags { translatedName }
+                codeSnippets { langSlug code }
+            }
+        }
+    }`;
+
+    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: query })
+    })
+    .then(response => response.json())
+    .then(result => {
+        const record = result.data.todayRecord[0];
+        if (!record) throw new Error("Empty data");
+        
+        lcDataGlobal = {
+            date: record.date,
+            titleSlug: record.question.titleSlug, 
+            link: `/problems/${record.question.titleSlug}/description/`,
+            title: record.question.translatedTitle,
+            difficulty: record.question.difficulty,
+            content: record.question.translatedContent,
+            snippets: record.question.codeSnippets
+        };
+
+        
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link; 
+            linkBtn.target = "_blank";            
+            linkBtn.style.pointerEvents = "auto"; 
+            linkBtn.style.opacity = "1";          
+        }
+
+        
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === record.date) {
+            showSolvedState();
+        } else {
+            
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = record.date;
+            document.getElementById('lc-title').innerText = `${record.question.questionFrontendId}. ${record.question.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[record.question.difficulty] || record.question.difficulty;
+            diffEl.className = `lc-difficulty diff-${record.question.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Init Error:", err);
+        document.querySelector('.leetcode-loading').innerHTML = "加载失败 (请检查网络)";
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    const PROXY_URL = 'https://corsproxy.io/?'; 
+    const TARGET_URL = 'https://leetcode.cn/graphql';
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question {
+                titleSlug
+            }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) {
+        checkBtn.innerText = "⏳ Verifying...";
+        checkBtn.disabled = true;
+    }
+
+    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    let codeTemplate = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) codeTemplate = cppSnippet.code;
+    }
+
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+    }
+    flaskEditor.updateCode(codeTemplate);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    key: "21587123-e75f-4c79-be39-a884b288c903",
+    model: "doubao-seed-1-8-251228",
+    api: "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+    
+    proxy: "https://thingproxy.freeboard.io/fetch/"
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        const finalUrl = AI_CONFIG.proxy + AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`,
+                'X-Requested-With': 'XMLHttpRequest' 
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>
