@@ -1339,11 +1339,17 @@ document.onkeydown = function(e) {
 
 
 const AI_CONFIG = {
-    key: "21587123-e75f-4c79-be39-a884b288c903",
-    model: "doubao-seed-1-8-251228",
-    api: "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
     
-    proxy: "https://thingproxy.freeboard.io/fetch/"
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
 };
 
 let chatHistory = [
@@ -1389,7 +1395,8 @@ async function sendAIMessage() {
 
     try {
         
-        const finalUrl = AI_CONFIG.proxy + AI_CONFIG.api;
+        
+        const finalUrl = AI_CONFIG.api;
 
         console.log("AI Request:", finalUrl);
 
@@ -1397,8 +1404,7 @@ async function sendAIMessage() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${AI_CONFIG.key}`,
-                'X-Requested-With': 'XMLHttpRequest' 
+                'Authorization': `Bearer ${AI_CONFIG.key}`
             },
             body: JSON.stringify({
                 model: AI_CONFIG.model,

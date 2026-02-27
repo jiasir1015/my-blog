@@ -556,11 +556,17 @@ document.onkeydown = function(e) {
 
 // 配置区域
 const AI_CONFIG = {
-    key: "21587123-e75f-4c79-be39-a884b288c903",
-    model: "doubao-seed-1-8-251228",
-    api: "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-    // 使用 ThingProxy 解决 CORS 问题 (比 corsproxy 更稳)
-    proxy: "https://thingproxy.freeboard.io/fetch/"
+    // 你的 API Key
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    // 你的 Model ID (Endpoint ID)
+    model: "doubao-seed-1-8-251228", 
+    
+    // 🔴 核心修改：这里直接填你刚才创建的 Cloudflare Worker 地址
+    // 不要加任何 proxy 前缀，直接填 Worker 地址
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    // 把 proxy 字段留空，因为 Worker 本身就是代理
+    proxy: "" 
 };
 
 let chatHistory = [
@@ -606,7 +612,8 @@ async function sendAIMessage() {
 
     try {
         // 拼接代理地址
-        const finalUrl = AI_CONFIG.proxy + AI_CONFIG.api;
+        // const finalUrl = AI_CONFIG.proxy + AI_CONFIG.api;
+        const finalUrl = AI_CONFIG.api;
 
         console.log("AI Request:", finalUrl);
 
@@ -614,8 +621,7 @@ async function sendAIMessage() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${AI_CONFIG.key}`,
-                'X-Requested-With': 'XMLHttpRequest' // 代理友好头
+                'Authorization': `Bearer ${AI_CONFIG.key}`
             },
             body: JSON.stringify({
                 model: AI_CONFIG.model,
