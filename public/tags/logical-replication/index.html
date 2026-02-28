@@ -10,7 +10,7 @@
 <meta name="description" content="">
 <meta name="author" content="Me">
 <link rel="canonical" href="http://localhost:1313/tags/logical-replication/">
-<link crossorigin="anonymous" href="/assets/css/stylesheet.06cc9433b1412353ca9857a2d241281c54c56ec0128665f9c383cbffdf3eef48.css" integrity="sha256-BsyUM7FBI1PKmFei0kEoHFTFbsAShmX5w4PL/98&#43;70g=" rel="preload stylesheet" as="style">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.cc1a7a72a1bc0646d1795a84408fdee4b59a3718ab8eaf8c076fdc6394b5648d.css" integrity="sha256-zBp6cqG8BkbReVqEQI/e5LWaNxirjq&#43;MB2/cY5S1ZI0=" rel="preload stylesheet" as="style">
 <link rel="icon" href="http://localhost:1313/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
@@ -581,6 +581,15 @@ document.addEventListener("visibilitychange", function() {
 function initLeetCodeWidget() {
     const lcWidget = document.getElementById('leetcode-widget');
     if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+
     updateStreakDisplay();
 
     
@@ -623,9 +632,19 @@ function initLeetCodeWidget() {
             snippets: record.question.codeSnippets
         };
 
+        
         document.querySelector('.leetcode-loading').style.display = 'none';
         document.querySelector('.leetcode-content').style.display = 'block';
 
+        
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link; 
+            linkBtn.target = "_blank";            
+            linkBtn.style.pointerEvents = "auto"; 
+            linkBtn.style.opacity = "1";          
+        }
+
+        
         const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
         if (lastSolved === record.date) {
             showSolvedState();
@@ -634,7 +653,6 @@ function initLeetCodeWidget() {
             document.getElementById('lc-state-todo').style.display = 'block';
             document.getElementById('lc-date').innerText = record.date;
             document.getElementById('lc-title').innerText = `${record.question.questionFrontendId}. ${record.question.translatedTitle}`;
-            document.getElementById('lc-link').href = "https://leetcode.cn" + lcDataGlobal.link;
             
             const diffEl = document.getElementById('lc-difficulty');
             const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
@@ -642,7 +660,10 @@ function initLeetCodeWidget() {
             diffEl.className = `lc-difficulty diff-${record.question.difficulty.toLowerCase()}`;
         }
     })
-    .catch(err => console.error(err));
+    .catch(err => {
+        console.error("LeetCode Init Error:", err);
+        document.querySelector('.leetcode-loading').innerHTML = "加载失败 (请检查网络)";
+    });
 }
 
 
@@ -880,7 +901,6 @@ document.onkeydown = function(e) {
 
 
 <div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
-    
     <svg viewBox="0 0 24 24">
         <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
     </svg>
@@ -907,20 +927,26 @@ document.onkeydown = function(e) {
  
 
 
-const API_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions";
-const API_KEY = "21587123-e75f-4c79-be39-a884b288c903"; 
-
-
-const MODEL_ID = "doubao-seed-1-8-251228"; 
-
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
 
 let chatHistory = [
     { 
         role: "system", 
-        content: "你是一个专业的数据库内核开发专家，擅长 C++、Rust、Linux 内核和分布式系统。请用简洁、极客的风格回答技术问题。回答支持 Markdown 格式。" 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
     }
 ];
-
 
 function toggleAIChat() {
     const win = document.getElementById('ai-chat-window');
@@ -928,11 +954,9 @@ function toggleAIChat() {
         win.style.display = 'none';
     } else {
         win.style.display = 'flex';
-        
         setTimeout(() => document.getElementById('ai-input').focus(), 100);
     }
 }
-
 
 function handleAIEnter(e) {
     if (e.key === 'Enter') sendAIMessage();
@@ -948,7 +972,7 @@ async function sendAIMessage() {
     
     addMessage(msgText, 'user');
     input.value = '';
-    btn.disabled = true; 
+    btn.disabled = true;
     
     
     chatHistory.push({ role: "user", content: msgText });
@@ -956,84 +980,81 @@ async function sendAIMessage() {
     
     const loadingId = 'loading-' + Date.now();
     const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
-    botMsgDiv.classList.add('typing-dots'); 
+    botMsgDiv.classList.add('typing-dots');
 
     try {
         
         
-        const proxyUrl = "https://corsproxy.io/?";
-        
-        const targetUrl = "https://ark.cn-beijing.volces.com/api/v3/chat/completions";
+        const finalUrl = AI_CONFIG.api;
 
-        const response = await fetch(proxyUrl + targetUrl, {
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${API_KEY}`
+                'Authorization': `Bearer ${AI_CONFIG.key}`
             },
             body: JSON.stringify({
-                model: MODEL_ID, 
+                model: AI_CONFIG.model,
                 messages: chatHistory, 
-                stream: false,         
+                stream: false,
                 temperature: 0.7
             })
         });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
 
         const data = await response.json();
         
         
         botMsgDiv.classList.remove('typing-dots');
 
-        if (data.error) {
-            throw new Error(data.error.message);
-        }
-
         if (data.choices && data.choices.length > 0) {
             const reply = data.choices[0].message.content;
             
-            
-            
             botMsgDiv.innerHTML = formatAIResponse(reply);
-            
             
             chatHistory.push({ role: "assistant", content: reply });
         } else {
-            console.error("API Error:", data);
-            botMsgDiv.innerText = "Error: API 返回内容为空";
+            botMsgDiv.innerText = "Error: API 返回空数据";
         }
 
     } catch (error) {
-        console.error("Network Error:", error);
+        console.error("AI Error:", error);
         botMsgDiv.classList.remove('typing-dots');
         
-        botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
     } finally {
         btn.disabled = false;
-        
         setTimeout(() => input.focus(), 100);
     }
 }
-
 
 function addMessage(text, role, id = null) {
     const container = document.getElementById('ai-messages');
     const div = document.createElement('div');
     div.className = `ai-msg ${role}`;
     if (id) div.id = id;
-    div.innerText = text; 
+    div.innerText = text;
     container.appendChild(div);
-    container.scrollTop = container.scrollHeight; 
+    container.scrollTop = container.scrollHeight;
     return div;
 }
 
-
 function formatAIResponse(text) {
-    
     let formatted = text
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
-
     
     
     formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
@@ -1045,7 +1066,6 @@ function formatAIResponse(text) {
     
     
     formatted = formatted.replace(/\n/g, "<br>");
-    
     return formatted;
 }
 </script>
