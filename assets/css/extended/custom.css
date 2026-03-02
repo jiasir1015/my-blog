@@ -1118,3 +1118,17 @@ body.dark .lc-problem-text pre { background: #333; }
 /* Loading Animation */
 .typing-dots::after { content: '...'; animation: typing 1.5s infinite; }
 @keyframes typing { 0% { content: '.'; } 33% { content: '..'; } 66% { content: '...'; } }
+
+/* 重置按钮样式 */
+.reset-btn {
+    background: transparent;
+    border: 1px solid #666;
+    color: #888;
+    padding: 8px 12px;
+    margin-right: 5px;
+}
+
+.reset-btn:hover {
+    border-color: #ff4d4d;
+    color: #ff4d4d; /* 悬停变红，警示重置 */
+}

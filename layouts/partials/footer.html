@@ -475,28 +475,73 @@ function updateStreakDisplay() {
 function openLeetCodeModal() {
     if (!lcDataGlobal) return;
     document.getElementById('lc-modal').style.display = 'block';
-    document.getElementById('modal-title').innerText = lcDataGlobal.title;
     
+    // 1. 填充题目信息
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
     const diffEl = document.getElementById('modal-diff');
     const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
     diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
     diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
-    
     document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
 
-    let codeTemplate = "// C++ snippet not found.";
+    // 2. 确定当前题目的缓存 Key (使用 titleSlug 确保唯一性)
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    // 3. 获取官方模板
+    let defaultCode = "// C++ snippet not found.";
     if (lcDataGlobal.snippets) {
         const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
-        if (cppSnippet) codeTemplate = cppSnippet.code;
+        if (cppSnippet) defaultCode = cppSnippet.code;
     }
 
+    // 4. 初始化编辑器 (如果尚未初始化)
     if (!flaskEditor) {
         flaskEditor = new CodeFlask('#code-editor', {
             language: 'clike',
             lineNumbers: true
         });
+
+        // 🟢 关键：监听输入事件，自动保存到 LocalStorage
+        flaskEditor.onUpdate((code) => {
+            // 获取当前题目的 Key (因为 flaskEditor 是全局单例，必须实时获取)
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
     }
-    flaskEditor.updateCode(codeTemplate);
+
+    // 5. 决定显示什么代码
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        // 如果有缓存，加载缓存
+        flaskEditor.updateCode(savedCode);
+    } else {
+        // 没有缓存，加载官方默认模板
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+// 新增：重置代码
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    // 1. 获取官方模板
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    // 2. 清除缓存
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    // 3. 恢复编辑器内容
+    flaskEditor.updateCode(defaultCode);
 }
 
 function closeLeetCodeModal() {
