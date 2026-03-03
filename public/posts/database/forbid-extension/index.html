@@ -33,7 +33,7 @@
 ">
 <meta name="author" content="Me">
 <link rel="canonical" href="http://localhost:1313/posts/database/forbid-extension/">
-<link crossorigin="anonymous" href="/assets/css/stylesheet.cc1a7a72a1bc0646d1795a84408fdee4b59a3718ab8eaf8c076fdc6394b5648d.css" integrity="sha256-zBp6cqG8BkbReVqEQI/e5LWaNxirjq&#43;MB2/cY5S1ZI0=" rel="preload stylesheet" as="style">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.c4b1cb4d6ac76f08d6d9adf3f8ae2ef1847c2bc8378bc8d6a67e24a8690b647a.css" integrity="sha256-xLHLTWrHbwjW2a3z&#43;K4u8YR8K8g3i8jWpn4kqGkLZHo=" rel="preload stylesheet" as="style">
 <link rel="icon" href="http://localhost:1313/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
@@ -1020,28 +1020,73 @@ function updateStreakDisplay() {
 function openLeetCodeModal() {
     if (!lcDataGlobal) return;
     document.getElementById('lc-modal').style.display = 'block';
-    document.getElementById('modal-title').innerText = lcDataGlobal.title;
     
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
     const diffEl = document.getElementById('modal-diff');
     const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
     diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
     diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
-    
     document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
 
-    let codeTemplate = "// C++ snippet not found.";
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
     if (lcDataGlobal.snippets) {
         const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
-        if (cppSnippet) codeTemplate = cppSnippet.code;
+        if (cppSnippet) defaultCode = cppSnippet.code;
     }
 
+    
     if (!flaskEditor) {
         flaskEditor = new CodeFlask('#code-editor', {
             language: 'clike',
             lineNumbers: true
         });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
     }
-    flaskEditor.updateCode(codeTemplate);
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
 }
 
 function closeLeetCodeModal() {

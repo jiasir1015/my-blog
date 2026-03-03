@@ -1,0 +1,22 @@
+Watching for changes in /Users/jiaxuhui/my-blog/archetypes, /Users/jiaxuhui/my-blog/assets/css, /Users/jiaxuhui/my-blog/content/posts, /Users/jiaxuhui/my-blog/data, /Users/jiaxuhui/my-blog/i18n, /Users/jiaxuhui/my-blog/layouts/{_default,partials,shortcodes}, /Users/jiaxuhui/my-blog/static/{cats,images}, /Users/jiaxuhui/my-blog/themes/PaperMod/assets/{css,js}, /Users/jiaxuhui/my-blog/themes/PaperMod/i18n, /Users/jiaxuhui/my-blog/themes/PaperMod/layouts/{_default,partials,shortcodes}
+Watching for config changes in /Users/jiaxuhui/my-blog/hugo.toml
+Start building sites … 
+hugo v0.155.3+extended+withdeploy darwin/arm64 BuildDate=2026-02-08T16:40:42Z VendorInfo=Homebrew
+
+
+                  │ EN 
+──────────────────┼────
+ Pages            │ 40 
+ Paginator pages  │  0 
+ Non-page files   │  1 
+ Static files     │ 10 
+ Processed images │  0 
+ Aliases          │ 12 
+ Cleaned          │  0 
+
+Built in 22 ms
+Environment: "development"
+Serving pages from disk
+Running in Fast Render Mode. For full rebuilds on change: hugo server --disableFastRender
+Web Server is available at http://localhost:1313/ (bind address 127.0.0.1) 
+Press Ctrl+C to stop
