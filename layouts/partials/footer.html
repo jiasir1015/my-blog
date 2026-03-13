@@ -188,20 +188,57 @@ function switchWeChatTab(tabName) {
 <script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
 
 <script>
+/* =================================================================
+   1. LeetCode CN Logic (专题特训版 - 按周固定题型)
+   ================================================================= */
 const MY_LEETCODE_USERNAME = "hashmpa"; 
 let lcDataGlobal = null;
 let flaskEditor = null;
 const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
 const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
 
+// 📚 8周高频经典特训计划 (你可以随时修改里面的 slug)
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", // 第 1 周
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", // 第 2 周
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", // 第 3 周
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", // 第 4 周
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", // 第 5 周
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", // 第 6 周
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", // 第 7 周
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", // 第 8 周
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
 document.addEventListener("DOMContentLoaded", function() {
     initLeetCodeWidget();
 });
 
-// 页面切回时检测
 document.addEventListener("visibilitychange", function() {
     if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
-        console.log("Checking submission status...");
         checkSubmissionStatus(true); 
     }
 });
@@ -210,87 +247,122 @@ function initLeetCodeWidget() {
     const lcWidget = document.getElementById('leetcode-widget');
     if (!lcWidget) return;
 
-    // --- 1. 初始化阶段：禁用 Source 按钮，防止误触报错 ---
+    // 1. 初始化UI：防误触
     const linkBtn = document.getElementById('lc-link');
     if (linkBtn) {
-        linkBtn.style.pointerEvents = "none"; // 禁止点击
-        linkBtn.style.opacity = "0.5";        // 视觉上变灰，表示加载中
-        linkBtn.href = "javascript:void(0);"; // 关键：移除 #，防止触发页面滚动脚本报错
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
     }
-
     updateStreakDisplay();
 
-    // CORS Proxy + LeetCode CN GraphQL
-    const PROXY_URL = 'https://corsproxy.io/?'; 
-    const TARGET_URL = 'https://leetcode.cn/graphql';
+    // 2. 核心：计算今天是今年的第几周，以及星期几
+    const today = new Date();
+    // 获取ISO周数 (1-52)
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; // 周一:0, 周二:1 ... 周日:6
+
+    // 取出本周的主题和今天的题目Slug
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    // 更新组件标题为本周专题
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    // 3. 构建 GraphQL 查询 (直接查询特定题目的详情)
+    // 🔴 修复 1：换回 corsproxy.io (thingproxy 经常 504 挂掉)
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
     
     const query = `
-    query questionOfToday {
-        todayRecord {
-            date
-            question {
-                questionFrontendId
-                titleSlug
-                translatedTitle 
-                difficulty
-                translatedContent
-                topicTags { translatedName }
-                codeSnippets { langSlug code }
-            }
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
         }
     }`;
 
-    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+    const todayStr = today.toISOString().split('T')[0];
+
+    // 直接请求你的 Worker
+    fetch(LEETCODE_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: query })
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
     })
-    .then(response => response.json())
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
     .then(result => {
-        const record = result.data.todayRecord[0];
-        if (!record) throw new Error("Empty data");
+        // 增加数据校验，防止返回 null
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
         
+        const data = result.data.question;
+
         lcDataGlobal = {
-            date: record.date,
-            titleSlug: record.question.titleSlug, 
-            link: `/problems/${record.question.titleSlug}/description/`,
-            title: record.question.translatedTitle,
-            difficulty: record.question.difficulty,
-            content: record.question.translatedContent,
-            snippets: record.question.codeSnippets
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
         };
 
-        // 停止 Loading
         document.querySelector('.leetcode-loading').style.display = 'none';
         document.querySelector('.leetcode-content').style.display = 'block';
 
-        // --- 2. 数据加载成功：修复链接并恢复点击 ---
         if (linkBtn) {
-            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link; // 写入真实链接
-            linkBtn.target = "_blank";            // 确保新窗口打开
-            linkBtn.style.pointerEvents = "auto"; // 恢复可点击
-            linkBtn.style.opacity = "1";          // 恢复不透明度
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
         }
 
-        // 检查打卡状态
         const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
-        if (lastSolved === record.date) {
+        if (lastSolved === todayStr) {
             showSolvedState();
         } else {
-            // Fill UI (未完成状态)
             document.getElementById('lc-state-todo').style.display = 'block';
-            document.getElementById('lc-date').innerText = record.date;
-            document.getElementById('lc-title').innerText = `${record.question.questionFrontendId}. ${record.question.translatedTitle}`;
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
             
             const diffEl = document.getElementById('lc-difficulty');
             const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
-            diffEl.innerText = diffMap[record.question.difficulty] || record.question.difficulty;
-            diffEl.className = `lc-difficulty diff-${record.question.difficulty.toLowerCase()}`;
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
         }
     })
     .catch(err => {
-        console.error("LeetCode Init Error:", err);
-        document.querySelector('.leetcode-loading').innerHTML = "加载失败 (请检查网络)";
+        console.error("LeetCode Fetch Error:", err);
+        // 在前端显示具体错误原因，方便排查
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
     });
 }
 
@@ -365,30 +437,26 @@ function checkIfGapIsOnlyWeekends(startDate, endDate) {
 function checkSubmissionStatus(isSilent = false) {
     if (!lcDataGlobal) return;
     
-    const PROXY_URL = 'https://corsproxy.io/?'; 
-    const TARGET_URL = 'https://leetcode.cn/graphql';
+    // 🔴 同样换成你的 Worker 地址
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
 
     const query = `
     query recentSubmissions($userSlug: String!) {
         recentSubmissions(userSlug: $userSlug) {
             status
-            question {
-                titleSlug
-            }
+            question { titleSlug }
             submitTime
         }
     }`;
 
     const checkBtn = document.getElementById('btn-check-status');
-    if(checkBtn) {
-        checkBtn.innerText = "⏳ Verifying...";
-        checkBtn.disabled = true;
-    }
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
 
-    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+    fetch(LEETCODE_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
+            operationName: "recentSubmissions",
             query: query,
             variables: { userSlug: MY_LEETCODE_USERNAME }
         })

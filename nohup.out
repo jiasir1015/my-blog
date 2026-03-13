@@ -20,3 +20,51 @@ Serving pages from disk
 Running in Fast Render Mode. For full rebuilds on change: hugo server --disableFastRender
 Web Server is available at http://localhost:1313/ (bind address 127.0.0.1) 
 Press Ctrl+C to stop
+
+Change detected, rebuilding site (#1).
+2026-03-09 10:09:53.497 +0800
+Template changed /partials/footer.html
+Web Server is available at http://localhost:1313/ (bind address 127.0.0.1)
+Total in 74 ms
+
+Change detected, rebuilding site (#2).
+2026-03-09 10:12:37.468 +0800
+Template changed /partials/footer.html
+Web Server is available at http://localhost:1313/ (bind address 127.0.0.1)
+Total in 31 ms
+
+Change detected, rebuilding site (#3).
+2026-03-09 10:13:34.967 +0800
+Template changed /partials/footer.html
+Web Server is available at http://localhost:1313/ (bind address 127.0.0.1)
+Total in 25 ms
+
+Change detected, rebuilding site (#4).
+2026-03-09 10:14:33.466 +0800
+Template changed /partials/footer.html
+Web Server is available at http://localhost:1313/ (bind address 127.0.0.1)
+Total in 25 ms
+
+Change detected, rebuilding site (#5).
+2026-03-09 10:19:02.463 +0800
+Template changed /partials/footer.html
+Web Server is available at http://localhost:1313/ (bind address 127.0.0.1)
+Total in 29 ms
+
+Change detected, rebuilding site (#6).
+2026-03-09 10:19:46.463 +0800
+Template changed /partials/footer.html
+Web Server is available at http://localhost:1313/ (bind address 127.0.0.1)
+Total in 24 ms
+
+Change detected, rebuilding site (#7).
+2026-03-09 10:20:20.465 +0800
+Template changed /partials/footer.html
+Web Server is available at http://localhost:1313/ (bind address 127.0.0.1)
+Total in 28 ms
+
+Change detected, rebuilding site (#8).
+2026-03-09 10:20:39.963 +0800
+Template changed /partials/footer.html
+Web Server is available at http://localhost:1313/ (bind address 127.0.0.1)
+Total in 26 ms
