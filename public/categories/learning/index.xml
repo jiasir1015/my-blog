@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Learning on Kernel Notes</title>
+    <link>http://localhost:1313/categories/learning/</link>
+    <description>Recent content in Learning on Kernel Notes</description>
+    <generator>Hugo -- 0.155.3</generator>
+    <language>zh-cn</language>
+    <lastBuildDate>Fri, 11 Sep 2026 12:09:29 +0800</lastBuildDate>
+    <atom:link href="http://localhost:1313/categories/learning/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>G100学习笔记</title>
+      <link>http://localhost:1313/posts/database/g100%E5%AD%A6%E4%B9%A0%E7%AC%94%E8%AE%B0/</link>
+      <pubDate>Fri, 11 Sep 2026 12:09:29 +0800</pubDate>
+      <guid>http://localhost:1313/posts/database/g100%E5%AD%A6%E4%B9%A0%E7%AC%94%E8%AE%B0/</guid>
+      <description>&lt;h1 id=&#34;g100学习笔记&#34;&gt;G100学习笔记&lt;/h1&gt;
+&lt;h2 id=&#34;1-page相关&#34;&gt;1. page相关&lt;/h2&gt;
+&lt;h3 id=&#34;11-page的关键数据结构&#34;&gt;1.1 page的关键数据结构&lt;/h3&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;typedef&lt;/span&gt; &lt;span class=&#34;k&#34;&gt;struct&lt;/span&gt; &lt;span class=&#34;p&#34;&gt;{&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;PageXLogRecPtr&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;pd_lsn&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt; &lt;span class=&#34;cm&#34;&gt;/* 当前页的最后一次修改对应的WAL记录的LSN */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;uint16&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;pd_checksum&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt; &lt;span class=&#34;cm&#34;&gt;/* 当前页的checksum校验和，用来维护页面的完整性，使用特定的算法生成固定大小的值，在写入时计算，读取时校验，读取时计算checksum，与本记录比对 */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;uint16&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;pd_flags&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt; &lt;span class=&#34;cm&#34;&gt;/* 页状态标志位 */&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;uint16&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;pd_lower&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt; &lt;span class=&#34;cm&#34;&gt;/* 
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;cm&#34;&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;</description>
+    </item>
+  </channel>
+</rss>

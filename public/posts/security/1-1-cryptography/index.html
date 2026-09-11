@@ -1,0 +1,2051 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>传统安全 1 密码学 | Kernel Notes</title>
+<meta name="keywords" content="加密">
+<meta name="description" content="1 密码学综述
+本文主要总结常见的密码算法与协议，并不详细介绍原理
+
+密码算法
+
+对称密码算法
+非对称密码算法
+哈希算法
+完整性校验算法
+
+
+其他算法
+
+随机数生成算法
+密钥派生算法
+
+
+
+2 密码算法
+2.1 对称加密算法
+对称加密算法的基本原理是，输入明文、密钥，对明文进行分组，对每组明文进行多轮线性、非线性运算，比如异或、代换等，得到密文。
+常见的对称加密算法如下：
+
+  
+      
+          算法
+          发布时间
+          分组长度
+          密钥长度
+          算法
+      
+  
+  
+      
+          DES
+          1977
+          64
+          64
+          16 x 置换（E扩展、异或、代换、P置换）
+      
+      
+          3DES
+          -
+          -
+          -
+          -
+      
+      
+          IDEA
+          1990
+          -
+          -
+          -
+      
+      
+          AES
+          2001
+          128
+          128/192/256
+          10/12/14 x 矩阵运算(字节代换、行移位、列混合、异或)
+      
+      
+          SM4
+          2012
+          128
+          128
+          32 x 分组运算（异或、代换、移位）
+      
+      
+          SM1
+          -
+          128
+          128
+          未公开
+      
+      
+          SM7
+          -
+          128
+          128
+          未公开
+      
+  
+
+在实现加密的过程中，还有几个基础知识：
+
+密钥扩展：加密时，会迭代很多轮，每一轮都用1个轮密钥。1个原始密钥，扩展为多个的轮密钥。
+加密模式：一个原始明文，分为多个明文组，组与组之间的组合方式如下：
+
+  
+      
+          模式
+          中文
+          描述
+      
+  
+  
+      
+          ECB
+          电子密码本
+          不同的明文块，用相同的密钥
+      
+      
+          CBC
+          密码分组链接
+          上1密文块，与下一明文块异或
+      
+      
+          CTR
+          计数器模式
+          密钥加密计数器生成密钥流，密文块与密钥流异或
+      
+      
+          CFB
+          密码反馈模式
+          -
+      
+      
+          OFB
+          输出反馈模式
+          与CFB类似
+      
+  
+
+
+
+常见算法的具体实现原理如下：">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/security/1-1-cryptography/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/security/1-1-cryptography/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/security/1-1-cryptography/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="传统安全 1 密码学">
+  <meta property="og:description" content="1 密码学综述 本文主要总结常见的密码算法与协议，并不详细介绍原理
+密码算法 对称密码算法 非对称密码算法 哈希算法 完整性校验算法 其他算法 随机数生成算法 密钥派生算法 2 密码算法 2.1 对称加密算法 对称加密算法的基本原理是，输入明文、密钥，对明文进行分组，对每组明文进行多轮线性、非线性运算，比如异或、代换等，得到密文。
+常见的对称加密算法如下：
+算法 发布时间 分组长度 密钥长度 算法 DES 1977 64 64 16 x 置换（E扩展、异或、代换、P置换） 3DES - - - - IDEA 1990 - - - AES 2001 128 128/192/256 10/12/14 x 矩阵运算(字节代换、行移位、列混合、异或) SM4 2012 128 128 32 x 分组运算（异或、代换、移位） SM1 - 128 128 未公开 SM7 - 128 128 未公开 在实现加密的过程中，还有几个基础知识：
+密钥扩展：加密时，会迭代很多轮，每一轮都用1个轮密钥。1个原始密钥，扩展为多个的轮密钥。 加密模式：一个原始明文，分为多个明文组，组与组之间的组合方式如下： 模式 中文 描述 ECB 电子密码本 不同的明文块，用相同的密钥 CBC 密码分组链接 上1密文块，与下一明文块异或 CTR 计数器模式 密钥加密计数器生成密钥流，密文块与密钥流异或 CFB 密码反馈模式 - OFB 输出反馈模式 与CFB类似 常见算法的具体实现原理如下：">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-01-21T13:55:00+08:00">
+    <meta property="article:modified_time" content="2026-08-14T17:47:31+08:00">
+    <meta property="article:tag" content="加密">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="传统安全 1 密码学">
+<meta name="twitter:description" content="1 密码学综述
+本文主要总结常见的密码算法与协议，并不详细介绍原理
+
+密码算法
+
+对称密码算法
+非对称密码算法
+哈希算法
+完整性校验算法
+
+
+其他算法
+
+随机数生成算法
+密钥派生算法
+
+
+
+2 密码算法
+2.1 对称加密算法
+对称加密算法的基本原理是，输入明文、密钥，对明文进行分组，对每组明文进行多轮线性、非线性运算，比如异或、代换等，得到密文。
+常见的对称加密算法如下：
+
+  
+      
+          算法
+          发布时间
+          分组长度
+          密钥长度
+          算法
+      
+  
+  
+      
+          DES
+          1977
+          64
+          64
+          16 x 置换（E扩展、异或、代换、P置换）
+      
+      
+          3DES
+          -
+          -
+          -
+          -
+      
+      
+          IDEA
+          1990
+          -
+          -
+          -
+      
+      
+          AES
+          2001
+          128
+          128/192/256
+          10/12/14 x 矩阵运算(字节代换、行移位、列混合、异或)
+      
+      
+          SM4
+          2012
+          128
+          128
+          32 x 分组运算（异或、代换、移位）
+      
+      
+          SM1
+          -
+          128
+          128
+          未公开
+      
+      
+          SM7
+          -
+          128
+          128
+          未公开
+      
+  
+
+在实现加密的过程中，还有几个基础知识：
+
+密钥扩展：加密时，会迭代很多轮，每一轮都用1个轮密钥。1个原始密钥，扩展为多个的轮密钥。
+加密模式：一个原始明文，分为多个明文组，组与组之间的组合方式如下：
+
+  
+      
+          模式
+          中文
+          描述
+      
+  
+  
+      
+          ECB
+          电子密码本
+          不同的明文块，用相同的密钥
+      
+      
+          CBC
+          密码分组链接
+          上1密文块，与下一明文块异或
+      
+      
+          CTR
+          计数器模式
+          密钥加密计数器生成密钥流，密文块与密钥流异或
+      
+      
+          CFB
+          密码反馈模式
+          -
+      
+      
+          OFB
+          输出反馈模式
+          与CFB类似
+      
+  
+
+
+
+常见算法的具体实现原理如下：">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "传统安全 1 密码学",
+      "item": "http://localhost:1313/posts/security/1-1-cryptography/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "传统安全 1 密码学",
+  "name": "传统安全 1 密码学",
+  "description": "1 密码学综述 本文主要总结常见的密码算法与协议，并不详细介绍原理\n密码算法 对称密码算法 非对称密码算法 哈希算法 完整性校验算法 其他算法 随机数生成算法 密钥派生算法 2 密码算法 2.1 对称加密算法 对称加密算法的基本原理是，输入明文、密钥，对明文进行分组，对每组明文进行多轮线性、非线性运算，比如异或、代换等，得到密文。\n常见的对称加密算法如下：\n算法 发布时间 分组长度 密钥长度 算法 DES 1977 64 64 16 x 置换（E扩展、异或、代换、P置换） 3DES - - - - IDEA 1990 - - - AES 2001 128 128/192/256 10/12/14 x 矩阵运算(字节代换、行移位、列混合、异或) SM4 2012 128 128 32 x 分组运算（异或、代换、移位） SM1 - 128 128 未公开 SM7 - 128 128 未公开 在实现加密的过程中，还有几个基础知识：\n密钥扩展：加密时，会迭代很多轮，每一轮都用1个轮密钥。1个原始密钥，扩展为多个的轮密钥。 加密模式：一个原始明文，分为多个明文组，组与组之间的组合方式如下： 模式 中文 描述 ECB 电子密码本 不同的明文块，用相同的密钥 CBC 密码分组链接 上1密文块，与下一明文块异或 CTR 计数器模式 密钥加密计数器生成密钥流，密文块与密钥流异或 CFB 密码反馈模式 - OFB 输出反馈模式 与CFB类似 常见算法的具体实现原理如下：\n",
+  "keywords": [
+    "加密"
+  ],
+  "articleBody": "1 密码学综述 本文主要总结常见的密码算法与协议，并不详细介绍原理\n密码算法 对称密码算法 非对称密码算法 哈希算法 完整性校验算法 其他算法 随机数生成算法 密钥派生算法 2 密码算法 2.1 对称加密算法 对称加密算法的基本原理是，输入明文、密钥，对明文进行分组，对每组明文进行多轮线性、非线性运算，比如异或、代换等，得到密文。\n常见的对称加密算法如下：\n算法 发布时间 分组长度 密钥长度 算法 DES 1977 64 64 16 x 置换（E扩展、异或、代换、P置换） 3DES - - - - IDEA 1990 - - - AES 2001 128 128/192/256 10/12/14 x 矩阵运算(字节代换、行移位、列混合、异或) SM4 2012 128 128 32 x 分组运算（异或、代换、移位） SM1 - 128 128 未公开 SM7 - 128 128 未公开 在实现加密的过程中，还有几个基础知识：\n密钥扩展：加密时，会迭代很多轮，每一轮都用1个轮密钥。1个原始密钥，扩展为多个的轮密钥。 加密模式：一个原始明文，分为多个明文组，组与组之间的组合方式如下： 模式 中文 描述 ECB 电子密码本 不同的明文块，用相同的密钥 CBC 密码分组链接 上1密文块，与下一明文块异或 CTR 计数器模式 密钥加密计数器生成密钥流，密文块与密钥流异或 CFB 密码反馈模式 - OFB 输出反馈模式 与CFB类似 常见算法的具体实现原理如下：\n一、DES\n密钥扩展：16轮 * 48 bit密钥 （每轮生成1个轮密钥） 转换：64 -\u003e 56 bit，忽略校验位 移位 合并：28 bit 与 28 bit合并 代换： 加密：16轮 置换：前面的bit后后面的bit置换 异或 代换 二、AES\n密钥扩展：128 / 192 / 256 bit 分别对应 10 / 12 / 14 轮 * 32 bit 密钥（每轮生成1个轮密钥） 移位：左移 代换：S盒代换 异或：与固定基数异或 加密：10 / 12 / 14 轮 （与密钥长度有关） 构造1个矩阵：4 x 4 字节 = 4 * 4 * 8 bit = 128 bit 代换：字节代换 移位：行移位 混合：列混合 （各分组拼成矩阵，矩阵相乘） 异或：轮密钥加 解密：轮密钥加、逆列混合、逆行移位、逆字节代换 三、SM4\n密钥扩展：32轮 * 32 bit 密钥 （每轮生成1个轮密钥） 分组：分为4组 * 32bit 异或：与固定基数异或 代换：S盒代换 移位：移位并与其他分组异或 明文：128 bit，分为4组 * 32bit 加密：32轮 -\u003e 分为4组 * 32bit 异或：轮密钥异或 代换：S盒代换 移位：行移位并与自己异或 解密： 2.2 非对称密码算法 原理：基于数学问题的难解性，给定输入，计算输出容易；给定输出，计算输入困难。 4个常见算法 算法 安全密钥长度 数论基础 安全性基础 RSA 2048 bit 欧拉定理 整数分解问题的难解性 ElGamal 1024 bit 离散对数 有限域上，离散对数问题的难解性 ECC 160 bit 离散对数 椭圆曲线上，离散对数问题的难解性 SM2 256 bit 离散对数 椭圆曲线上，离散对数问题的难解性 加密算法： RSA ElGamal ECC SM2 2.3 哈希算法 2.4 完整性校验算法 认证模式 算法 密钥长度 HMAC HMAC-MD5 128 bit HMAC HMAC-SHA1 160 HMAC HMAC-SHA256 256 HMAC SM3 256 DES CBC-MAC 64 AES CBC-MAC 128 2.5 随机数生成算法 2.6 密钥派生算法 3 密码协议 5 软件实现 5.1 openssl实现加密 一、对称加密 准备编译环境 准备开发环境：centos 7, x86\n下载openssl源码\ncentos已安装openssl，但可能是1.0或1.1版本，我想使用3.0版本，所以选择源码编译安装openssl。另外，如果更改系统原openssl版本，可能导致系统崩溃\nmkdir crypto cd crypto wget https://www.openssl.org/source/openssl-3.0.5.tar.gz 安装perl\n配置openssl的编译参数时，即下述步骤4中的./config ..命令中，需要依赖perl。（我没用过perl，直接跟着教程安装的）\nyum install -y perl-CPAN # 继续安全必须模块 perl -MCPAN -e shell # 中途有个地方，输入：local::lib # 当出现 cpan[1]\u003e ，时，输入一下命令 install IPC::Cmd # 退出 exit 编译openssl源码\ntaz -zxvf openssl-3.0.5.tar.gz mkdir openssl # 存放编译出的libssl.so cd openssl-3.0.5 # 安装目录设置为当前目录的 output文件夹 ./config --prefix=`pwd`/output --openssldir=`pwd`/output shared make -sj make install -sj mv ./output ../libssl 创建源码目录\ncd .. mkdir code # 确保目录结构为： |-- crypto |-- libssl # 存放openssl的lib与include文件 |-- openssl-3.0.5 # openssl源码，用不上了 |-- code cd code touch enc.c 在enc.c中，开始写加解密代码demo\n加解密demo 加解密源码：\n#include #include /* openssl头文件 */ #include #include #include typedef unsigned char uchar; #define ASSERT(condition) if (!(condition)) {printf(\"error: code line: %d\\n\", __LINE__); exit(0);} /* 加密函数 （为考虑博客排版紧凑，不考虑代码风格） */ void encrypt(uchar *plain, int plainlen, uchar *key, uchar *iv, uchar *cipher, int *cipherlen) { int ret; /* 1 初始化内存上下文 */ EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new(); ASSERT(ctx != NULL); /* 2 选择加密算法，建议当函数入参传进来 */ const EVP_CIPHER *algorithm = EVP_aes_256_cbc(); /* 3 扩展密钥 */ ret = EVP_EncryptInit_ex(ctx, algorithm, NULL, key, iv); ASSERT(ret == 1); /* 4 加密明文 */ ret = EVP_EncryptUpdate(ctx, cipher, cipherlen, plain, plainlen); ASSERT(ret == 1); /* 5 填充密文，让密文长度变成分组长度的整数倍 */ int padlen; ret = EVP_EncryptFinal_ex(ctx, cipher + *cipherlen, \u0026padlen); ASSERT(ret == 1); *cipherlen += padlen; /* 输出长度：密文实际长度 + 填充长度 */ EVP_CIPHER_CTX_free(ctx); } /* 解密函数 */ void decrypt(uchar *cipher, int cipherlen, uchar *key, uchar *iv, uchar *plain, int *plainlen) { int ret; /* 1 初始化内存上下文 */ EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new(); ASSERT(ctx != NULL); /* 2 选择加密算法 */ const EVP_CIPHER *algorithm = EVP_aes_256_cbc(); /* 3 扩展密钥 */ ret = EVP_DecryptInit_ex(ctx, algorithm, NULL, key, iv); ASSERT(ret == 1); /* 4 解密密文 */ ret = EVP_DecryptUpdate(ctx, plain, plainlen, cipher, cipherlen); ASSERT(ret == 1); /* 5 计算填充长度并清理填充 */ int padlen; ret = EVP_DecryptFinal_ex(ctx, plain + *plainlen, \u0026padlen); ASSERT(ret == 1); *plainlen += padlen; /* 输出长度：解密长度 - 填充长度，此处padlen实际是个负数 */ EVP_CIPHER_CTX_free(ctx); } void print_uchar(uchar *data, int len) { printf(\"len:%-6d data:\"); int i; for (i = 0; i \u003c len; i++) { printf(\"%x\", data[i]); } printf(\"\\n\"); } int main() { uchar plain[37] = {0}; /* 随便设置的长度 */ uchar key[32] = {0}; uchar iv[16] = {0}; uchar cipher[64] = {0}; int cipherlen = 0; int ret; /* 随机生成 明文、密钥、IV */ ret = RAND_bytes(plain, 37); ASSERT(ret == 1); ret = RAND_bytes(key, 32); ASSERT(ret == 1); ret = RAND_bytes(iv, 16); ASSERT(ret == 1); printf(\"-- plain, key, iv:\\n\"); print_uchar(plain, 37); print_uchar(key, 32); print_uchar(iv, 16); /* 加密 */ encrypt(plain, 37, key, iv, cipher, \u0026cipherlen); printf(\"\\n-- output cipher:\\n\"); print_uchar(cipher, cipherlen); /* 解密 */ uchar _plain[64] = {0}; int _plainlen = 0; decrypt(cipher, cipherlen, key, iv, _plain, \u0026_plainlen); printf(\"\\n-- output plain:\\n\"); print_uchar(_plain, _plainlen); return 0; } 编译代码\ngcc enc.c -I../libssl/include -L../libssl/lib64 -lssl -lcrypto -o enc 运行代码\nexport LD_LIBRARY_PATH=`pwd`/../libssl/lib64:$LD_LIBRARY_PATH ./enc 以下是示例输出：\n-- plain, key, iv: len:37 data:1b172e617193d5bef358a28504f86b2ce9f820a8599982d6e7edda2b3c69b98b2e1b9d9 len:32 data:7bf1cc71b9262c0c0621956e9d4528841da3b47a48f0a0a8d63b1997586d28 len:16 data:9cc1f5648c6988d33e7b24f46223b648 -- output cipher: len:48 data:1e6fde979bf3b76e889f588a3943a9bf74eaed127e0a0ba1f27f97558b0c93f9f5d2d89202d59444f6ce6bc7d596114 -- output plain: len:37 data:1b172e617193d5bef358a28504f86b2ce9f820a8599982d6e7edda2b3c69b98b2e1b9d9 ",
+  "wordCount" : "711",
+  "inLanguage": "en",
+  "datePublished": "2025-01-21T13:55:00+08:00",
+  "dateModified": "2026-08-14T17:47:31+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/security/1-1-cryptography/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      传统安全 1 密码学
+    </h1>
+    <div class="post-meta">
+      <span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>4 min</span>&nbsp;·&nbsp;<span>711 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#1-%e5%af%86%e7%a0%81%e5%ad%a6%e7%bb%bc%e8%bf%b0" aria-label="1 密码学综述">1 密码学综述</a></li>
+                <li>
+                    <a href="#2-%e5%af%86%e7%a0%81%e7%ae%97%e6%b3%95" aria-label="2 密码算法">2 密码算法</a><ul>
+                        
+                <li>
+                    <a href="#21-%e5%af%b9%e7%a7%b0%e5%8a%a0%e5%af%86%e7%ae%97%e6%b3%95" aria-label="2.1 对称加密算法">2.1 对称加密算法</a></li>
+                <li>
+                    <a href="#22-%e9%9d%9e%e5%af%b9%e7%a7%b0%e5%af%86%e7%a0%81%e7%ae%97%e6%b3%95" aria-label="2.2 非对称密码算法">2.2 非对称密码算法</a></li>
+                <li>
+                    <a href="#23-%e5%93%88%e5%b8%8c%e7%ae%97%e6%b3%95" aria-label="2.3 哈希算法">2.3 哈希算法</a></li>
+                <li>
+                    <a href="#24-%e5%ae%8c%e6%95%b4%e6%80%a7%e6%a0%a1%e9%aa%8c%e7%ae%97%e6%b3%95" aria-label="2.4 完整性校验算法">2.4 完整性校验算法</a></li>
+                <li>
+                    <a href="#25-%e9%9a%8f%e6%9c%ba%e6%95%b0%e7%94%9f%e6%88%90%e7%ae%97%e6%b3%95" aria-label="2.5 随机数生成算法">2.5 随机数生成算法</a></li>
+                <li>
+                    <a href="#26-%e5%af%86%e9%92%a5%e6%b4%be%e7%94%9f%e7%ae%97%e6%b3%95" aria-label="2.6 密钥派生算法">2.6 密钥派生算法</a></li></ul>
+                </li>
+                <li>
+                    <a href="#3-%e5%af%86%e7%a0%81%e5%8d%8f%e8%ae%ae" aria-label="3 密码协议">3 密码协议</a></li>
+                <li>
+                    <a href="#5-%e8%bd%af%e4%bb%b6%e5%ae%9e%e7%8e%b0" aria-label="5 软件实现">5 软件实现</a><ul>
+                        
+                <li>
+                    <a href="#51-openssl%e5%ae%9e%e7%8e%b0%e5%8a%a0%e5%af%86" aria-label="5.1 openssl实现加密">5.1 openssl实现加密</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e5%af%b9%e7%a7%b0%e5%8a%a0%e5%af%86" aria-label="一、对称加密">一、对称加密</a><ul>
+                        
+                <li>
+                    <a href="#%e5%87%86%e5%a4%87%e7%bc%96%e8%af%91%e7%8e%af%e5%a2%83" aria-label="准备编译环境">准备编译环境</a></li>
+                <li>
+                    <a href="#%e5%8a%a0%e8%a7%a3%e5%af%86demo" aria-label="加解密demo">加解密demo</a>
+                </li>
+            </ul>
+            </li>
+            </ul>
+            </li>
+            </ul>
+            </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h1 id="1-密码学综述">1 密码学综述<a hidden class="anchor" aria-hidden="true" href="#1-密码学综述">#</a></h1>
+<p>本文主要总结常见的密码算法与协议，并不详细介绍原理</p>
+<ul>
+<li>密码算法
+<ul>
+<li>对称密码算法</li>
+<li>非对称密码算法</li>
+<li>哈希算法</li>
+<li>完整性校验算法</li>
+</ul>
+</li>
+<li>其他算法
+<ul>
+<li>随机数生成算法</li>
+<li>密钥派生算法</li>
+</ul>
+</li>
+</ul>
+<h1 id="2-密码算法">2 密码算法<a hidden class="anchor" aria-hidden="true" href="#2-密码算法">#</a></h1>
+<h2 id="21-对称加密算法">2.1 对称加密算法<a hidden class="anchor" aria-hidden="true" href="#21-对称加密算法">#</a></h2>
+<p>对称加密算法的基本原理是，输入明文、密钥，对明文进行分组，对每组明文进行多轮线性、非线性运算，比如异或、代换等，得到密文。<br>
+常见的对称加密算法如下：</p>
+<table>
+  <thead>
+      <tr>
+          <th>算法</th>
+          <th>发布时间</th>
+          <th>分组长度</th>
+          <th>密钥长度</th>
+          <th>算法</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>DES</td>
+          <td>1977</td>
+          <td>64</td>
+          <td>64</td>
+          <td>16 x 置换（E扩展、异或、代换、P置换）</td>
+      </tr>
+      <tr>
+          <td>3DES</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>IDEA</td>
+          <td>1990</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>AES</td>
+          <td>2001</td>
+          <td>128</td>
+          <td>128/192/256</td>
+          <td>10/12/14 x 矩阵运算(字节代换、行移位、列混合、异或)</td>
+      </tr>
+      <tr>
+          <td>SM4</td>
+          <td>2012</td>
+          <td>128</td>
+          <td>128</td>
+          <td>32 x 分组运算（异或、代换、移位）</td>
+      </tr>
+      <tr>
+          <td>SM1</td>
+          <td>-</td>
+          <td>128</td>
+          <td>128</td>
+          <td>未公开</td>
+      </tr>
+      <tr>
+          <td>SM7</td>
+          <td>-</td>
+          <td>128</td>
+          <td>128</td>
+          <td>未公开</td>
+      </tr>
+  </tbody>
+</table>
+<p>在实现加密的过程中，还有几个基础知识：</p>
+<ul>
+<li>密钥扩展：加密时，会迭代很多轮，每一轮都用1个轮密钥。1个原始密钥，扩展为多个的轮密钥。</li>
+<li>加密模式：一个原始明文，分为多个明文组，组与组之间的组合方式如下：
+<table>
+  <thead>
+      <tr>
+          <th>模式</th>
+          <th>中文</th>
+          <th>描述</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>ECB</td>
+          <td>电子密码本</td>
+          <td>不同的明文块，用相同的密钥</td>
+      </tr>
+      <tr>
+          <td>CBC</td>
+          <td>密码分组链接</td>
+          <td>上1密文块，与下一明文块异或</td>
+      </tr>
+      <tr>
+          <td>CTR</td>
+          <td>计数器模式</td>
+          <td>密钥加密计数器生成密钥流，密文块与密钥流异或</td>
+      </tr>
+      <tr>
+          <td>CFB</td>
+          <td>密码反馈模式</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>OFB</td>
+          <td>输出反馈模式</td>
+          <td>与CFB类似</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+</ul>
+<p>常见算法的具体实现原理如下：</p>
+<ul>
+<li>
+<p>一、DES</p>
+<ul>
+<li>密钥扩展：16轮 * 48 bit密钥 （每轮生成1个轮密钥）
+<ol>
+<li>转换：64 -&gt; 56 bit，忽略校验位</li>
+<li>移位</li>
+<li>合并：28 bit 与 28 bit合并</li>
+<li>代换：</li>
+</ol>
+</li>
+<li>加密：16轮
+<ol>
+<li>置换：前面的bit后后面的bit置换</li>
+<li>异或</li>
+<li>代换</li>
+</ol>
+</li>
+</ul>
+</li>
+<li>
+<p>二、AES</p>
+<ul>
+<li>密钥扩展：128 / 192 / 256 bit 分别对应 10 / 12 / 14 轮 * 32 bit 密钥（每轮生成1个轮密钥）
+<ol>
+<li>移位：左移</li>
+<li>代换：S盒代换</li>
+<li>异或：与固定基数异或</li>
+</ol>
+</li>
+<li>加密：10 / 12 / 14 轮 （与密钥长度有关） 构造1个矩阵：4 x 4 字节 = 4 * 4 * 8 bit = 128 bit
+<ol>
+<li>代换：字节代换</li>
+<li>移位：行移位</li>
+<li>混合：列混合 （各分组拼成矩阵，矩阵相乘）</li>
+<li>异或：轮密钥加</li>
+</ol>
+</li>
+<li>解密：轮密钥加、逆列混合、逆行移位、逆字节代换</li>
+</ul>
+</li>
+<li>
+<p>三、SM4</p>
+<ul>
+<li>密钥扩展：32轮 * 32 bit 密钥 （每轮生成1个轮密钥）
+<ol>
+<li>分组：分为4组 * 32bit</li>
+<li>异或：与固定基数异或</li>
+<li>代换：S盒代换</li>
+<li>移位：移位并与其他分组异或</li>
+</ol>
+</li>
+<li>明文：128 bit，分为4组 * 32bit</li>
+<li>加密：32轮 -&gt; 分为4组 * 32bit
+<ol>
+<li>异或：轮密钥异或</li>
+<li>代换：S盒代换</li>
+<li>移位：行移位并与自己异或</li>
+</ol>
+</li>
+<li>解密：</li>
+</ul>
+</li>
+</ul>
+<h2 id="22-非对称密码算法">2.2 非对称密码算法<a hidden class="anchor" aria-hidden="true" href="#22-非对称密码算法">#</a></h2>
+<ul>
+<li>原理：基于数学问题的难解性，给定输入，计算输出容易；给定输出，计算输入困难。</li>
+<li>4个常见算法</li>
+</ul>
+<table>
+  <thead>
+      <tr>
+          <th>算法</th>
+          <th>安全密钥长度</th>
+          <th>数论基础</th>
+          <th>安全性基础</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>RSA</td>
+          <td>2048 bit</td>
+          <td>欧拉定理</td>
+          <td>整数分解问题的难解性</td>
+      </tr>
+      <tr>
+          <td>ElGamal</td>
+          <td>1024 bit</td>
+          <td>离散对数</td>
+          <td>有限域上，离散对数问题的难解性</td>
+      </tr>
+      <tr>
+          <td>ECC</td>
+          <td>160 bit</td>
+          <td>离散对数</td>
+          <td>椭圆曲线上，离散对数问题的难解性</td>
+      </tr>
+      <tr>
+          <td>SM2</td>
+          <td>256 bit</td>
+          <td>离散对数</td>
+          <td>椭圆曲线上，离散对数问题的难解性</td>
+      </tr>
+  </tbody>
+</table>
+<ul>
+<li>加密算法：</li>
+<li>RSA</li>
+<li>ElGamal</li>
+<li>ECC</li>
+<li>SM2</li>
+</ul>
+<h2 id="23-哈希算法">2.3 哈希算法<a hidden class="anchor" aria-hidden="true" href="#23-哈希算法">#</a></h2>
+<h2 id="24-完整性校验算法">2.4 完整性校验算法<a hidden class="anchor" aria-hidden="true" href="#24-完整性校验算法">#</a></h2>
+<table>
+  <thead>
+      <tr>
+          <th>认证模式</th>
+          <th>算法</th>
+          <th>密钥长度</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>HMAC</td>
+          <td>HMAC-MD5</td>
+          <td>128 bit</td>
+      </tr>
+      <tr>
+          <td>HMAC</td>
+          <td>HMAC-SHA1</td>
+          <td>160</td>
+      </tr>
+      <tr>
+          <td>HMAC</td>
+          <td>HMAC-SHA256</td>
+          <td>256</td>
+      </tr>
+      <tr>
+          <td>HMAC</td>
+          <td>SM3</td>
+          <td>256</td>
+      </tr>
+      <tr>
+          <td>DES</td>
+          <td>CBC-MAC</td>
+          <td>64</td>
+      </tr>
+      <tr>
+          <td>AES</td>
+          <td>CBC-MAC</td>
+          <td>128</td>
+      </tr>
+  </tbody>
+</table>
+<h2 id="25-随机数生成算法">2.5 随机数生成算法<a hidden class="anchor" aria-hidden="true" href="#25-随机数生成算法">#</a></h2>
+<h2 id="26-密钥派生算法">2.6 密钥派生算法<a hidden class="anchor" aria-hidden="true" href="#26-密钥派生算法">#</a></h2>
+<h1 id="3-密码协议">3 密码协议<a hidden class="anchor" aria-hidden="true" href="#3-密码协议">#</a></h1>
+<h1 id="5-软件实现">5 软件实现<a hidden class="anchor" aria-hidden="true" href="#5-软件实现">#</a></h1>
+<h2 id="51-openssl实现加密">5.1 openssl实现加密<a hidden class="anchor" aria-hidden="true" href="#51-openssl实现加密">#</a></h2>
+<h3 id="一对称加密">一、对称加密<a hidden class="anchor" aria-hidden="true" href="#一对称加密">#</a></h3>
+<h4 id="准备编译环境">准备编译环境<a hidden class="anchor" aria-hidden="true" href="#准备编译环境">#</a></h4>
+<ol>
+<li>
+<p>准备开发环境：centos 7, x86</p>
+</li>
+<li>
+<p>下载openssl源码<br>
+centos已安装openssl，但可能是1.0或1.1版本，我想使用3.0版本，所以选择源码编译安装openssl。另外，如果更改系统原openssl版本，可能导致系统崩溃</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">mkdir crypto
+</span></span><span class="line"><span class="cl"><span class="nb">cd</span> crypto
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">wget https://www.openssl.org/source/openssl-3.0.5.tar.gz
+</span></span></code></pre></div></li>
+<li>
+<p>安装perl<br>
+配置openssl的编译参数时，即下述步骤4中的<code>./config ..</code>命令中，需要依赖perl。（我没用过perl，直接跟着教程安装的）</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">yum install -y perl-CPAN
+</span></span><span class="line"><span class="cl"><span class="c1"># 继续安全必须模块</span>
+</span></span><span class="line"><span class="cl">perl -MCPAN -e shell
+</span></span><span class="line"><span class="cl">  <span class="c1"># 中途有个地方，输入：local::lib</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># 当出现 cpan[1]&gt; ，时，输入一下命令</span>
+</span></span><span class="line"><span class="cl">install IPC::Cmd
+</span></span><span class="line"><span class="cl"><span class="c1"># 退出</span>
+</span></span><span class="line"><span class="cl"><span class="nb">exit</span>
+</span></span></code></pre></div></li>
+<li>
+<p>编译openssl源码</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">taz -zxvf openssl-3.0.5.tar.gz
+</span></span><span class="line"><span class="cl">mkdir openssl <span class="c1"># 存放编译出的libssl.so</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nb">cd</span> openssl-3.0.5
+</span></span><span class="line"><span class="cl"><span class="c1"># 安装目录设置为当前目录的 output文件夹</span>
+</span></span><span class="line"><span class="cl">./config --prefix<span class="o">=</span><span class="sb">`</span><span class="nb">pwd</span><span class="sb">`</span>/output --openssldir<span class="o">=</span><span class="sb">`</span><span class="nb">pwd</span><span class="sb">`</span>/output shared
+</span></span><span class="line"><span class="cl">make -sj
+</span></span><span class="line"><span class="cl">make install -sj
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">mv ./output ../libssl
+</span></span></code></pre></div></li>
+<li>
+<p>创建源码目录</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="nb">cd</span> ..
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">mkdir code
+</span></span><span class="line"><span class="cl"><span class="c1"># 确保目录结构为：</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>-- crypto
+</span></span><span class="line"><span class="cl">  <span class="p">|</span>-- libssl <span class="c1"># 存放openssl的lib与include文件</span>
+</span></span><span class="line"><span class="cl">  <span class="p">|</span>-- openssl-3.0.5 <span class="c1"># openssl源码，用不上了</span>
+</span></span><span class="line"><span class="cl">  <span class="p">|</span>-- code
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nb">cd</span> code
+</span></span><span class="line"><span class="cl">touch enc.c
+</span></span></code></pre></div><p>在enc.c中，开始写加解密代码demo</p>
+</li>
+</ol>
+<h4 id="加解密demo">加解密demo<a hidden class="anchor" aria-hidden="true" href="#加解密demo">#</a></h4>
+<ol>
+<li>
+<p>加解密源码：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="cp">#include</span> <span class="cpf">&lt;stdio.h&gt;</span><span class="cp">
+</span></span></span><span class="line"><span class="cl"><span class="cp">#include</span> <span class="cpf">&lt;string.h&gt;</span><span class="cp">
+</span></span></span><span class="line"><span class="cl"><span class="cm">/* openssl头文件 */</span>
+</span></span><span class="line"><span class="cl"><span class="cp">#include</span> <span class="cpf">&lt;openssl/evp.h&gt;</span><span class="cp">
+</span></span></span><span class="line"><span class="cl"><span class="cp">#include</span> <span class="cpf">&lt;openssl/rand.h&gt;</span><span class="cp">
+</span></span></span><span class="line"><span class="cl"><span class="cp">#include</span> <span class="cpf">&lt;openssl/err.h&gt;</span><span class="cp">
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="kt">unsigned</span> <span class="kt">char</span> <span class="n">uchar</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="cp">#define ASSERT(condition) if (!(condition)) {printf(&#34;error: code line: %d\n&#34;, __LINE__); exit(0);}
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 加密函数 （为考虑博客排版紧凑，不考虑代码风格） */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">encrypt</span><span class="p">(</span><span class="n">uchar</span> <span class="o">*</span><span class="n">plain</span><span class="p">,</span> <span class="kt">int</span> <span class="n">plainlen</span><span class="p">,</span> <span class="n">uchar</span> <span class="o">*</span><span class="n">key</span><span class="p">,</span> <span class="n">uchar</span> <span class="o">*</span><span class="n">iv</span><span class="p">,</span> <span class="n">uchar</span> <span class="o">*</span><span class="n">cipher</span><span class="p">,</span> <span class="kt">int</span> <span class="o">*</span><span class="n">cipherlen</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">ret</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 1 初始化内存上下文 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">EVP_CIPHER_CTX</span> <span class="o">*</span><span class="n">ctx</span> <span class="o">=</span> <span class="nf">EVP_CIPHER_CTX_new</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">ASSERT</span><span class="p">(</span><span class="n">ctx</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 2 选择加密算法，建议当函数入参传进来 */</span>
+</span></span><span class="line"><span class="cl">    <span class="k">const</span> <span class="n">EVP_CIPHER</span> <span class="o">*</span><span class="n">algorithm</span> <span class="o">=</span> <span class="nf">EVP_aes_256_cbc</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 3 扩展密钥 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ret</span> <span class="o">=</span> <span class="nf">EVP_EncryptInit_ex</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">algorithm</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">iv</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">ASSERT</span><span class="p">(</span><span class="n">ret</span> <span class="o">==</span> <span class="mi">1</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 4 加密明文 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ret</span> <span class="o">=</span> <span class="nf">EVP_EncryptUpdate</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">cipher</span><span class="p">,</span> <span class="n">cipherlen</span><span class="p">,</span> <span class="n">plain</span><span class="p">,</span> <span class="n">plainlen</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">ASSERT</span><span class="p">(</span><span class="n">ret</span> <span class="o">==</span> <span class="mi">1</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 5 填充密文，让密文长度变成分组长度的整数倍 */</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">padlen</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ret</span> <span class="o">=</span> <span class="nf">EVP_EncryptFinal_ex</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">cipher</span> <span class="o">+</span> <span class="o">*</span><span class="n">cipherlen</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">padlen</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">ASSERT</span><span class="p">(</span><span class="n">ret</span> <span class="o">==</span> <span class="mi">1</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="o">*</span><span class="n">cipherlen</span> <span class="o">+=</span> <span class="n">padlen</span><span class="p">;</span> <span class="cm">/* 输出长度：密文实际长度 + 填充长度 */</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">EVP_CIPHER_CTX_free</span><span class="p">(</span><span class="n">ctx</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 解密函数 */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">decrypt</span><span class="p">(</span><span class="n">uchar</span> <span class="o">*</span><span class="n">cipher</span><span class="p">,</span> <span class="kt">int</span> <span class="n">cipherlen</span><span class="p">,</span> <span class="n">uchar</span> <span class="o">*</span><span class="n">key</span><span class="p">,</span> <span class="n">uchar</span> <span class="o">*</span><span class="n">iv</span><span class="p">,</span> <span class="n">uchar</span> <span class="o">*</span><span class="n">plain</span><span class="p">,</span> <span class="kt">int</span> <span class="o">*</span><span class="n">plainlen</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">ret</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 1 初始化内存上下文 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">EVP_CIPHER_CTX</span> <span class="o">*</span><span class="n">ctx</span> <span class="o">=</span> <span class="nf">EVP_CIPHER_CTX_new</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">ASSERT</span><span class="p">(</span><span class="n">ctx</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 2 选择加密算法 */</span>
+</span></span><span class="line"><span class="cl">    <span class="k">const</span> <span class="n">EVP_CIPHER</span> <span class="o">*</span><span class="n">algorithm</span> <span class="o">=</span> <span class="nf">EVP_aes_256_cbc</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 3 扩展密钥 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ret</span> <span class="o">=</span> <span class="nf">EVP_DecryptInit_ex</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">algorithm</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">iv</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">ASSERT</span><span class="p">(</span><span class="n">ret</span> <span class="o">==</span> <span class="mi">1</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 4 解密密文 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ret</span> <span class="o">=</span> <span class="nf">EVP_DecryptUpdate</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">plain</span><span class="p">,</span> <span class="n">plainlen</span><span class="p">,</span> <span class="n">cipher</span><span class="p">,</span> <span class="n">cipherlen</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">ASSERT</span><span class="p">(</span><span class="n">ret</span> <span class="o">==</span> <span class="mi">1</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 5 计算填充长度并清理填充 */</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">padlen</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ret</span> <span class="o">=</span> <span class="nf">EVP_DecryptFinal_ex</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">plain</span> <span class="o">+</span> <span class="o">*</span><span class="n">plainlen</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">padlen</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">ASSERT</span><span class="p">(</span><span class="n">ret</span> <span class="o">==</span> <span class="mi">1</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="o">*</span><span class="n">plainlen</span> <span class="o">+=</span> <span class="n">padlen</span><span class="p">;</span> <span class="cm">/* 输出长度：解密长度 - 填充长度，此处padlen实际是个负数  */</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">EVP_CIPHER_CTX_free</span><span class="p">(</span><span class="n">ctx</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">print_uchar</span><span class="p">(</span><span class="n">uchar</span> <span class="o">*</span><span class="n">data</span><span class="p">,</span> <span class="kt">int</span> <span class="n">len</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">printf</span><span class="p">(</span><span class="s">&#34;len:%-6d data:&#34;</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">i</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">len</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">        <span class="nf">printf</span><span class="p">(</span><span class="s">&#34;%x&#34;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">printf</span><span class="p">(</span><span class="s">&#34;</span><span class="se">\n</span><span class="s">&#34;</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">main</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uchar</span> <span class="n">plain</span><span class="p">[</span><span class="mi">37</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="mi">0</span><span class="p">};</span> <span class="cm">/* 随便设置的长度 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uchar</span> <span class="n">key</span><span class="p">[</span><span class="mi">32</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="mi">0</span><span class="p">};</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uchar</span> <span class="n">iv</span><span class="p">[</span><span class="mi">16</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="mi">0</span><span class="p">};</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uchar</span> <span class="n">cipher</span><span class="p">[</span><span class="mi">64</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="mi">0</span><span class="p">};</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">cipherlen</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">ret</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 随机生成 明文、密钥、IV */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ret</span> <span class="o">=</span> <span class="nf">RAND_bytes</span><span class="p">(</span><span class="n">plain</span><span class="p">,</span> <span class="mi">37</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">ASSERT</span><span class="p">(</span><span class="n">ret</span> <span class="o">==</span> <span class="mi">1</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ret</span> <span class="o">=</span> <span class="nf">RAND_bytes</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="mi">32</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">ASSERT</span><span class="p">(</span><span class="n">ret</span> <span class="o">==</span> <span class="mi">1</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ret</span> <span class="o">=</span> <span class="nf">RAND_bytes</span><span class="p">(</span><span class="n">iv</span><span class="p">,</span> <span class="mi">16</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">ASSERT</span><span class="p">(</span><span class="n">ret</span> <span class="o">==</span> <span class="mi">1</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="nf">printf</span><span class="p">(</span><span class="s">&#34;-- plain, key, iv:</span><span class="se">\n</span><span class="s">&#34;</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">print_uchar</span><span class="p">(</span><span class="n">plain</span><span class="p">,</span> <span class="mi">37</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">print_uchar</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="mi">32</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">print_uchar</span><span class="p">(</span><span class="n">iv</span><span class="p">,</span> <span class="mi">16</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 加密 */</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">encrypt</span><span class="p">(</span><span class="n">plain</span><span class="p">,</span> <span class="mi">37</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">iv</span><span class="p">,</span> <span class="n">cipher</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">cipherlen</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">printf</span><span class="p">(</span><span class="s">&#34;</span><span class="se">\n</span><span class="s">-- output cipher:</span><span class="se">\n</span><span class="s">&#34;</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">print_uchar</span><span class="p">(</span><span class="n">cipher</span><span class="p">,</span> <span class="n">cipherlen</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 解密 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uchar</span> <span class="n">_plain</span><span class="p">[</span><span class="mi">64</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="mi">0</span><span class="p">};</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">_plainlen</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">decrypt</span><span class="p">(</span><span class="n">cipher</span><span class="p">,</span> <span class="n">cipherlen</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">iv</span><span class="p">,</span> <span class="n">_plain</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">_plainlen</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">printf</span><span class="p">(</span><span class="s">&#34;</span><span class="se">\n</span><span class="s">-- output plain:</span><span class="se">\n</span><span class="s">&#34;</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">print_uchar</span><span class="p">(</span><span class="n">_plain</span><span class="p">,</span> <span class="n">_plainlen</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div></li>
+<li>
+<p>编译代码</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">gcc enc.c -I../libssl/include -L../libssl/lib64 -lssl -lcrypto -o enc
+</span></span></code></pre></div></li>
+<li>
+<p>运行代码</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span><span class="sb">`</span><span class="nb">pwd</span><span class="sb">`</span>/../libssl/lib64:<span class="nv">$LD_LIBRARY_PATH</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">./enc
+</span></span></code></pre></div><p>以下是示例输出：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">-- plain, key, iv:
+</span></span><span class="line"><span class="cl">len:37     data:1b172e617193d5bef358a28504f86b2ce9f820a8599982d6e7edda2b3c69b98b2e1b9d9
+</span></span><span class="line"><span class="cl">len:32     data:7bf1cc71b9262c0c0621956e9d4528841da3b47a48f0a0a8d63b1997586d28
+</span></span><span class="line"><span class="cl">len:16     data:9cc1f5648c6988d33e7b24f46223b648
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">-- output cipher:
+</span></span><span class="line"><span class="cl">len:48     data:1e6fde979bf3b76e889f588a3943a9bf74eaed127e0a0ba1f27f97558b0c93f9f5d2d89202d59444f6ce6bc7d596114
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">-- output plain:
+</span></span><span class="line"><span class="cl">len:37     data:1b172e617193d5bef358a28504f86b2ce9f820a8599982d6e7edda2b3c69b98b2e1b9d9
+</span></span></code></pre></div></li>
+</ol>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/%E5%8A%A0%E5%AF%86/">加密</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/security/wal-encryption-design/">WAL 加密模块设计</a></li><li><a href="/posts/security/4-5-fully-encrypted-database/">数据库安全 5 全密态</a></li><li><a href="/posts/security/confidential-computing/">高质量专项 全密态机密计算</a></li><li><a href="/posts/security/transport-encryption/">数据库安全 传输加密</a></li><li><a href="/posts/security/fully-encrypted-overview/">数据库安全 全密态</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./安全</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

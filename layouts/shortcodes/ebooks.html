@@ -1,0 +1,23 @@
+{{- /* List ebooks from data/ebooks.json */ -}}
+{{- $items := site.Data.ebooks | default slice -}}
+{{- if not $items -}}
+<p class="ebook-empty">还没有电子书。在写作台点「插入 PDF」上传后，会出现在这里。</p>
+{{- else -}}
+<ul class="ebook-shelf">
+  {{- range $items -}}
+  <li class="ebook-card">
+    <div class="ebook-card__meta">
+      <strong class="ebook-card__title">{{ .title }}</strong>
+      {{- with .size -}}
+      <span class="ebook-card__size">{{ printf "%.1f MB" (div (float .) 1048576.0) }}</span>
+      {{- end -}}
+    </div>
+    <div class="ebook-card__actions">
+      <a href="{{ .url | relURL }}" target="_blank" rel="noopener">在线阅读</a>
+      <a href="{{ .url | relURL }}" download>下载</a>
+    </div>
+    <iframe class="ebook-card__frame" src="{{ .url | relURL }}" title="{{ .title }}" loading="lazy"></iframe>
+  </li>
+  {{- end -}}
+</ul>
+{{- end -}}

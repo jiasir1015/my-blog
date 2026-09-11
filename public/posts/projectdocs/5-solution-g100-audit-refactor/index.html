@@ -1,0 +1,2665 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>海量 5 方案 G100审计重构 | Kernel Notes</title>
+<meta name="keywords" content="审计, 设计文档">
+<meta name="description" content="
+1 审计特性介绍
+
+1.1 核心功能
+1.2 整体架构（308.3）
+1.3 工作流程（308.3）
+1.4 文件组织
+
+
+2 使用审计特性
+
+2.1 配置审计特性
+2.2 启动数据库
+2.3 生成审计日志
+2.4 查询审计日志
+2.5 异常管理
+
+
+3 审计特性变更点
+
+3.1 问题分析
+2.2 重构目标
+2.3 问题分析（当前版本）
+
+一、存储日志慢
+二、检索日志慢
+三、文件问题多
+
+
+2.4 重构方案
+
+一、存储日志重构
+二、检索日志
+
+
+2.5 重构开销
+2.6 重构影响
+2.7 性能测试
+
+
+3 审计特性详细设计
+
+3.1 架构设计
+
+一、整体架构
+二、工作流程
+三、文件组织
+
+
+3.2 详细设计
+
+一、配置审计特性
+二、审计文件管理
+
+
+三、 启动数据库
+四、生成审计日志
+五、存储审计日志
+六、审计日志一致性
+七、归并审计日志
+八、查询审计日志
+
+
+4 审计后续重构计划
+
+摘要
+
+介绍审计特性，分析性能问题，提出优化方案，评审优化方案，规划其他计划
+
+1 审计特性介绍
+1.1 核心功能
+
+
+审计特性：记录数据库内的各种事件，事件包括：">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/projectdocs/5-solution-g100-audit-refactor/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/projectdocs/5-solution-g100-audit-refactor/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/projectdocs/5-solution-g100-audit-refactor/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="海量 5 方案 G100审计重构">
+  <meta property="og:description" content=" 1 审计特性介绍 1.1 核心功能 1.2 整体架构（308.3） 1.3 工作流程（308.3） 1.4 文件组织 2 使用审计特性 2.1 配置审计特性 2.2 启动数据库 2.3 生成审计日志 2.4 查询审计日志 2.5 异常管理 3 审计特性变更点 3.1 问题分析 2.2 重构目标 2.3 问题分析（当前版本） 一、存储日志慢 二、检索日志慢 三、文件问题多 2.4 重构方案 一、存储日志重构 二、检索日志 2.5 重构开销 2.6 重构影响 2.7 性能测试 3 审计特性详细设计 3.1 架构设计 一、整体架构 二、工作流程 三、文件组织 3.2 详细设计 一、配置审计特性 二、审计文件管理 三、 启动数据库 四、生成审计日志 五、存储审计日志 六、审计日志一致性 七、归并审计日志 八、查询审计日志 4 审计后续重构计划 摘要
+介绍审计特性，分析性能问题，提出优化方案，评审优化方案，规划其他计划
+1 审计特性介绍 1.1 核心功能 审计特性：记录数据库内的各种事件，事件包括：">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-04-23T18:00:00+08:00">
+    <meta property="article:modified_time" content="2026-08-14T17:47:31+08:00">
+    <meta property="article:tag" content="审计">
+    <meta property="article:tag" content="设计文档">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="海量 5 方案 G100审计重构">
+<meta name="twitter:description" content="
+1 审计特性介绍
+
+1.1 核心功能
+1.2 整体架构（308.3）
+1.3 工作流程（308.3）
+1.4 文件组织
+
+
+2 使用审计特性
+
+2.1 配置审计特性
+2.2 启动数据库
+2.3 生成审计日志
+2.4 查询审计日志
+2.5 异常管理
+
+
+3 审计特性变更点
+
+3.1 问题分析
+2.2 重构目标
+2.3 问题分析（当前版本）
+
+一、存储日志慢
+二、检索日志慢
+三、文件问题多
+
+
+2.4 重构方案
+
+一、存储日志重构
+二、检索日志
+
+
+2.5 重构开销
+2.6 重构影响
+2.7 性能测试
+
+
+3 审计特性详细设计
+
+3.1 架构设计
+
+一、整体架构
+二、工作流程
+三、文件组织
+
+
+3.2 详细设计
+
+一、配置审计特性
+二、审计文件管理
+
+
+三、 启动数据库
+四、生成审计日志
+五、存储审计日志
+六、审计日志一致性
+七、归并审计日志
+八、查询审计日志
+
+
+4 审计后续重构计划
+
+摘要
+
+介绍审计特性，分析性能问题，提出优化方案，评审优化方案，规划其他计划
+
+1 审计特性介绍
+1.1 核心功能
+
+
+审计特性：记录数据库内的各种事件，事件包括：">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "海量 5 方案 G100审计重构",
+      "item": "http://localhost:1313/posts/projectdocs/5-solution-g100-audit-refactor/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "海量 5 方案 G100审计重构",
+  "name": "海量 5 方案 G100审计重构",
+  "description": " 1 审计特性介绍 1.1 核心功能 1.2 整体架构（308.3） 1.3 工作流程（308.3） 1.4 文件组织 2 使用审计特性 2.1 配置审计特性 2.2 启动数据库 2.3 生成审计日志 2.4 查询审计日志 2.5 异常管理 3 审计特性变更点 3.1 问题分析 2.2 重构目标 2.3 问题分析（当前版本） 一、存储日志慢 二、检索日志慢 三、文件问题多 2.4 重构方案 一、存储日志重构 二、检索日志 2.5 重构开销 2.6 重构影响 2.7 性能测试 3 审计特性详细设计 3.1 架构设计 一、整体架构 二、工作流程 三、文件组织 3.2 详细设计 一、配置审计特性 二、审计文件管理 三、 启动数据库 四、生成审计日志 五、存储审计日志 六、审计日志一致性 七、归并审计日志 八、查询审计日志 4 审计后续重构计划 摘要\n介绍审计特性，分析性能问题，提出优化方案，评审优化方案，规划其他计划\n1 审计特性介绍 1.1 核心功能 审计特性：记录数据库内的各种事件，事件包括：\n",
+  "keywords": [
+    "审计", "设计文档"
+  ],
+  "articleBody": " 1 审计特性介绍 1.1 核心功能 1.2 整体架构（308.3） 1.3 工作流程（308.3） 1.4 文件组织 2 使用审计特性 2.1 配置审计特性 2.2 启动数据库 2.3 生成审计日志 2.4 查询审计日志 2.5 异常管理 3 审计特性变更点 3.1 问题分析 2.2 重构目标 2.3 问题分析（当前版本） 一、存储日志慢 二、检索日志慢 三、文件问题多 2.4 重构方案 一、存储日志重构 二、检索日志 2.5 重构开销 2.6 重构影响 2.7 性能测试 3 审计特性详细设计 3.1 架构设计 一、整体架构 二、工作流程 三、文件组织 3.2 详细设计 一、配置审计特性 二、审计文件管理 三、 启动数据库 四、生成审计日志 五、存储审计日志 六、审计日志一致性 七、归并审计日志 八、查询审计日志 4 审计后续重构计划 摘要\n介绍审计特性，分析性能问题，提出优化方案，评审优化方案，规划其他计划\n1 审计特性介绍 1.1 核心功能 审计特性：记录数据库内的各种事件，事件包括：\n启动、恢复、切换、停止集群 登录、注销账号 创建、修改、删除数据库对象，包括：DATABASE、SCHEMA、TABLE等 插入、更新、删除、查询关系表 … 描述事件：数据库内发生的事件，都可描述为\u003c主体\u003e\u003c操作\u003e\u003c客体\u003e\n主体：一般是数据库用户 客体：集群、账号、数据对象等 操作：不同客体操作类型不一样。比如，对于TABLE，操作类型有：CREATE, INSERT, SELECT等。 审计日志：针对每个事件，审计模块都会生成一条或多条审计日志，审计日志中记录事件关键信息，包括：\n主体信息：用户名、客户端IP、登入的数据库名、线程id等 操作信息：操作的类型、操作的时间、操作的SQL语句等 客体信息：客体类型、客体名称、客体属于哪个database、客体属于哪个schema 1.2 整体架构（308.3） 审计架构如下图所示，按模块划分，可将审计划分为5个模块：\n管理模块：管理审计配置，相关配置由GUC控制，可分为3类：审计范围、日志传输、审计文件。管理审计内存、锁等资源，启停审计线程 事件模块：发生关键事件时，如启停集群、执行SQL语句等，收集事件关键信息，即主体、操作、客体关键信息，将各类事件封装为统一格式的审计日志，并将其发送至审计线程 存储模块： 审计写线程：接收审计日志，按文件格式组织日志，将日志存储至文件中。如果有多个写线程，每个写线程都有独立的日志缓冲区、日志文件。同一时间段内生成的多条日志，可能存储于多个文件中 审计归并线程：读取同一时间段内多个审计文件，排序日志，合并为同1个审计文件 文件模块：管理多种状态的审计文件，包括：正在写、待归并、已归并等 查询模块： 在线查询：通过内置函数，查询一段时间内的日志 离线查询：通过离线工具，解析二进制格式的日志文件 1.3 工作流程（308.3） 审计特性的工作流程如下图所示：\n用户：通过GUC参数，配置审计特性，包括审计范围、日志传输、审计文件等。 主线程：启动审计线程 工作线程：在关键流程中，收集审计事件。以执行DML为例，审计处理流程包括： 在清理计划阶段，收集审计事件，事件包括主体、操作、客体等信息。然后，将事件封装为日志后，发送给审计写线程。由审计线程负责将日志落盘 在事务提交阶段，如果开启日志同步落盘机制，则等待审计线程将日志落盘 审计writer线程：不断将接收到的日志写至磁盘 审计merger线程：存在多个审计写线程的情况下，将同一时间段内的多个已写完的文件，合并为1个文件 1.4 文件组织 在存在多个writer线程的场景，日志文件有3种状态：\n正在写：writer线程正在写的文件 已写完：writer线程已写完的文件，merger未归并或者归并中 已归并：merger归并多个已写完的文件，生成的最终文件 1个审计文件，由多个page组成。1个page由header和多条log组成，log可跨page存储\n2 使用审计特性 2.1 配置审计特性 开启审计特性\nvb_guc set .. \"audit_enable=on\" 设置文件管理参数\n# 1 日志目录 vb_guc set .. \"audit_directory='/pato/to/audit_log'\" # 2 归档目录 vb_guc set .. \"audit_dump_directory=on\" # 3 日志目录空间限制 vb_guc set .. \"audit_space_limit=10G\" 设置日志同步参数\n2.2 启动数据库 2.3 生成审计日志 2.4 查询审计日志 2.5 异常管理 3 审计特性变更点 3.1 问题分析 关键问题：目前，客户使用审计特性时，最严重的2个问题如下：\n性能问题：开启审计特性，设置审计范围包括DML，TPCC测试，单个审计线程性能劣化90%以上（不开审计40w+，开DML审计2-3w） 功能问题：审计缺陷数量多，已识别缺陷20+，未识别的缺陷至少20+，很多缺陷会导致集群coredump、无法启动等 审计来源：opengauss审计特性来源：\n2019年，华为高斯以色列团队向国内交付审计demo 2020年，高斯2名新员工将demo交付到gaussdb，并开源到opengauss 2021年-2024年，高斯陆续有3人全职解决审计的问题单，至少50+，包括5+现网问题 2.2 重构目标 提高审计性能：以tpcc场景为例，1主1备，1000仓，500并发： 基线：默认不开启审计特性 场景一：开启审计特性，设置关键设计范围，审计DDL等，不审计DML，性能劣化很小，在5%以内 场景二：开启审计特性，设置最大审计范围，审计DDL等，xxDML、SELECT等，性能劣化可控，在20% 降低审计缺陷 重构前：曾解决10+审计文件类问题，未识别问题10+。因设计太复杂，无法控制风险 重构后：审计文件管理类问题，新增问题不超过5。简化设计，风险可控 2.3 问题分析（当前版本） 在审计架构中，主要线程分为业务线程、审计线程。\n一般情况下，业务线程生成日志，通过管道将日志发送给审计线程，审计线程存储日志至审计文件。\n在分析问题时，为方便描述，本章以常规tpcc为例，假设：并发数为400，审计线程数为20，1个事务执行3次UPDATE。\n一、存储日志慢 线程、管道、文件的数量关系如下：\n线程数：400个业务线程，默认1个审计线程，最高可配置48个。二者使用管道通信 管道数：管道数与审计线程数相等 文件数：每个审计线程，都独立写文件，即正在写的文件数与审计线程数相等 当前方案，存在多个设计问题。以常规tpcc为例，假设：：\n编号 设计 方案 问题 1 线程通信 管道 平均20个业务线程，使用1个管道，管道很容易满。线程阻塞、上下切换等开销高 2 IO模型 同步IO 1个事务执行3次UPATE，生成3条日志，阻塞等待3次管道空闲、管道传输、日志落盘 3 IO粒度 Record级 同1时刻，20个并发，20个事务，生成60条日志，需串行等待60次IO 4 加密粒度 Record级 同1时刻，20个并发，20个事务，生成60条日志，需串行加密60次，哈希60次 二、检索日志慢 目前，用户只能通过SQL语句检索日志，查询出的日志，默认情况不是按时间顺序排列的：\nSELECT query_audit('开始时间'， '结束时间')； 存储日志时，存在多个问题。\n日志分布（多文件）：20个审计线程，分别写20个审计文件。同一时刻，400个业务线程，生成的日志被随机写入20个文件中。 日志顺序（乱序）：假设，在时刻1，线程1生成日志1，但是发生线程切换。在时刻2，线程2生成日志2，并存储至文件中。在时刻3，日志1落盘。此时，日志1先生成，但是后落盘 文件信息（索引文件）：1个数据库节点，维护1个审计索引文件，索引文件记录所有日志关键的生成时间 如下图所示，不同线程写不同日志文件，每个日志文件写完，生成新的日志文件：\n检索日志时，流程如下：\n用户查询：指定’开始时间’、’结束时间’查询日志 查找文件：遍历索引文件，判断所有日志文件的’创建时间’，找到符合条件的日志文件。（20审计线程，最少需查找20个文件） 查找日志：分别遍历每个日志文件，判断所有日志的’生成时间’，找到符合条件的日志（假设1个文件64M = 8192 * 8k） 检索结果中，日志并不是按时间顺序排列的。\n三、文件问题多 在存储日志时，生成新日志文件，需更新索引文件。检索日志时，需遍历索引文件。索引文件丢失、损坏等，集群无法正常运行。但是，索引文件存在以下问题：\n无备份 无一致性保证：无双写机制 只初始1次：第1次使用审计，生成1次索引文件，与初始化约10万个索引节点，不可扩张。即最多可生成10万个日志文件。 2.4 重构方案 一、存储日志重构 新方案中，线程、管道、文件的数量关系如下：\n线程数：400个业务线程，只需1个审计线程即可。参考wal-writer设计 管道数：删除管道通信机制。参考wal-buffer设计 文件数：同1时刻，只有1个正在写的日志文件 针对各关键设计，重构思路如图所示：\n重构方案如下：\n编号 设计点 旧方案 新方案 优化分析 1 线程通信 管道 堆内存 参考wal-buffer，新增alog-buffer，业务线程直接将日志写入alog-buffer。同1时刻，20个线程无需阻塞等待管道串行传输，直接将日志写入alog-buffer 2 IO模型 同步IO 异步IO 参考wal-writer，同1时刻，20个并发，20个事务执行共60次UPDATE，无需串行阻塞等待60次管道传输、日志落盘，只需60次将日志写入alog-buffer，并在提交事务时，检查20次日志是否已落盘，理论上阻塞次数小于5次 3 IO粒度 record级 page级 参考wal-writer，1次落盘1个或多个page。 同1时刻，20个并发，20个事务，生成60条日志，无需串行等待60次IO，只需按page执行1次或多次IO即可 4 加密粒度 record级 page级 同1时刻，20个并发，20个事务，生成60条日志，需串行加密60次，哈希60次，只需按page执行1次加密、哈希即可 二、检索日志 存储日志时，重构思路如下：\n日志分布（单文件）：同一时刻，400个业务线程，生成的日志，被写入同1日志文件，或者下1个日志文件中 日志顺序（顺序）：每个日志文件中，日志严格按照从前往后的顺序排列。参考xlog按照lsn顺序排列。 文件信息（系统表）：新增系统表，vb_audit_files，记录每个审计日志的创建时间。另外，还可记录是否归档、是否备份等信息。 另外，还有以下优化：\n日志页：引入日志页的概念。1个日志文件，由多个日志页组成，1个日志页记录多条日志。页头记录：日志版本、日志时间、加密参数、LSN、上一个日志页未存完的日志长度等信息。 文件命名：旧方案中命名方式是1_adt, 2_adt, 3_adt, ..，新方案以时间为文件命名。例如adt_2025-0501-1200-00.log 新系统表内容如下，其中，aftime列记录日志文件创建时间，该列上建立btree索引：\nSELECT * FROM vb_audit_files; afnum | aftime | afname | isarchive | isbackup | isencrypt ------+---------------------+-------------------------+-----------+----------+----------- 1 | 2025-04-20 12:00:00 | adt_2025_0420_1200_0000 | false | fasle | false 2 | 2025-04-20 12:01:23 | adt_2025_0420_1201_2300 | false | fasle | false -- 1T日志文件，系统表总大小1M -- 计算：1个日志文件64M，64T有1024 * 1024个文件，系统表有1024 * 1024条记录，假设1条记录64字节。 重构思路如下图所示：\n检索日志时，流程如下：\n用户查询：指定’开始时间’、’结束时间’查询日志 查找文件：使用btree索引，从系统表vb_audit_files中查找符合条件的日志文件 查找日志：在日志文件中，使用二分查找，先获取文件第1个、最后1个日志页，判断日志页时间，最多需要13次IO（假设1个文件64M = 8192 * 8k） 2.5 重构开销 预估重构开销：\n工作量：2人月 代码量：3k 质量提升：提前规避30+问题，包括现网问题。降低问题发现、定位、修复时间 2.6 重构影响 删除审计索引文件\n重构审计日志文件：文件名变化，文件内容变化（使用page和record机制）。旧版本日志文件，仅在检索审计日志时被读取\nGUC配置参数：删除部分\n审计线程\n参数 功能 变化 audit_thread_num 写日志的线程数 删除 audit_buffer_size 日志缓存大小 删除，参考wal-buffer设置 audit_buffer_fflush_interval 日志缓存刷盘间隔 删除，参考wal-writer设置 日志格式\n参数 功能 变化 audit_data_format 日志格式，仅支持二进制 删除 audit_hash_enabled 日志中是否记录哈希值 - get_acl_for_audit 是否从系统表中，获取当前操作对象的ACL信息 - audit_xid_info 日志中是否记录xid - 日志文件\n参数 功能 变化 audit_space_limit 文件总空间 - audit_directory 文件目录 - audit_dump_directory 文件复制目录 - audit_backup_directory 文件备份目录 - audit_file_remain_threshold 文件数量最大值（问题大） 删除 audit_file_remain_time 日志保留时间 - audit_rotation_interval 生成新文件的时间间隔 删除 audit_stop_policy 文件大小或时间达到阈值时，删除旧日志，还是停止写新日志 删除 audit_resource_policy 文件阈值类型，大小还是时间 删除 audit_rotation_size 生成新文件的文件大小阈值 删除，使用默认值 64M vb_audit_space_alarm_threshold 是否对文件大小达到阈值时告警 删除 get_auditindex_file_lock 读取索引文件时，不加锁（只是为了测性能时不加锁） 删除 系统表：新增vb_audit_files\n2.7 性能测试 测试场景：tpcc, 1000仓，1主1备，400并发\n场景一：不开启审计特性 场景二：开启审计特性，默认审计范围，不审计DML 场景三：开启审计特性，最大审计范围，审计DML 测试流程：\nssh shenkun@172.16.103.90 # gauss@123 不开审计：43.3857，cpu利用率80% 39.4989 开审计：3.19，cpu利用率80% 3 审计特性详细设计 3.1 架构设计 一、整体架构 二、工作流程 三、文件组织 3.2 详细设计 一、配置审计特性 当前版本中，与审计相关的GUC参数有近60个，本次重构中，主要修改文件管理、线程管理相关参数，修改点如下：\n文件目录管理\n编号 变更 参数名 功能 参数类型 数据类型 取值范围 默认值 变更点 1 - audit_directory 审计文件路径 postmaster 字符串 绝对路径或相对路径 pg_audit - 2 - vb_audit_dump_directory 审计文件归档路径，audit_directory目录下的旧文件，定期move到归档路径 postmaster 字符串 绝对路径 空 - 3 删除 vb_audit_backup_directory 审计文件备份路径，audit_directory目录下新增文件，同时再copy到vb_audit_backup_directory目录 postmaster 字符串 绝对路径 空 删除 4 删除 audit_resource_policy 审计目录下，所有日志文件总阈值，是按时间，还是按文件大小 sighup bool on,off on 删除 5 删除 audit_file_remain_time 审计目录下，保留一段时间内的日志文件 sighup int [0,730] day 90 删除 6 修改 audit_space_limit 审计目录下，保留日志文件总大小 sighup int [1024,1073741824] kb 1048576(1GB) 修改：取值范围为[1MB, 1TB]，默认1GB 7 删除 audit_file_remain_threshold 审计目录下，保留日志文件数量 sighup int [100, 1048576] 1048576 删除 8 删除 vb_audit_space_alarm_threshold 审计空间达到阈值前，提前在pg_log告警 sighup double [0,1] 0 删除 文件管理\n编号 变更 参数名 功能 参数类型 数据类型 取值范围 默认值 变更点 9 删除 audit_data_format 审计文件格式，只支持2进制 postmaster 字符串 binary binary 删除 10 删除 audit_rotation_interval 创建新审计文件的时间间隔 sighup int [1, 35791394] min 1440 (1day) 删除 11 删除 vb_audit_stop_policy 日志文件总大小达到阈值，是停止写入新日志，还是保留旧日志 sighup bool on,off off 删除 12 删除 audit_rotation_size 单个日志文件最大值 sighup int [1024, 1048576] KB 10240 (10 MB) 删除 线程管理\n编号 变更 参数名 功能 参数类型 数据类型 取值范围 默认值 变更点 13 修改 audit_thread_num 审计线程数 postmaster int [1,48] 1 修改：取值范围[1, 10] IO管理\n编号 变更 参数名 功能 参数类型 数据类型 取值范围 默认值 变更点 14 删除 vb_audit_buffer_size_kb 将日志写到buffer中，不直接write postmaster int [0, 51200] kb 0 15 删除 vb_audit_buffer_fflush_interval_sec 定期对buffer中的日志进行write sighup [1,1800] s 120 删除 16 删除 vb_enable_get_auditindexfile_lock 每次write时，对索引文件加锁，为了检查有人修改系统时间 sighup bool on,off on 删除 17 新增 audit_buffer_size 日志缓冲区大小 postmaster int [1M, 1G] 64M 新增 18 新增 audit_sync_log 事务提交时，是否确保审计日志同步落盘 postmaster bool true, false false 新增 审计范围管理\n通过GUC参数，设置哪类事件需被审计。相关控制参数较多，设计混乱，由于时间限制，不在本次重构范围内：\nvb_audit_crypt_func vb_audit_sequence_enabled vb_enable_get_acl_for_audit audit_login_logout audit_database_process audit_user_locked audit_user_violation audit_grant_revoke audit_user full_audit_users no_audit_client audit_user audit_system_object audit_dml_state audit_dml_state_select audit_function_exec audit_system_function_exec audit_copy_exec audit_set_parameter audit_xid_info vb_audit_insufficient_space vb_audit_network_error vb_audit_query_cancel vb_audit_tool_error vb_enable_separation_of_duty enable_nonsysadmin_execute_direct enable_access_server_directory vb_audit_transaction_enabled 其他审计参数\nvb_audit_hash_enabled 其他 二、审计文件管理 审计文件夹 由GUC参数audit_direcotry控制，默认存储在data_directory/pgaudit目录 审计文件 背景：\n有2种类型的文件\n|-- audit_direcotry |-- adt_2025_0420_1200_0000.blog # 已归并的日志 |-- adt_2025_0420_1201_1234.blog |-- adt_unmerge_2025_0420_1203_2222.blog # 正在写的日志，多个写线程， |-- adt_unmerge_2025_0420_1203_2222.blog |-- adt_unmerge_2025_0420_1203_2222.blog 三、 启动数据库 四、生成审计日志 PostgresMain exec_simple_query(sql) # 1. 执行SQL parse_query_auto_gram() # 2. 解析语法、分析语义、重写查询、生成计划 pg_analyze_and_rewrite() pg_plan_queries() PortalRun(plan) # 3. 执行计划 ... ExecutorRun(plan) ExecutorEnd(plan) # 4. 清理计划 # ------------------------------------------------------------------------------- pos = audit_dml(plan) # 5. DML审计 event = parse_plan(plan.rte) # 5.1 生成事件：从执行计划、会话控制等中获取信息 log = assemble_event(event) # 5.2 封装日志 pos = send_log(log) # 5.3 发送日志 buf = get_buffer() # 随机获取1个adtbuffer并缓存，1个事务复用1个adtbuffer buf = (buf == NULL ? get_random_buffer() : buf) pos = copy_log(buf, log) read_lock_buffer(buf) # 获取读锁 spin_lock_buffer(buf) # 申请空间，返回偏移 pos = buf.sendpos buf.sendpos += pos # 偏移一直在递增 time = current_time() # 偏移越大，时间越大 spin_unlock_buffer(buf) memcpy(buf, log， pos % buf.size) read_unlock_buffer(buf) # 释放读锁 finish_xact_command() # 5. 提交事务 CommitTranscationCommand() XLogFlush(XactLastRecEnd) # 等待本事务最后1条xlog落盘 # ---------------------------------------------------- audit_flush(pos) # 如果设置了同步落盘日志：等待本事务最后1条adtlog落盘 五、存储审计日志 audit_main(buf) for (;;) write_lock_buffer(buf) len = buf.sendpos - buf.writepos write_unlock_buffer(buf) write(buf.writepos, len) buf.writepos += len sleep(count_sleep(len)) 六、审计日志一致性 七、归并审计日志 八、查询审计日志 4 审计后续重构计划 目前，审计特性还存在较多问题，但出于时间、成本、收益等考虑，暂不重构：\n设计问题（功能冗余）：\n传统审计：通过40+个guc参数，控制审计哪类对象、审计哪类操作、管理审计文件等，日志存储于指定文件夹 统一审计：通过CREATE AUDIT POLICY语法，控制哪个对象、哪类操作需审计。日志存储于syslog 设计问题（设置审计范围）\n传统审计 主体\n参数 功能 audit_user 对白名单内的用户进行审计 full_audit_users 对白名单内的用户的所有操作进行审计 no_audit_client 对黑名单内的IP的用户不审计 操作\n参数 功能 audit_copy_exec 是否审计 COPY audit_dml_state 是否审计 INSERT、UPDATE、DELETE audit_dml_state_select 是否审计 SELECT audit_set_parameter 是否审计 SET 操作结果 参数 功能 audit_user_violation 是否越权操作 audit_operation_result 只记录操作：成功、失败、成功和失败 的日志 audit_network_error 是否审计网络连接错误 audit_query_cancel 是否审计用户取消SELECT操作 audit_insufficient_space 是否记录SPACE：达到限额 audit_tool_error 是否审计 vb_dump、vb_dumpall、vb_restore 的异常 客体\n参数 功能 audit_system_object 审计OBJECT的范围：DATABASE、SCHEMA、TABLE、…等CREATE、DROP、ALTER操作 audit_database_process 是否审计CLUSTER：启动、停止、切换和恢复 audit_function_exec 是否审计FUNCTION：执行 audit_systerm_function_exec 是否审计FUNCTION：执行（内核写了一个白名单，共61个，例如pg_stat_activity，pg_switch_xlog等） audit_sequence_enabled 是否审计语句序列 audit_crypt_func 是否审计FUNCION （密码运算函数） audit_security_policy 是否审计POLICY audit_transcation 是否审计TANSCATITON：提交、回滚 audit_login_logout 审计CLUSTER：{登录、注销} x {成功、失败} audit_user_locked 是否审计USER：锁定、解锁 audit_grant_revoke 是否审计USER：赋权、收权 代码质量问题\n可扩展性：新增SQL语法、事件，适配审计特性难度\n其他优化：\n易用性（审计日志文件）：新增工具，离线解析日志文件功能，将日志解析为可见字符串，比如日志生成时间等 insert alrec = adt_assemble_record() atomic_lock(abuff) alrecpos = adt_alloc_buffer(size) alrectime = adt_get_time() atomic_unlock(abuff) commit adt_flush_buffer(myask) +---------------------------------------+-----------+----------+-------- | | al1 | al2 | | | +---------------------------------------+-----------+----------+-------- disk iobuffer albuffer writing alloced | writer | postgres | ^ ^ ask maxask t1 p1 --\u003e write p1 t2 p2 --\u003e write p4 t3 p3 --\u003e ok - t4 p4 --\u003e ok - t5 p5 --\u003e write p6 t6 p6 --\u003e ok - ",
+  "wordCount" : "994",
+  "inLanguage": "en",
+  "datePublished": "2025-04-23T18:00:00+08:00",
+  "dateModified": "2026-08-14T17:47:31+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/projectdocs/5-solution-g100-audit-refactor/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      海量 5 方案 G100审计重构
+    </h1>
+    <div class="post-meta">
+      <span title='2025-04-23 18:00:00 +0800 CST'>April 23, 2025</span>&nbsp;·&nbsp;<span>5 min</span>&nbsp;·&nbsp;<span>994 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#1-%e5%ae%a1%e8%ae%a1%e7%89%b9%e6%80%a7%e4%bb%8b%e7%bb%8d" aria-label="1 审计特性介绍">1 审计特性介绍</a><ul>
+                        
+                <li>
+                    <a href="#11-%e6%a0%b8%e5%bf%83%e5%8a%9f%e8%83%bd" aria-label="1.1 核心功能">1.1 核心功能</a></li>
+                <li>
+                    <a href="#12-%e6%95%b4%e4%bd%93%e6%9e%b6%e6%9e%843083" aria-label="1.2 整体架构（308.3）">1.2 整体架构（308.3）</a></li>
+                <li>
+                    <a href="#13-%e5%b7%a5%e4%bd%9c%e6%b5%81%e7%a8%8b3083" aria-label="1.3 工作流程（308.3）">1.3 工作流程（308.3）</a></li>
+                <li>
+                    <a href="#14-%e6%96%87%e4%bb%b6%e7%bb%84%e7%bb%87" aria-label="1.4 文件组织">1.4 文件组织</a></li></ul>
+                </li>
+                <li>
+                    <a href="#2-%e4%bd%bf%e7%94%a8%e5%ae%a1%e8%ae%a1%e7%89%b9%e6%80%a7" aria-label="2 使用审计特性">2 使用审计特性</a><ul>
+                        
+                <li>
+                    <a href="#21-%e9%85%8d%e7%bd%ae%e5%ae%a1%e8%ae%a1%e7%89%b9%e6%80%a7" aria-label="2.1 配置审计特性">2.1 配置审计特性</a></li>
+                <li>
+                    <a href="#22-%e5%90%af%e5%8a%a8%e6%95%b0%e6%8d%ae%e5%ba%93" aria-label="2.2 启动数据库">2.2 启动数据库</a></li>
+                <li>
+                    <a href="#23-%e7%94%9f%e6%88%90%e5%ae%a1%e8%ae%a1%e6%97%a5%e5%bf%97" aria-label="2.3 生成审计日志">2.3 生成审计日志</a></li>
+                <li>
+                    <a href="#24-%e6%9f%a5%e8%af%a2%e5%ae%a1%e8%ae%a1%e6%97%a5%e5%bf%97" aria-label="2.4 查询审计日志">2.4 查询审计日志</a></li>
+                <li>
+                    <a href="#25-%e5%bc%82%e5%b8%b8%e7%ae%a1%e7%90%86" aria-label="2.5 异常管理">2.5 异常管理</a></li></ul>
+                </li>
+                <li>
+                    <a href="#3-%e5%ae%a1%e8%ae%a1%e7%89%b9%e6%80%a7%e5%8f%98%e6%9b%b4%e7%82%b9" aria-label="3 审计特性变更点">3 审计特性变更点</a><ul>
+                        
+                <li>
+                    <a href="#31-%e9%97%ae%e9%a2%98%e5%88%86%e6%9e%90" aria-label="3.1 问题分析">3.1 问题分析</a></li>
+                <li>
+                    <a href="#22-%e9%87%8d%e6%9e%84%e7%9b%ae%e6%a0%87" aria-label="2.2 重构目标">2.2 重构目标</a></li>
+                <li>
+                    <a href="#23-%e9%97%ae%e9%a2%98%e5%88%86%e6%9e%90%e5%bd%93%e5%89%8d%e7%89%88%e6%9c%ac" aria-label="2.3 问题分析（当前版本）">2.3 问题分析（当前版本）</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e5%ad%98%e5%82%a8%e6%97%a5%e5%bf%97%e6%85%a2" aria-label="一、存储日志慢">一、存储日志慢</a></li>
+                <li>
+                    <a href="#%e4%ba%8c%e6%a3%80%e7%b4%a2%e6%97%a5%e5%bf%97%e6%85%a2" aria-label="二、检索日志慢">二、检索日志慢</a></li>
+                <li>
+                    <a href="#%e4%b8%89%e6%96%87%e4%bb%b6%e9%97%ae%e9%a2%98%e5%a4%9a" aria-label="三、文件问题多">三、文件问题多</a></li></ul>
+                </li>
+                <li>
+                    <a href="#24-%e9%87%8d%e6%9e%84%e6%96%b9%e6%a1%88" aria-label="2.4 重构方案">2.4 重构方案</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e5%ad%98%e5%82%a8%e6%97%a5%e5%bf%97%e9%87%8d%e6%9e%84" aria-label="一、存储日志重构">一、存储日志重构</a></li>
+                <li>
+                    <a href="#%e4%ba%8c%e6%a3%80%e7%b4%a2%e6%97%a5%e5%bf%97" aria-label="二、检索日志">二、检索日志</a></li></ul>
+                </li>
+                <li>
+                    <a href="#25-%e9%87%8d%e6%9e%84%e5%bc%80%e9%94%80" aria-label="2.5 重构开销">2.5 重构开销</a></li>
+                <li>
+                    <a href="#26-%e9%87%8d%e6%9e%84%e5%bd%b1%e5%93%8d" aria-label="2.6 重构影响">2.6 重构影响</a></li>
+                <li>
+                    <a href="#27-%e6%80%a7%e8%83%bd%e6%b5%8b%e8%af%95" aria-label="2.7 性能测试">2.7 性能测试</a></li></ul>
+                </li>
+                <li>
+                    <a href="#3-%e5%ae%a1%e8%ae%a1%e7%89%b9%e6%80%a7%e8%af%a6%e7%bb%86%e8%ae%be%e8%ae%a1" aria-label="3 审计特性详细设计">3 审计特性详细设计</a><ul>
+                        
+                <li>
+                    <a href="#31-%e6%9e%b6%e6%9e%84%e8%ae%be%e8%ae%a1" aria-label="3.1 架构设计">3.1 架构设计</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e6%95%b4%e4%bd%93%e6%9e%b6%e6%9e%84" aria-label="一、整体架构">一、整体架构</a></li>
+                <li>
+                    <a href="#%e4%ba%8c%e5%b7%a5%e4%bd%9c%e6%b5%81%e7%a8%8b" aria-label="二、工作流程">二、工作流程</a></li>
+                <li>
+                    <a href="#%e4%b8%89%e6%96%87%e4%bb%b6%e7%bb%84%e7%bb%87" aria-label="三、文件组织">三、文件组织</a></li></ul>
+                </li>
+                <li>
+                    <a href="#32-%e8%af%a6%e7%bb%86%e8%ae%be%e8%ae%a1" aria-label="3.2 详细设计">3.2 详细设计</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e9%85%8d%e7%bd%ae%e5%ae%a1%e8%ae%a1%e7%89%b9%e6%80%a7" aria-label="一、配置审计特性">一、配置审计特性</a></li>
+                <li>
+                    <a href="#%e4%ba%8c%e5%ae%a1%e8%ae%a1%e6%96%87%e4%bb%b6%e7%ae%a1%e7%90%86" aria-label="二、审计文件管理">二、审计文件管理</a></li></ul>
+                </li>
+                <li>
+                    <a href="#%e4%b8%89-%e5%90%af%e5%8a%a8%e6%95%b0%e6%8d%ae%e5%ba%93" aria-label="三、 启动数据库">三、 启动数据库</a></li>
+                <li>
+                    <a href="#%e5%9b%9b%e7%94%9f%e6%88%90%e5%ae%a1%e8%ae%a1%e6%97%a5%e5%bf%97" aria-label="四、生成审计日志">四、生成审计日志</a></li>
+                <li>
+                    <a href="#%e4%ba%94%e5%ad%98%e5%82%a8%e5%ae%a1%e8%ae%a1%e6%97%a5%e5%bf%97" aria-label="五、存储审计日志">五、存储审计日志</a></li>
+                <li>
+                    <a href="#%e5%85%ad%e5%ae%a1%e8%ae%a1%e6%97%a5%e5%bf%97%e4%b8%80%e8%87%b4%e6%80%a7" aria-label="六、审计日志一致性">六、审计日志一致性</a></li>
+                <li>
+                    <a href="#%e4%b8%83%e5%bd%92%e5%b9%b6%e5%ae%a1%e8%ae%a1%e6%97%a5%e5%bf%97" aria-label="七、归并审计日志">七、归并审计日志</a></li>
+                <li>
+                    <a href="#%e5%85%ab%e6%9f%a5%e8%af%a2%e5%ae%a1%e8%ae%a1%e6%97%a5%e5%bf%97" aria-label="八、查询审计日志">八、查询审计日志</a></li></ul>
+                </li>
+                <li>
+                    <a href="#4-%e5%ae%a1%e8%ae%a1%e5%90%8e%e7%bb%ad%e9%87%8d%e6%9e%84%e8%ae%a1%e5%88%92" aria-label="4 审计后续重构计划">4 审计后续重构计划</a>
+                </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><ol>
+<li><a href="#1-%E5%AE%A1%E8%AE%A1%E7%89%B9%E6%80%A7%E4%BB%8B%E7%BB%8D">1 审计特性介绍</a>
+<ol>
+<li><a href="#1-1-%E6%A0%B8%E5%BF%83%E5%8A%9F%E8%83%BD">1.1 核心功能</a></li>
+<li><a href="#1-2-%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84%EF%BC%88308-3%EF%BC%89">1.2 整体架构（308.3）</a></li>
+<li><a href="#1-3-%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B%EF%BC%88308-3%EF%BC%89">1.3 工作流程（308.3）</a></li>
+<li><a href="#1-4-%E6%96%87%E4%BB%B6%E7%BB%84%E7%BB%87">1.4 文件组织</a></li>
+</ol>
+</li>
+<li><a href="#2-%E4%BD%BF%E7%94%A8%E5%AE%A1%E8%AE%A1%E7%89%B9%E6%80%A7">2 使用审计特性</a>
+<ol>
+<li><a href="#2-1-%E9%85%8D%E7%BD%AE%E5%AE%A1%E8%AE%A1%E7%89%B9%E6%80%A7">2.1 配置审计特性</a></li>
+<li><a href="#2-2-%E5%90%AF%E5%8A%A8%E6%95%B0%E6%8D%AE%E5%BA%93">2.2 启动数据库</a></li>
+<li><a href="#2-3-%E7%94%9F%E6%88%90%E5%AE%A1%E8%AE%A1%E6%97%A5%E5%BF%97">2.3 生成审计日志</a></li>
+<li><a href="#2-4-%E6%9F%A5%E8%AF%A2%E5%AE%A1%E8%AE%A1%E6%97%A5%E5%BF%97">2.4 查询审计日志</a></li>
+<li><a href="#2-5-%E5%BC%82%E5%B8%B8%E7%AE%A1%E7%90%86">2.5 异常管理</a></li>
+</ol>
+</li>
+<li><a href="#3-%E5%AE%A1%E8%AE%A1%E7%89%B9%E6%80%A7%E5%8F%98%E6%9B%B4%E7%82%B9">3 审计特性变更点</a>
+<ol>
+<li><a href="#3-1-%E9%97%AE%E9%A2%98%E5%88%86%E6%9E%90">3.1 问题分析</a></li>
+<li><a href="#2-2-%E9%87%8D%E6%9E%84%E7%9B%AE%E6%A0%87">2.2 重构目标</a></li>
+<li><a href="#2-3-%E9%97%AE%E9%A2%98%E5%88%86%E6%9E%90%EF%BC%88%E5%BD%93%E5%89%8D%E7%89%88%E6%9C%AC%EF%BC%89">2.3 问题分析（当前版本）</a>
+<ol>
+<li><a href="#%E4%B8%80%E3%80%81%E5%AD%98%E5%82%A8%E6%97%A5%E5%BF%97%E6%85%A2">一、存储日志慢</a></li>
+<li><a href="#%E4%BA%8C%E3%80%81%E6%A3%80%E7%B4%A2%E6%97%A5%E5%BF%97%E6%85%A2">二、检索日志慢</a></li>
+<li><a href="#%E4%B8%89%E3%80%81%E6%96%87%E4%BB%B6%E9%97%AE%E9%A2%98%E5%A4%9A">三、文件问题多</a></li>
+</ol>
+</li>
+<li><a href="#2-4-%E9%87%8D%E6%9E%84%E6%96%B9%E6%A1%88">2.4 重构方案</a>
+<ol>
+<li><a href="#%E4%B8%80%E3%80%81%E5%AD%98%E5%82%A8%E6%97%A5%E5%BF%97%E9%87%8D%E6%9E%84">一、存储日志重构</a></li>
+<li><a href="#%E4%BA%8C%E3%80%81%E6%A3%80%E7%B4%A2%E6%97%A5%E5%BF%97">二、检索日志</a></li>
+</ol>
+</li>
+<li><a href="#2-5-%E9%87%8D%E6%9E%84%E5%BC%80%E9%94%80">2.5 重构开销</a></li>
+<li><a href="#2-6-%E9%87%8D%E6%9E%84%E5%BD%B1%E5%93%8D">2.6 重构影响</a></li>
+<li><a href="#2-7-%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95">2.7 性能测试</a></li>
+</ol>
+</li>
+<li><a href="#3-%E5%AE%A1%E8%AE%A1%E7%89%B9%E6%80%A7%E8%AF%A6%E7%BB%86%E8%AE%BE%E8%AE%A1">3 审计特性详细设计</a>
+<ol>
+<li><a href="#3-1-%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1">3.1 架构设计</a>
+<ol>
+<li><a href="#%E4%B8%80%E3%80%81%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84">一、整体架构</a></li>
+<li><a href="#%E4%BA%8C%E3%80%81%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B">二、工作流程</a></li>
+<li><a href="#%E4%B8%89%E3%80%81%E6%96%87%E4%BB%B6%E7%BB%84%E7%BB%87">三、文件组织</a></li>
+</ol>
+</li>
+<li><a href="#3-2-%E8%AF%A6%E7%BB%86%E8%AE%BE%E8%AE%A1">3.2 详细设计</a>
+<ol>
+<li><a href="#%E4%B8%80%E3%80%81%E9%85%8D%E7%BD%AE%E5%AE%A1%E8%AE%A1%E7%89%B9%E6%80%A7">一、配置审计特性</a></li>
+<li><a href="#%E4%BA%8C%E3%80%81%E5%AE%A1%E8%AE%A1%E6%96%87%E4%BB%B6%E7%AE%A1%E7%90%86">二、审计文件管理</a></li>
+</ol>
+</li>
+<li><a href="#%E4%B8%89%E3%80%81-%E5%90%AF%E5%8A%A8%E6%95%B0%E6%8D%AE%E5%BA%93">三、 启动数据库</a></li>
+<li><a href="#%E5%9B%9B%E3%80%81%E7%94%9F%E6%88%90%E5%AE%A1%E8%AE%A1%E6%97%A5%E5%BF%97">四、生成审计日志</a></li>
+<li><a href="#%E4%BA%94%E3%80%81%E5%AD%98%E5%82%A8%E5%AE%A1%E8%AE%A1%E6%97%A5%E5%BF%97">五、存储审计日志</a></li>
+<li><a href="#%E5%85%AD%E3%80%81%E5%AE%A1%E8%AE%A1%E6%97%A5%E5%BF%97%E4%B8%80%E8%87%B4%E6%80%A7">六、审计日志一致性</a></li>
+<li><a href="#%E4%B8%83%E3%80%81%E5%BD%92%E5%B9%B6%E5%AE%A1%E8%AE%A1%E6%97%A5%E5%BF%97">七、归并审计日志</a></li>
+<li><a href="#%E5%85%AB%E3%80%81%E6%9F%A5%E8%AF%A2%E5%AE%A1%E8%AE%A1%E6%97%A5%E5%BF%97">八、查询审计日志</a></li>
+</ol>
+</li>
+<li><a href="#4-%E5%AE%A1%E8%AE%A1%E5%90%8E%E7%BB%AD%E9%87%8D%E6%9E%84%E8%AE%A1%E5%88%92">4 审计后续重构计划</a></li>
+</ol>
+<p><strong>摘要</strong></p>
+<blockquote>
+<p>介绍审计特性，分析性能问题，提出优化方案，评审优化方案，规划其他计划</p>
+</blockquote>
+<h1 id="1-审计特性介绍">1 审计特性介绍<a hidden class="anchor" aria-hidden="true" href="#1-审计特性介绍">#</a></h1>
+<h2 id="11-核心功能">1.1 核心功能<a hidden class="anchor" aria-hidden="true" href="#11-核心功能">#</a></h2>
+<ul>
+<li>
+<p>审计特性：记录数据库内的各种事件，事件包括：</p>
+<ul>
+<li>启动、恢复、切换、停止集群</li>
+<li>登录、注销账号</li>
+<li>创建、修改、删除数据库对象，包括：DATABASE、SCHEMA、TABLE等</li>
+<li>插入、更新、删除、查询关系表</li>
+<li>…</li>
+</ul>
+</li>
+<li>
+<p>描述事件：数据库内发生的事件，都可描述为&lt;主体&gt;&lt;操作&gt;&lt;客体&gt;</p>
+<ul>
+<li>主体：一般是数据库用户</li>
+<li>客体：集群、账号、数据对象等</li>
+<li>操作：不同客体操作类型不一样。比如，对于TABLE，操作类型有：CREATE, INSERT, SELECT等。</li>
+</ul>
+</li>
+<li>
+<p>审计日志：针对每个事件，审计模块都会生成一条或多条审计日志，审计日志中记录事件关键信息，包括：</p>
+<ul>
+<li>主体信息：用户名、客户端IP、登入的数据库名、线程id等</li>
+<li>操作信息：操作的类型、操作的时间、操作的SQL语句等</li>
+<li>客体信息：客体类型、客体名称、客体属于哪个database、客体属于哪个schema</li>
+</ul>
+</li>
+</ul>
+<h2 id="12-整体架构3083">1.2 整体架构（308.3）<a hidden class="anchor" aria-hidden="true" href="#12-整体架构3083">#</a></h2>
+<p>审计架构如下图所示，按模块划分，可将审计划分为5个模块：</p>
+<ol>
+<li>管理模块：管理审计配置，相关配置由GUC控制，可分为3类：审计范围、日志传输、审计文件。管理审计内存、锁等资源，启停审计线程</li>
+<li>事件模块：发生关键事件时，如启停集群、执行SQL语句等，收集事件关键信息，即主体、操作、客体关键信息，将各类事件封装为统一格式的审计日志，并将其发送至审计线程</li>
+<li>存储模块：
+<ul>
+<li>审计写线程：接收审计日志，按文件格式组织日志，将日志存储至文件中。如果有多个写线程，每个写线程都有独立的日志缓冲区、日志文件。同一时间段内生成的多条日志，可能存储于多个文件中</li>
+<li>审计归并线程：读取同一时间段内多个审计文件，排序日志，合并为同1个审计文件</li>
+</ul>
+</li>
+<li>文件模块：管理多种状态的审计文件，包括：正在写、待归并、已归并等</li>
+<li>查询模块：
+<ul>
+<li>在线查询：通过内置函数，查询一段时间内的日志</li>
+<li>离线查询：通过离线工具，解析二进制格式的日志文件</li>
+</ul>
+</li>
+</ol>
+<h2 id="13-工作流程3083">1.3 工作流程（308.3）<a hidden class="anchor" aria-hidden="true" href="#13-工作流程3083">#</a></h2>
+<p>审计特性的工作流程如下图所示：</p>
+<ol>
+<li>用户：通过GUC参数，配置审计特性，包括审计范围、日志传输、审计文件等。</li>
+<li>主线程：启动审计线程</li>
+<li>工作线程：在关键流程中，收集审计事件。以执行DML为例，审计处理流程包括：
+<ul>
+<li>在清理计划阶段，收集审计事件，事件包括主体、操作、客体等信息。然后，将事件封装为日志后，发送给审计写线程。由审计线程负责将日志落盘</li>
+<li>在事务提交阶段，如果开启日志同步落盘机制，则等待审计线程将日志落盘</li>
+</ul>
+</li>
+<li>审计writer线程：不断将接收到的日志写至磁盘</li>
+<li>审计merger线程：存在多个审计写线程的情况下，将同一时间段内的多个已写完的文件，合并为1个文件</li>
+</ol>
+<h2 id="14-文件组织">1.4 文件组织<a hidden class="anchor" aria-hidden="true" href="#14-文件组织">#</a></h2>
+<p>在存在多个writer线程的场景，日志文件有3种状态：</p>
+<ul>
+<li>正在写：writer线程正在写的文件</li>
+<li>已写完：writer线程已写完的文件，merger未归并或者归并中</li>
+<li>已归并：merger归并多个已写完的文件，生成的最终文件</li>
+</ul>
+<p>1个审计文件，由多个page组成。1个page由header和多条log组成，log可跨page存储</p>
+<h1 id="2-使用审计特性">2 使用审计特性<a hidden class="anchor" aria-hidden="true" href="#2-使用审计特性">#</a></h1>
+<h2 id="21-配置审计特性">2.1 配置审计特性<a hidden class="anchor" aria-hidden="true" href="#21-配置审计特性">#</a></h2>
+<ol>
+<li>
+<p>开启审计特性</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">vb_guc <span class="nb">set</span> .. <span class="s2">&#34;audit_enable=on&#34;</span>
+</span></span></code></pre></div></li>
+<li>
+<p>设置文件管理参数</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="c1"># 1 日志目录</span>
+</span></span><span class="line"><span class="cl">vb_guc <span class="nb">set</span> .. <span class="s2">&#34;audit_directory=&#39;/pato/to/audit_log&#39;&#34;</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># 2 归档目录</span>
+</span></span><span class="line"><span class="cl">vb_guc <span class="nb">set</span> .. <span class="s2">&#34;audit_dump_directory=on&#34;</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># 3 日志目录空间限制</span>
+</span></span><span class="line"><span class="cl">vb_guc <span class="nb">set</span> .. <span class="s2">&#34;audit_space_limit=10G&#34;</span>
+</span></span></code></pre></div></li>
+<li>
+<p>设置日志同步参数</p>
+</li>
+</ol>
+<h2 id="22-启动数据库">2.2 启动数据库<a hidden class="anchor" aria-hidden="true" href="#22-启动数据库">#</a></h2>
+<h2 id="23-生成审计日志">2.3 生成审计日志<a hidden class="anchor" aria-hidden="true" href="#23-生成审计日志">#</a></h2>
+<h2 id="24-查询审计日志">2.4 查询审计日志<a hidden class="anchor" aria-hidden="true" href="#24-查询审计日志">#</a></h2>
+<h2 id="25-异常管理">2.5 异常管理<a hidden class="anchor" aria-hidden="true" href="#25-异常管理">#</a></h2>
+<h1 id="3-审计特性变更点">3 审计特性变更点<a hidden class="anchor" aria-hidden="true" href="#3-审计特性变更点">#</a></h1>
+<h2 id="31-问题分析">3.1 问题分析<a hidden class="anchor" aria-hidden="true" href="#31-问题分析">#</a></h2>
+<ul>
+<li>
+<p>关键问题：目前，客户使用审计特性时，最严重的2个问题如下：</p>
+<ul>
+<li>性能问题：开启审计特性，设置审计范围包括DML，TPCC测试，单个审计线程性能劣化90%以上（不开审计40w+，开DML审计2-3w）</li>
+<li>功能问题：审计缺陷数量多，已识别缺陷20+，未识别的缺陷至少20+，很多缺陷会导致集群coredump、无法启动等</li>
+</ul>
+</li>
+<li>
+<p>审计来源：opengauss审计特性来源：</p>
+<ul>
+<li>2019年，华为高斯以色列团队向国内交付审计demo</li>
+<li>2020年，高斯2名新员工将demo交付到gaussdb，并开源到opengauss</li>
+<li>2021年-2024年，高斯陆续有3人全职解决审计的问题单，至少50+，包括5+现网问题</li>
+</ul>
+</li>
+</ul>
+<h2 id="22-重构目标">2.2 重构目标<a hidden class="anchor" aria-hidden="true" href="#22-重构目标">#</a></h2>
+<ul>
+<li>提高审计性能：以tpcc场景为例，1主1备，1000仓，500并发：
+<ul>
+<li>基线：默认不开启审计特性</li>
+<li>场景一：开启审计特性，设置关键设计范围，审计DDL等，不审计DML，性能劣化很小，在5%以内</li>
+<li>场景二：开启审计特性，设置最大审计范围，审计DDL等，xxDML、SELECT等，性能劣化可控，在20%</li>
+</ul>
+</li>
+<li>降低审计缺陷
+<ul>
+<li>重构前：曾解决10+审计文件类问题，未识别问题10+。因设计太复杂，无法控制风险</li>
+<li>重构后：审计文件管理类问题，新增问题不超过5。简化设计，风险可控</li>
+</ul>
+</li>
+</ul>
+<h2 id="23-问题分析当前版本">2.3 问题分析（当前版本）<a hidden class="anchor" aria-hidden="true" href="#23-问题分析当前版本">#</a></h2>
+<p>在审计架构中，主要线程分为业务线程、审计线程。<br>
+一般情况下，业务线程生成日志，通过管道将日志发送给审计线程，审计线程存储日志至审计文件。<br>
+在分析问题时，为方便描述，本章以常规tpcc为例，假设：并发数为400，审计线程数为20，1个事务执行3次UPDATE。</p>
+<h3 id="一存储日志慢">一、存储日志慢<a hidden class="anchor" aria-hidden="true" href="#一存储日志慢">#</a></h3>
+<p>线程、管道、文件的数量关系如下：</p>
+<ol>
+<li>线程数：400个业务线程，默认1个审计线程，最高可配置48个。二者使用管道通信</li>
+<li>管道数：管道数与审计线程数相等</li>
+<li>文件数：每个审计线程，都独立写文件，即正在写的文件数与审计线程数相等</li>
+</ol>
+<p><img alt="adt_old" loading="lazy" src="/images/ProjectDocs/5-solution-g100-audit-refactor/adt_old.png"></p>
+<p>当前方案，存在多个设计问题。以常规tpcc为例，假设：：</p>
+<table>
+  <thead>
+      <tr>
+          <th>编号</th>
+          <th>设计</th>
+          <th>方案</th>
+          <th>问题</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td>线程通信</td>
+          <td>管道</td>
+          <td>平均20个业务线程，使用1个管道，管道很容易满。线程阻塞、上下切换等开销高</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td>IO模型</td>
+          <td>同步IO</td>
+          <td>1个事务执行3次UPATE，生成3条日志，阻塞等待3次管道空闲、管道传输、日志落盘</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td>IO粒度</td>
+          <td>Record级</td>
+          <td>同1时刻，20个并发，20个事务，生成60条日志，需串行等待60次IO</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td>加密粒度</td>
+          <td>Record级</td>
+          <td>同1时刻，20个并发，20个事务，生成60条日志，需串行加密60次，哈希60次</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="二检索日志慢">二、检索日志慢<a hidden class="anchor" aria-hidden="true" href="#二检索日志慢">#</a></h3>
+<p>目前，用户只能通过SQL语句检索日志，查询出的日志，默认情况不是按时间顺序排列的：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">query_audit</span><span class="p">(</span><span class="s1">&#39;开始时间&#39;</span><span class="err">，</span><span class="w"> </span><span class="s1">&#39;结束时间&#39;</span><span class="p">)</span><span class="err">；</span><span class="w">
+</span></span></span></code></pre></div><p>存储日志时，存在多个问题。</p>
+<ul>
+<li>日志分布（多文件）：20个审计线程，分别写20个审计文件。同一时刻，400个业务线程，生成的日志被随机写入20个文件中。</li>
+<li>日志顺序（乱序）：假设，在时刻1，线程1生成日志1，但是发生线程切换。在时刻2，线程2生成日志2，并存储至文件中。在时刻3，日志1落盘。此时，日志1先生成，但是后落盘</li>
+<li>文件信息（索引文件）：1个数据库节点，维护1个审计索引文件，索引文件记录所有日志关键的生成时间</li>
+</ul>
+<p>如下图所示，不同线程写不同日志文件，每个日志文件写完，生成新的日志文件：</p>
+<p><img alt="adt_read_old" loading="lazy" src="/images/ProjectDocs/5-solution-g100-audit-refactor/adt_read_old.png"></p>
+<p>检索日志时，流程如下：</p>
+<ol>
+<li>用户查询：指定’开始时间’、’结束时间’查询日志</li>
+<li>查找文件：遍历索引文件，判断所有日志文件的’创建时间’，找到符合条件的日志文件。（20审计线程，最少需查找20个文件）</li>
+<li>查找日志：分别遍历每个日志文件，判断所有日志的’生成时间’，找到符合条件的日志（假设1个文件64M = 8192 * 8k）</li>
+</ol>
+<p>检索结果中，日志并不是按时间顺序排列的。</p>
+<h3 id="三文件问题多">三、文件问题多<a hidden class="anchor" aria-hidden="true" href="#三文件问题多">#</a></h3>
+<p>在存储日志时，生成新日志文件，需更新索引文件。检索日志时，需遍历索引文件。索引文件丢失、损坏等，集群无法正常运行。但是，索引文件存在以下问题：</p>
+<ol>
+<li>无备份</li>
+<li>无一致性保证：无双写机制</li>
+<li>只初始1次：第1次使用审计，生成1次索引文件，与初始化约10万个索引节点，不可扩张。即最多可生成10万个日志文件。</li>
+</ol>
+<h2 id="24-重构方案">2.4 重构方案<a hidden class="anchor" aria-hidden="true" href="#24-重构方案">#</a></h2>
+<h3 id="一存储日志重构">一、存储日志重构<a hidden class="anchor" aria-hidden="true" href="#一存储日志重构">#</a></h3>
+<p>新方案中，线程、管道、文件的数量关系如下：</p>
+<ol>
+<li>线程数：400个业务线程，只需1个审计线程即可。参考wal-writer设计</li>
+<li>管道数：删除管道通信机制。参考wal-buffer设计</li>
+<li>文件数：同1时刻，只有1个正在写的日志文件</li>
+</ol>
+<p>针对各关键设计，重构思路如图所示：</p>
+<p><img alt="adt_new" loading="lazy" src="/images/ProjectDocs/5-solution-g100-audit-refactor/adt_new.png"></p>
+<p>重构方案如下：</p>
+<table>
+  <thead>
+      <tr>
+          <th>编号</th>
+          <th>设计点</th>
+          <th>旧方案</th>
+          <th>新方案</th>
+          <th>优化分析</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td>线程通信</td>
+          <td>管道</td>
+          <td>堆内存</td>
+          <td>参考wal-buffer，新增alog-buffer，业务线程直接将日志写入alog-buffer。同1时刻，20个线程无需阻塞等待管道串行传输，直接将日志写入alog-buffer</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td>IO模型</td>
+          <td>同步IO</td>
+          <td>异步IO</td>
+          <td>参考wal-writer，同1时刻，20个并发，20个事务执行共60次UPDATE，无需串行阻塞等待60次管道传输、日志落盘，只需60次将日志写入alog-buffer，并在提交事务时，检查20次日志是否已落盘，理论上阻塞次数小于5次</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td>IO粒度</td>
+          <td>record级</td>
+          <td>page级</td>
+          <td>参考wal-writer，1次落盘1个或多个page。 同1时刻，20个并发，20个事务，生成60条日志，无需串行等待60次IO，只需按page执行1次或多次IO即可</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td>加密粒度</td>
+          <td>record级</td>
+          <td>page级</td>
+          <td>同1时刻，20个并发，20个事务，生成60条日志，需串行加密60次，哈希60次，只需按page执行1次加密、哈希即可</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="二检索日志">二、检索日志<a hidden class="anchor" aria-hidden="true" href="#二检索日志">#</a></h3>
+<p>存储日志时，重构思路如下：</p>
+<ol>
+<li>日志分布（单文件）：同一时刻，400个业务线程，生成的日志，被写入同1日志文件，或者下1个日志文件中</li>
+<li>日志顺序（顺序）：每个日志文件中，日志严格按照从前往后的顺序排列。参考xlog按照lsn顺序排列。</li>
+<li>文件信息（系统表）：新增系统表，vb_audit_files，记录每个审计日志的创建时间。另外，还可记录是否归档、是否备份等信息。</li>
+</ol>
+<p>另外，还有以下优化：</p>
+<ol>
+<li>日志页：引入日志页的概念。1个日志文件，由多个日志页组成，1个日志页记录多条日志。页头记录：日志版本、日志时间、加密参数、LSN、上一个日志页未存完的日志长度等信息。</li>
+<li>文件命名：旧方案中命名方式是1_adt, 2_adt, 3_adt, ..，新方案以时间为文件命名。例如adt_2025-0501-1200-00.log</li>
+</ol>
+<p>新系统表内容如下，其中，aftime列记录日志文件创建时间，该列上建立btree索引：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">vb_audit_files</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="n">afnum</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">aftime</span><span class="w">              </span><span class="o">|</span><span class="w"> </span><span class="n">afname</span><span class="w">                  </span><span class="o">|</span><span class="w"> </span><span class="n">isarchive</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">isbackup</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">isencrypt</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">------+---------------------+-------------------------+-----------+----------+-----------
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="mi">1</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="mi">2025</span><span class="o">-</span><span class="mi">04</span><span class="o">-</span><span class="mi">20</span><span class="w"> </span><span class="mi">12</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">adt_2025_0420_1200_0000</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="k">false</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">fasle</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="k">false</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="mi">2</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="mi">2025</span><span class="o">-</span><span class="mi">04</span><span class="o">-</span><span class="mi">20</span><span class="w"> </span><span class="mi">12</span><span class="p">:</span><span class="mi">01</span><span class="p">:</span><span class="mi">23</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">adt_2025_0420_1201_2300</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="k">false</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">fasle</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="k">false</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 1T日志文件，系统表总大小1M
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 计算：1个日志文件64M，64T有1024 * 1024个文件，系统表有1024 * 1024条记录，假设1条记录64字节。
+</span></span></span></code></pre></div><p>重构思路如下图所示：</p>
+<p><img alt="adt_read_new" loading="lazy" src="/images/ProjectDocs/5-solution-g100-audit-refactor/adt_read_new.png"></p>
+<p>检索日志时，流程如下：</p>
+<ol>
+<li>用户查询：指定’开始时间’、’结束时间’查询日志</li>
+<li>查找文件：使用btree索引，从系统表vb_audit_files中查找符合条件的日志文件</li>
+<li>查找日志：在日志文件中，使用二分查找，先获取文件第1个、最后1个日志页，判断日志页时间，最多需要13次IO（假设1个文件64M = 8192 * 8k）</li>
+</ol>
+<h2 id="25-重构开销">2.5 重构开销<a hidden class="anchor" aria-hidden="true" href="#25-重构开销">#</a></h2>
+<p>预估重构开销：</p>
+<ul>
+<li>工作量：2人月</li>
+<li>代码量：3k</li>
+<li>质量提升：提前规避30+问题，包括现网问题。降低问题发现、定位、修复时间</li>
+</ul>
+<h2 id="26-重构影响">2.6 重构影响<a hidden class="anchor" aria-hidden="true" href="#26-重构影响">#</a></h2>
+<ul>
+<li>
+<p>删除审计索引文件</p>
+</li>
+<li>
+<p>重构审计日志文件：文件名变化，文件内容变化（使用page和record机制）。旧版本日志文件，仅在检索审计日志时被读取</p>
+</li>
+<li>
+<p>GUC配置参数：删除部分</p>
+<ul>
+<li>
+<p>审计线程</p>
+<table>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>功能</th>
+          <th>变化</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>audit_thread_num</td>
+          <td>写日志的线程数</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>audit_buffer_size</td>
+          <td>日志缓存大小</td>
+          <td>删除，参考wal-buffer设置</td>
+      </tr>
+      <tr>
+          <td>audit_buffer_fflush_interval</td>
+          <td>日志缓存刷盘间隔</td>
+          <td>删除，参考wal-writer设置</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+<li>
+<p>日志格式</p>
+<table>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>功能</th>
+          <th>变化</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>audit_data_format</td>
+          <td>日志格式，仅支持二进制</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>audit_hash_enabled</td>
+          <td>日志中是否记录哈希值</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>get_acl_for_audit</td>
+          <td>是否从系统表中，获取当前操作对象的ACL信息</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>audit_xid_info</td>
+          <td>日志中是否记录xid</td>
+          <td>-</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+<li>
+<p>日志文件</p>
+<table>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>功能</th>
+          <th>变化</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>audit_space_limit</td>
+          <td>文件总空间</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>audit_directory</td>
+          <td>文件目录</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>audit_dump_directory</td>
+          <td>文件复制目录</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>audit_backup_directory</td>
+          <td>文件备份目录</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>audit_file_remain_threshold</td>
+          <td>文件数量最大值（问题大）</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>audit_file_remain_time</td>
+          <td>日志保留时间</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>audit_rotation_interval</td>
+          <td>生成新文件的时间间隔</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>audit_stop_policy</td>
+          <td>文件大小或时间达到阈值时，删除旧日志，还是停止写新日志</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>audit_resource_policy</td>
+          <td>文件阈值类型，大小还是时间</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>audit_rotation_size</td>
+          <td>生成新文件的文件大小阈值</td>
+          <td>删除，使用默认值 64M</td>
+      </tr>
+      <tr>
+          <td>vb_audit_space_alarm_threshold</td>
+          <td>是否对文件大小达到阈值时告警</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>get_auditindex_file_lock</td>
+          <td>读取索引文件时，不加锁（只是为了测性能时不加锁）</td>
+          <td>删除</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+</ul>
+</li>
+<li>
+<p>系统表：新增vb_audit_files</p>
+</li>
+</ul>
+<h2 id="27-性能测试">2.7 性能测试<a hidden class="anchor" aria-hidden="true" href="#27-性能测试">#</a></h2>
+<ul>
+<li>
+<p>测试场景：tpcc, 1000仓，1主1备，400并发</p>
+<ul>
+<li>场景一：不开启审计特性</li>
+<li>场景二：开启审计特性，默认审计范围，不审计DML</li>
+<li>场景三：开启审计特性，最大审计范围，审计DML</li>
+</ul>
+</li>
+<li>
+<p>测试流程：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">ssh shenkun@172.16.103.90
+</span></span><span class="line"><span class="cl"><span class="c1"># gauss@123</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">不开审计：43.3857，cpu利用率80% 39.4989
+</span></span><span class="line"><span class="cl">开审计：3.19，cpu利用率80%
+</span></span></code></pre></div></li>
+</ul>
+<h1 id="3-审计特性详细设计">3 审计特性详细设计<a hidden class="anchor" aria-hidden="true" href="#3-审计特性详细设计">#</a></h1>
+<h2 id="31-架构设计">3.1 架构设计<a hidden class="anchor" aria-hidden="true" href="#31-架构设计">#</a></h2>
+<h3 id="一整体架构">一、整体架构<a hidden class="anchor" aria-hidden="true" href="#一整体架构">#</a></h3>
+<h3 id="二工作流程">二、工作流程<a hidden class="anchor" aria-hidden="true" href="#二工作流程">#</a></h3>
+<h3 id="三文件组织">三、文件组织<a hidden class="anchor" aria-hidden="true" href="#三文件组织">#</a></h3>
+<h2 id="32-详细设计">3.2 详细设计<a hidden class="anchor" aria-hidden="true" href="#32-详细设计">#</a></h2>
+<h3 id="一配置审计特性">一、配置审计特性<a hidden class="anchor" aria-hidden="true" href="#一配置审计特性">#</a></h3>
+<p>当前版本中，与审计相关的GUC参数有近60个，本次重构中，主要修改文件管理、线程管理相关参数，修改点如下：</p>
+<ol>
+<li>
+<p>文件目录管理</p>
+<table>
+  <thead>
+      <tr>
+          <th>编号</th>
+          <th>变更</th>
+          <th>参数名</th>
+          <th>功能</th>
+          <th>参数类型</th>
+          <th>数据类型</th>
+          <th>取值范围</th>
+          <th>默认值</th>
+          <th>变更点</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td>-</td>
+          <td>audit_directory</td>
+          <td>审计文件路径</td>
+          <td>postmaster</td>
+          <td>字符串</td>
+          <td>绝对路径或相对路径</td>
+          <td>pg_audit</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td>-</td>
+          <td>vb_audit_dump_directory</td>
+          <td>审计文件归档路径，audit_directory目录下的旧文件，定期move到归档路径</td>
+          <td>postmaster</td>
+          <td>字符串</td>
+          <td>绝对路径</td>
+          <td>空</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td>删除</td>
+          <td>vb_audit_backup_directory</td>
+          <td>审计文件备份路径，audit_directory目录下新增文件，同时再copy到vb_audit_backup_directory目录</td>
+          <td>postmaster</td>
+          <td>字符串</td>
+          <td>绝对路径</td>
+          <td>空</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td>删除</td>
+          <td>audit_resource_policy</td>
+          <td>审计目录下，所有日志文件总阈值，是按时间，还是按文件大小</td>
+          <td>sighup</td>
+          <td>bool</td>
+          <td>on,off</td>
+          <td>on</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td>删除</td>
+          <td>audit_file_remain_time</td>
+          <td>审计目录下，保留一段时间内的日志文件</td>
+          <td>sighup</td>
+          <td>int</td>
+          <td>[0,730] day</td>
+          <td>90</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td>修改</td>
+          <td>audit_space_limit</td>
+          <td>审计目录下，保留日志文件总大小</td>
+          <td>sighup</td>
+          <td>int</td>
+          <td>[1024,1073741824] kb</td>
+          <td>1048576(1GB)</td>
+          <td>修改：取值范围为[1MB, 1TB]，默认1GB</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td>删除</td>
+          <td>audit_file_remain_threshold</td>
+          <td>审计目录下，保留日志文件数量</td>
+          <td>sighup</td>
+          <td>int</td>
+          <td>[100, 1048576]</td>
+          <td>1048576</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>8</td>
+          <td>删除</td>
+          <td>vb_audit_space_alarm_threshold</td>
+          <td>审计空间达到阈值前，提前在pg_log告警</td>
+          <td>sighup</td>
+          <td>double</td>
+          <td>[0,1]</td>
+          <td>0</td>
+          <td>删除</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+<li>
+<p>文件管理</p>
+<table>
+  <thead>
+      <tr>
+          <th>编号</th>
+          <th>变更</th>
+          <th>参数名</th>
+          <th>功能</th>
+          <th>参数类型</th>
+          <th>数据类型</th>
+          <th>取值范围</th>
+          <th>默认值</th>
+          <th>变更点</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>9</td>
+          <td>删除</td>
+          <td>audit_data_format</td>
+          <td>审计文件格式，只支持2进制</td>
+          <td>postmaster</td>
+          <td>字符串</td>
+          <td>binary</td>
+          <td>binary</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>10</td>
+          <td>删除</td>
+          <td>audit_rotation_interval</td>
+          <td>创建新审计文件的时间间隔</td>
+          <td>sighup</td>
+          <td>int</td>
+          <td>[1, 35791394] min</td>
+          <td>1440 (1day)</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>11</td>
+          <td>删除</td>
+          <td>vb_audit_stop_policy</td>
+          <td>日志文件总大小达到阈值，是停止写入新日志，还是保留旧日志</td>
+          <td>sighup</td>
+          <td>bool</td>
+          <td>on,off</td>
+          <td>off</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>12</td>
+          <td>删除</td>
+          <td>audit_rotation_size</td>
+          <td>单个日志文件最大值</td>
+          <td>sighup</td>
+          <td>int</td>
+          <td>[1024, 1048576] KB</td>
+          <td>10240 (10 MB)</td>
+          <td>删除</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+<li>
+<p>线程管理</p>
+<table>
+  <thead>
+      <tr>
+          <th>编号</th>
+          <th>变更</th>
+          <th>参数名</th>
+          <th>功能</th>
+          <th>参数类型</th>
+          <th>数据类型</th>
+          <th>取值范围</th>
+          <th>默认值</th>
+          <th>变更点</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>13</td>
+          <td>修改</td>
+          <td>audit_thread_num</td>
+          <td>审计线程数</td>
+          <td>postmaster</td>
+          <td>int</td>
+          <td>[1,48]</td>
+          <td>1</td>
+          <td>修改：取值范围[1, 10]</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+<li>
+<p>IO管理</p>
+<table>
+  <thead>
+      <tr>
+          <th>编号</th>
+          <th>变更</th>
+          <th>参数名</th>
+          <th>功能</th>
+          <th>参数类型</th>
+          <th>数据类型</th>
+          <th>取值范围</th>
+          <th>默认值</th>
+          <th>变更点</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>14</td>
+          <td>删除</td>
+          <td>vb_audit_buffer_size_kb</td>
+          <td>将日志写到buffer中，不直接write</td>
+          <td>postmaster</td>
+          <td>int</td>
+          <td>[0, 51200] kb</td>
+          <td>0</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>15</td>
+          <td>删除</td>
+          <td>vb_audit_buffer_fflush_interval_sec</td>
+          <td>定期对buffer中的日志进行write</td>
+          <td>sighup</td>
+          <td>[1,1800] s</td>
+          <td>120</td>
+          <td>删除</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>16</td>
+          <td>删除</td>
+          <td>vb_enable_get_auditindexfile_lock</td>
+          <td>每次write时，对索引文件加锁，为了检查有人修改系统时间</td>
+          <td>sighup</td>
+          <td>bool</td>
+          <td>on,off</td>
+          <td>on</td>
+          <td>删除</td>
+      </tr>
+      <tr>
+          <td>17</td>
+          <td>新增</td>
+          <td>audit_buffer_size</td>
+          <td>日志缓冲区大小</td>
+          <td>postmaster</td>
+          <td>int</td>
+          <td>[1M, 1G]</td>
+          <td>64M</td>
+          <td>新增</td>
+      </tr>
+      <tr>
+          <td>18</td>
+          <td>新增</td>
+          <td>audit_sync_log</td>
+          <td>事务提交时，是否确保审计日志同步落盘</td>
+          <td>postmaster</td>
+          <td>bool</td>
+          <td>true, false</td>
+          <td>false</td>
+          <td>新增</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+<li>
+<p>审计范围管理<br>
+通过GUC参数，设置哪类事件需被审计。相关控制参数较多，设计混乱，由于时间限制，不在本次重构范围内：</p>
+<ol>
+<li>vb_audit_crypt_func</li>
+<li>vb_audit_sequence_enabled</li>
+<li>vb_enable_get_acl_for_audit</li>
+<li>audit_login_logout</li>
+<li>audit_database_process</li>
+<li>audit_user_locked</li>
+<li>audit_user_violation</li>
+<li>audit_grant_revoke</li>
+<li>audit_user</li>
+<li>full_audit_users</li>
+<li>no_audit_client</li>
+<li>audit_user</li>
+<li>audit_system_object</li>
+<li>audit_dml_state</li>
+<li>audit_dml_state_select</li>
+<li>audit_function_exec</li>
+<li>audit_system_function_exec</li>
+<li>audit_copy_exec</li>
+<li>audit_set_parameter</li>
+<li>audit_xid_info</li>
+<li>vb_audit_insufficient_space</li>
+<li>vb_audit_network_error</li>
+<li>vb_audit_query_cancel</li>
+<li>vb_audit_tool_error</li>
+<li>vb_enable_separation_of_duty</li>
+<li>enable_nonsysadmin_execute_direct</li>
+<li>enable_access_server_directory</li>
+<li>vb_audit_transaction_enabled</li>
+</ol>
+</li>
+<li>
+<p>其他审计参数</p>
+<ol>
+<li>vb_audit_hash_enabled</li>
+<li>其他</li>
+</ol>
+</li>
+</ol>
+<h3 id="二审计文件管理">二、审计文件管理<a hidden class="anchor" aria-hidden="true" href="#二审计文件管理">#</a></h3>
+<ul>
+<li>审计文件夹
+<ul>
+<li>由GUC参数audit_direcotry控制，默认存储在data_directory/pgaudit目录</li>
+</ul>
+</li>
+<li>审计文件
+<ul>
+<li>
+<p>背景：</p>
+</li>
+<li>
+<p>有2种类型的文件</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="p">|</span>-- audit_direcotry
+</span></span><span class="line"><span class="cl">    <span class="p">|</span>-- adt_2025_0420_1200_0000.blog <span class="c1"># 已归并的日志</span>
+</span></span><span class="line"><span class="cl">    <span class="p">|</span>-- adt_2025_0420_1201_1234.blog
+</span></span><span class="line"><span class="cl">    <span class="p">|</span>-- adt_unmerge_2025_0420_1203_2222.blog <span class="c1"># 正在写的日志，多个写线程，</span>
+</span></span><span class="line"><span class="cl">    <span class="p">|</span>-- adt_unmerge_2025_0420_1203_2222.blog
+</span></span><span class="line"><span class="cl">    <span class="p">|</span>-- adt_unmerge_2025_0420_1203_2222.blog
+</span></span></code></pre></div></li>
+</ul>
+</li>
+</ul>
+<h2 id="三-启动数据库">三、 启动数据库<a hidden class="anchor" aria-hidden="true" href="#三-启动数据库">#</a></h2>
+<h2 id="四生成审计日志">四、生成审计日志<a hidden class="anchor" aria-hidden="true" href="#四生成审计日志">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">PostgresMain</span>
+</span></span><span class="line"><span class="cl">    <span class="n">exec_simple_query</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span>          <span class="c1"># 1. 执行SQL</span>
+</span></span><span class="line"><span class="cl">        <span class="n">parse_query_auto_gram</span><span class="p">()</span>     <span class="c1"># 2. 解析语法、分析语义、重写查询、生成计划</span>
+</span></span><span class="line"><span class="cl">        <span class="n">pg_analyze_and_rewrite</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">        <span class="n">pg_plan_queries</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">        <span class="n">PortalRun</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span>             <span class="c1"># 3. 执行计划</span>
+</span></span><span class="line"><span class="cl">            <span class="o">...</span>
+</span></span><span class="line"><span class="cl">                <span class="n">ExecutorRun</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                <span class="n">ExecutorEnd</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span>  <span class="c1"># 4. 清理计划</span>
+</span></span><span class="line"><span class="cl">                    <span class="c1"># -------------------------------------------------------------------------------</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">pos</span> <span class="o">=</span> <span class="n">audit_dml</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span> <span class="c1"># 5. DML审计</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">event</span> <span class="o">=</span> <span class="n">parse_plan</span><span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">rte</span><span class="p">)</span>    <span class="c1"># 5.1 生成事件：从执行计划、会话控制等中获取信息</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">log</span> <span class="o">=</span> <span class="n">assemble_event</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>     <span class="c1"># 5.2 封装日志</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">pos</span> <span class="o">=</span> <span class="n">send_log</span><span class="p">(</span><span class="n">log</span><span class="p">)</span>             <span class="c1"># 5.3 发送日志</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">buf</span> <span class="o">=</span> <span class="n">get_buffer</span><span class="p">()</span>              <span class="c1"># 随机获取1个adtbuffer并缓存，1个事务复用1个adtbuffer</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">buf</span> <span class="o">=</span> <span class="p">(</span><span class="n">buf</span> <span class="o">==</span> <span class="n">NULL</span> <span class="err">?</span> <span class="n">get_random_buffer</span><span class="p">()</span> <span class="p">:</span> <span class="n">buf</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">pos</span> <span class="o">=</span> <span class="n">copy_log</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">log</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">read_lock_buffer</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>       <span class="c1"># 获取读锁</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">spin_lock_buffer</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>       <span class="c1"># 申请空间，返回偏移</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">pos</span> <span class="o">=</span> <span class="n">buf</span><span class="o">.</span><span class="n">sendpos</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">buf</span><span class="o">.</span><span class="n">sendpos</span> <span class="o">+=</span> <span class="n">pos</span>              <span class="c1"># 偏移一直在递增</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">time</span> <span class="o">=</span> <span class="n">current_time</span><span class="p">()</span>       <span class="c1"># 偏移越大，时间越大</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">spin_unlock_buffer</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">memcpy</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">log</span><span class="err">，</span> <span class="n">pos</span> <span class="o">%</span> <span class="n">buf</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">read_unlock_buffer</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>     <span class="c1"># 释放读锁</span>
+</span></span><span class="line"><span class="cl">        <span class="n">finish_xact_command</span><span class="p">()</span>  <span class="c1"># 5. 提交事务</span>
+</span></span><span class="line"><span class="cl">            <span class="n">CommitTranscationCommand</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">                <span class="n">XLogFlush</span><span class="p">(</span><span class="n">XactLastRecEnd</span><span class="p">)</span> <span class="c1"># 等待本事务最后1条xlog落盘</span>
+</span></span><span class="line"><span class="cl">                <span class="c1"># ----------------------------------------------------</span>
+</span></span><span class="line"><span class="cl">                <span class="n">audit_flush</span><span class="p">(</span><span class="n">pos</span><span class="p">)</span>          <span class="c1"># 如果设置了同步落盘日志：等待本事务最后1条adtlog落盘</span>
+</span></span></code></pre></div><h2 id="五存储审计日志">五、存储审计日志<a hidden class="anchor" aria-hidden="true" href="#五存储审计日志">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">audit_main</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="k">for</span> <span class="p">(;;)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">write_lock_buffer</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="nb">len</span> <span class="o">=</span> <span class="n">buf</span><span class="o">.</span><span class="n">sendpos</span> <span class="o">-</span> <span class="n">buf</span><span class="o">.</span><span class="n">writepos</span>
+</span></span><span class="line"><span class="cl">        <span class="n">write_unlock_buffer</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="n">write</span><span class="p">(</span><span class="n">buf</span><span class="o">.</span><span class="n">writepos</span><span class="p">,</span> <span class="nb">len</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">buf</span><span class="o">.</span><span class="n">writepos</span> <span class="o">+=</span> <span class="nb">len</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="n">sleep</span><span class="p">(</span><span class="n">count_sleep</span><span class="p">(</span><span class="nb">len</span><span class="p">))</span>
+</span></span></code></pre></div><h2 id="六审计日志一致性">六、审计日志一致性<a hidden class="anchor" aria-hidden="true" href="#六审计日志一致性">#</a></h2>
+<h2 id="七归并审计日志">七、归并审计日志<a hidden class="anchor" aria-hidden="true" href="#七归并审计日志">#</a></h2>
+<h2 id="八查询审计日志">八、查询审计日志<a hidden class="anchor" aria-hidden="true" href="#八查询审计日志">#</a></h2>
+<h1 id="4-审计后续重构计划">4 审计后续重构计划<a hidden class="anchor" aria-hidden="true" href="#4-审计后续重构计划">#</a></h1>
+<p>目前，审计特性还存在较多问题，但出于时间、成本、收益等考虑，暂不重构：</p>
+<ol>
+<li>
+<p>设计问题（功能冗余）：</p>
+<ul>
+<li>传统审计：通过40+个guc参数，控制审计哪类对象、审计哪类操作、管理审计文件等，日志存储于指定文件夹</li>
+<li>统一审计：通过<code>CREATE AUDIT POLICY</code>语法，控制哪个对象、哪类操作需审计。日志存储于syslog</li>
+</ul>
+</li>
+<li>
+<p>设计问题（设置审计范围）</p>
+<ul>
+<li>传统审计
+<ul>
+<li>
+<p>主体</p>
+<table>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>功能</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>audit_user</td>
+          <td>对白名单内的用户进行审计</td>
+      </tr>
+      <tr>
+          <td>full_audit_users</td>
+          <td>对白名单内的用户的所有操作进行审计</td>
+      </tr>
+      <tr>
+          <td>no_audit_client</td>
+          <td>对黑名单内的IP的用户不审计</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+<li>
+<p>操作</p>
+<table>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>功能</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>audit_copy_exec</td>
+          <td>是否审计 COPY</td>
+      </tr>
+      <tr>
+          <td>audit_dml_state</td>
+          <td>是否审计 INSERT、UPDATE、DELETE</td>
+      </tr>
+      <tr>
+          <td>audit_dml_state_select</td>
+          <td>是否审计 SELECT</td>
+      </tr>
+      <tr>
+          <td>audit_set_parameter</td>
+          <td>是否审计 SET</td>
+      </tr>
+  </tbody>
+</table>
+<ul>
+<li>操作结果
+<table>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>功能</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>audit_user_violation</td>
+          <td>是否越权操作</td>
+      </tr>
+      <tr>
+          <td>audit_operation_result</td>
+          <td>只记录操作：成功、失败、成功和失败 的日志</td>
+      </tr>
+      <tr>
+          <td>audit_network_error</td>
+          <td>是否审计网络连接错误</td>
+      </tr>
+      <tr>
+          <td>audit_query_cancel</td>
+          <td>是否审计用户取消SELECT操作</td>
+      </tr>
+      <tr>
+          <td>audit_insufficient_space</td>
+          <td>是否记录SPACE：达到限额</td>
+      </tr>
+      <tr>
+          <td>audit_tool_error</td>
+          <td>是否审计 vb_dump、vb_dumpall、vb_restore 的异常</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+</ul>
+</li>
+<li>
+<p>客体</p>
+<table>
+  <thead>
+      <tr>
+          <th>参数</th>
+          <th>功能</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>audit_system_object</td>
+          <td>审计OBJECT的范围：DATABASE、SCHEMA、TABLE、…等CREATE、DROP、ALTER操作</td>
+      </tr>
+      <tr>
+          <td>audit_database_process</td>
+          <td>是否审计CLUSTER：启动、停止、切换和恢复</td>
+      </tr>
+      <tr>
+          <td>audit_function_exec</td>
+          <td>是否审计FUNCTION：执行</td>
+      </tr>
+      <tr>
+          <td>audit_systerm_function_exec</td>
+          <td>是否审计FUNCTION：执行（内核写了一个白名单，共61个，例如pg_stat_activity，pg_switch_xlog等）</td>
+      </tr>
+      <tr>
+          <td>audit_sequence_enabled</td>
+          <td>是否审计语句序列</td>
+      </tr>
+      <tr>
+          <td>audit_crypt_func</td>
+          <td>是否审计FUNCION （密码运算函数）</td>
+      </tr>
+      <tr>
+          <td>audit_security_policy</td>
+          <td>是否审计POLICY</td>
+      </tr>
+      <tr>
+          <td>audit_transcation</td>
+          <td>是否审计TANSCATITON：提交、回滚</td>
+      </tr>
+      <tr>
+          <td>audit_login_logout</td>
+          <td>审计CLUSTER：{登录、注销} x {成功、失败}</td>
+      </tr>
+      <tr>
+          <td>audit_user_locked</td>
+          <td>是否审计USER：锁定、解锁</td>
+      </tr>
+      <tr>
+          <td>audit_grant_revoke</td>
+          <td>是否审计USER：赋权、收权</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>代码质量问题</p>
+</li>
+<li>
+<p>可扩展性：新增SQL语法、事件，适配审计特性难度</p>
+</li>
+</ol>
+<p>其他优化：</p>
+<ol>
+<li>易用性（审计日志文件）：新增工具，离线解析日志文件功能，将日志解析为可见字符串，比如日志生成时间等</li>
+</ol>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">insert
+</span></span><span class="line"><span class="cl">    <span class="nv">alrec</span> <span class="o">=</span> adt_assemble_record<span class="o">()</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    atomic_lock<span class="o">(</span>abuff<span class="o">)</span>
+</span></span><span class="line"><span class="cl">    <span class="nv">alrecpos</span> <span class="o">=</span> adt_alloc_buffer<span class="o">(</span>size<span class="o">)</span>
+</span></span><span class="line"><span class="cl">    <span class="nv">alrectime</span> <span class="o">=</span> adt_get_time<span class="o">()</span>
+</span></span><span class="line"><span class="cl">    atomic_unlock<span class="o">(</span>abuff<span class="o">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">commit
+</span></span><span class="line"><span class="cl">    adt_flush_buffer<span class="o">(</span>myask<span class="o">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">+---------------------------------------+-----------+----------+--------
+</span></span><span class="line"><span class="cl"><span class="p">|</span>             <span class="p">|</span>     al1    <span class="p">|</span>    al2     <span class="p">|</span>           <span class="p">|</span>          <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+---------------------------------------+-----------+----------+--------
+</span></span><span class="line"><span class="cl">    disk         iobuffer     albuffer     writing     alloced
+</span></span><span class="line"><span class="cl">              <span class="p">|</span>     writer              <span class="p">|</span>  postgres            <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                 ^    ^
+</span></span><span class="line"><span class="cl">                                ask maxask
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">t1 p1 --&gt; write p1
+</span></span><span class="line"><span class="cl">t2 p2 --&gt; write p4
+</span></span><span class="line"><span class="cl">t3 p3 --&gt; ok -
+</span></span><span class="line"><span class="cl">t4 p4 --&gt; ok -
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">t5 p5 --&gt; write p6
+</span></span><span class="line"><span class="cl">t6 p6 --&gt; ok -
+</span></span></code></pre></div>
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/%E5%AE%A1%E8%AE%A1/">审计</a></li><li><a href="http://localhost:1313/tags/%E8%AE%BE%E8%AE%A1%E6%96%87%E6%A1%A3/">设计文档</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/projectdocs/5-design-g100-audit-refactor/">海量 5 设计 G100审计</a></li><li><a href="/posts/projectdocs/9-design-e100-audit/">海量 9 设计 E100审计</a></li><li><a href="/posts/projectdocs/15-design-logical-replication/">海量 15 设计 逻辑复制性能优化</a></li><li><a href="/posts/projectdocs/14-design-mac/">海量 mac 设计</a></li><li><a href="/posts/projectdocs/13-design-tde/">海量 透明加密 设计</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./项目文档</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

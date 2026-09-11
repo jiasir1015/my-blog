@@ -1,0 +1,1986 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>海量 9 设计 E100审计 | Kernel Notes</title>
+<meta name="keywords" content="审计, 设计文档">
+<meta name="description" content="1 E100审计功能
+1.1 功能简述
+【审计功能】
+审计是重要的安全特性，核心功能是收集数据库内的事件，例如：登录用户、创建对象、查询数据等，根据事件生成与审计日志，存储审计日志，向用户提供日志查询接口。使用方式请看需求文档。
+【审计架构】
+审计整体架构如下图所示：（“线程“替换为“进程”，原图不小心弄丢了，不好修改了，将就看）
+
+【审计流程】
+
+1.2 实现方案
+一、启动审计进程
+1. 启动postmaster进程    # PostmasterMain
+    2. 加载GUC参数      # SelectConfigFiles
+        2.1 &#39;---加载审计GUC---&#39;
+    3. 创建共享内存和信号量     # reset_shared -&gt; CreateSharedMemoryAndSemaphores
+        3.1 计算共享内存总大小
+            &#39;计算审计共享内存大小：根据GUC配置&#39;
+        3.2 创建共享内存  # PGSharedMemoryCreate
+        3.3 创建LwLock   # CreateLWLocks
+        3.4 初始化wal-buffer共享内存 # XLOGShmemInit
+        3.5 初始化share-buffer共享内存 # InitBufferPool
+        3.6 &#39;如果开启审计：初始化审计共享内存：划分共享内存，包括audit-buffer&#39;
+    4. 启动sys-log进程 # SysLogger_Start
+    5. &#39;如果开启审计：初始化审计模块&#39;
+        5.1 &#39;日志目录：检验与创建审计日志目录&#39;
+        5.2 &#39;日志文件：每次重启，使用新的日志文件，方便用户单个删除日志文件&#39;
+        5.3 &#39;内存上下文：创建审计全局内存上下文&#39;
+        5.4 &#39;审计缓存区：初始化audit-buffer&#39;
+        5.5 &#39;审计文件：初始化审计文件（并发write, read, delete日志）&#39;
+        5.6 &#39;回调函数：在执行DDL、计划、函数等关键函数中，注册生成审计事件、日志的回调函数&#39; # 后面详细介绍
+    6. &#39;如果开启审计：启动审计进程&#39;
+        6.1 &#39;信号：注册信号处理函数：sighup, sigquit, sigusr1&#39;
+        6.2 &#39;显示：设置ps命令显示的进程信息&#39;
+        6.3 主循环
+            6.4 &#39;等待事件：关键是timeout&#39;
+            6.5 &#39;存储日志：读取audit-buffer中待落盘的日志，并存储&#39; # 后面详细介绍
+            6.6 &#39;调整速率：按照每次落盘数据的长度，动态调整timeout&#39;
+                连续多次为0，timeout依次变为1ms, 100ms, 1s
+                单次落盘长度大于16m，timeout=0
+    7. &#39;主循环&#39; # ServerLoop
+        7.1 接收客户端连接       # select
+        7.2 创建postgres进程    # BackendStartup -&gt; BackendRun -&gt; PostgresMain
+        7.3 检查与重启sys-log进程 # SysLogger_Start
+        7.4 &#39;检查与重启审计进程&#39;
+        7.5 检查与重启checkpointer进程 # StartCheckpointer
+        7.6 检查与重启wal-writer进程   # StartWalWriter
+二、收集审计事件
+目前，只有以下2类进程，会生成审计事件：">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/projectdocs/9-design-e100-audit/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/projectdocs/9-design-e100-audit/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/projectdocs/9-design-e100-audit/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="海量 9 设计 E100审计">
+  <meta property="og:description" content="1 E100审计功能 1.1 功能简述 【审计功能】
+审计是重要的安全特性，核心功能是收集数据库内的事件，例如：登录用户、创建对象、查询数据等，根据事件生成与审计日志，存储审计日志，向用户提供日志查询接口。使用方式请看需求文档。
+【审计架构】
+审计整体架构如下图所示：（“线程“替换为“进程”，原图不小心弄丢了，不好修改了，将就看）
+【审计流程】
+1.2 实现方案 一、启动审计进程 1. 启动postmaster进程 # PostmasterMain 2. 加载GUC参数 # SelectConfigFiles 2.1 &#39;---加载审计GUC---&#39; 3. 创建共享内存和信号量 # reset_shared -&gt; CreateSharedMemoryAndSemaphores 3.1 计算共享内存总大小 &#39;计算审计共享内存大小：根据GUC配置&#39; 3.2 创建共享内存 # PGSharedMemoryCreate 3.3 创建LwLock # CreateLWLocks 3.4 初始化wal-buffer共享内存 # XLOGShmemInit 3.5 初始化share-buffer共享内存 # InitBufferPool 3.6 &#39;如果开启审计：初始化审计共享内存：划分共享内存，包括audit-buffer&#39; 4. 启动sys-log进程 # SysLogger_Start 5. &#39;如果开启审计：初始化审计模块&#39; 5.1 &#39;日志目录：检验与创建审计日志目录&#39; 5.2 &#39;日志文件：每次重启，使用新的日志文件，方便用户单个删除日志文件&#39; 5.3 &#39;内存上下文：创建审计全局内存上下文&#39; 5.4 &#39;审计缓存区：初始化audit-buffer&#39; 5.5 &#39;审计文件：初始化审计文件（并发write, read, delete日志）&#39; 5.6 &#39;回调函数：在执行DDL、计划、函数等关键函数中，注册生成审计事件、日志的回调函数&#39; # 后面详细介绍 6. &#39;如果开启审计：启动审计进程&#39; 6.1 &#39;信号：注册信号处理函数：sighup, sigquit, sigusr1&#39; 6.2 &#39;显示：设置ps命令显示的进程信息&#39; 6.3 主循环 6.4 &#39;等待事件：关键是timeout&#39; 6.5 &#39;存储日志：读取audit-buffer中待落盘的日志，并存储&#39; # 后面详细介绍 6.6 &#39;调整速率：按照每次落盘数据的长度，动态调整timeout&#39; 连续多次为0，timeout依次变为1ms, 100ms, 1s 单次落盘长度大于16m，timeout=0 7. &#39;主循环&#39; # ServerLoop 7.1 接收客户端连接 # select 7.2 创建postgres进程 # BackendStartup -&gt; BackendRun -&gt; PostgresMain 7.3 检查与重启sys-log进程 # SysLogger_Start 7.4 &#39;检查与重启审计进程&#39; 7.5 检查与重启checkpointer进程 # StartCheckpointer 7.6 检查与重启wal-writer进程 # StartWalWriter 二、收集审计事件 目前，只有以下2类进程，会生成审计事件：">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-07-22T14:28:00+08:00">
+    <meta property="article:modified_time" content="2026-08-14T17:47:31+08:00">
+    <meta property="article:tag" content="审计">
+    <meta property="article:tag" content="设计文档">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="海量 9 设计 E100审计">
+<meta name="twitter:description" content="1 E100审计功能
+1.1 功能简述
+【审计功能】
+审计是重要的安全特性，核心功能是收集数据库内的事件，例如：登录用户、创建对象、查询数据等，根据事件生成与审计日志，存储审计日志，向用户提供日志查询接口。使用方式请看需求文档。
+【审计架构】
+审计整体架构如下图所示：（“线程“替换为“进程”，原图不小心弄丢了，不好修改了，将就看）
+
+【审计流程】
+
+1.2 实现方案
+一、启动审计进程
+1. 启动postmaster进程    # PostmasterMain
+    2. 加载GUC参数      # SelectConfigFiles
+        2.1 &#39;---加载审计GUC---&#39;
+    3. 创建共享内存和信号量     # reset_shared -&gt; CreateSharedMemoryAndSemaphores
+        3.1 计算共享内存总大小
+            &#39;计算审计共享内存大小：根据GUC配置&#39;
+        3.2 创建共享内存  # PGSharedMemoryCreate
+        3.3 创建LwLock   # CreateLWLocks
+        3.4 初始化wal-buffer共享内存 # XLOGShmemInit
+        3.5 初始化share-buffer共享内存 # InitBufferPool
+        3.6 &#39;如果开启审计：初始化审计共享内存：划分共享内存，包括audit-buffer&#39;
+    4. 启动sys-log进程 # SysLogger_Start
+    5. &#39;如果开启审计：初始化审计模块&#39;
+        5.1 &#39;日志目录：检验与创建审计日志目录&#39;
+        5.2 &#39;日志文件：每次重启，使用新的日志文件，方便用户单个删除日志文件&#39;
+        5.3 &#39;内存上下文：创建审计全局内存上下文&#39;
+        5.4 &#39;审计缓存区：初始化audit-buffer&#39;
+        5.5 &#39;审计文件：初始化审计文件（并发write, read, delete日志）&#39;
+        5.6 &#39;回调函数：在执行DDL、计划、函数等关键函数中，注册生成审计事件、日志的回调函数&#39; # 后面详细介绍
+    6. &#39;如果开启审计：启动审计进程&#39;
+        6.1 &#39;信号：注册信号处理函数：sighup, sigquit, sigusr1&#39;
+        6.2 &#39;显示：设置ps命令显示的进程信息&#39;
+        6.3 主循环
+            6.4 &#39;等待事件：关键是timeout&#39;
+            6.5 &#39;存储日志：读取audit-buffer中待落盘的日志，并存储&#39; # 后面详细介绍
+            6.6 &#39;调整速率：按照每次落盘数据的长度，动态调整timeout&#39;
+                连续多次为0，timeout依次变为1ms, 100ms, 1s
+                单次落盘长度大于16m，timeout=0
+    7. &#39;主循环&#39; # ServerLoop
+        7.1 接收客户端连接       # select
+        7.2 创建postgres进程    # BackendStartup -&gt; BackendRun -&gt; PostgresMain
+        7.3 检查与重启sys-log进程 # SysLogger_Start
+        7.4 &#39;检查与重启审计进程&#39;
+        7.5 检查与重启checkpointer进程 # StartCheckpointer
+        7.6 检查与重启wal-writer进程   # StartWalWriter
+二、收集审计事件
+目前，只有以下2类进程，会生成审计事件：">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "海量 9 设计 E100审计",
+      "item": "http://localhost:1313/posts/projectdocs/9-design-e100-audit/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "海量 9 设计 E100审计",
+  "name": "海量 9 设计 E100审计",
+  "description": "1 E100审计功能 1.1 功能简述 【审计功能】\n审计是重要的安全特性，核心功能是收集数据库内的事件，例如：登录用户、创建对象、查询数据等，根据事件生成与审计日志，存储审计日志，向用户提供日志查询接口。使用方式请看需求文档。\n【审计架构】\n审计整体架构如下图所示：（“线程“替换为“进程”，原图不小心弄丢了，不好修改了，将就看）\n【审计流程】\n1.2 实现方案 一、启动审计进程 1. 启动postmaster进程 # PostmasterMain 2. 加载GUC参数 # SelectConfigFiles 2.1 \u0026#39;---加载审计GUC---\u0026#39; 3. 创建共享内存和信号量 # reset_shared -\u0026gt; CreateSharedMemoryAndSemaphores 3.1 计算共享内存总大小 \u0026#39;计算审计共享内存大小：根据GUC配置\u0026#39; 3.2 创建共享内存 # PGSharedMemoryCreate 3.3 创建LwLock # CreateLWLocks 3.4 初始化wal-buffer共享内存 # XLOGShmemInit 3.5 初始化share-buffer共享内存 # InitBufferPool 3.6 \u0026#39;如果开启审计：初始化审计共享内存：划分共享内存，包括audit-buffer\u0026#39; 4. 启动sys-log进程 # SysLogger_Start 5. \u0026#39;如果开启审计：初始化审计模块\u0026#39; 5.1 \u0026#39;日志目录：检验与创建审计日志目录\u0026#39; 5.2 \u0026#39;日志文件：每次重启，使用新的日志文件，方便用户单个删除日志文件\u0026#39; 5.3 \u0026#39;内存上下文：创建审计全局内存上下文\u0026#39; 5.4 \u0026#39;审计缓存区：初始化audit-buffer\u0026#39; 5.5 \u0026#39;审计文件：初始化审计文件（并发write, read, delete日志）\u0026#39; 5.6 \u0026#39;回调函数：在执行DDL、计划、函数等关键函数中，注册生成审计事件、日志的回调函数\u0026#39; # 后面详细介绍 6. \u0026#39;如果开启审计：启动审计进程\u0026#39; 6.1 \u0026#39;信号：注册信号处理函数：sighup, sigquit, sigusr1\u0026#39; 6.2 \u0026#39;显示：设置ps命令显示的进程信息\u0026#39; 6.3 主循环 6.4 \u0026#39;等待事件：关键是timeout\u0026#39; 6.5 \u0026#39;存储日志：读取audit-buffer中待落盘的日志，并存储\u0026#39; # 后面详细介绍 6.6 \u0026#39;调整速率：按照每次落盘数据的长度，动态调整timeout\u0026#39; 连续多次为0，timeout依次变为1ms, 100ms, 1s 单次落盘长度大于16m，timeout=0 7. \u0026#39;主循环\u0026#39; # ServerLoop 7.1 接收客户端连接 # select 7.2 创建postgres进程 # BackendStartup -\u0026gt; BackendRun -\u0026gt; PostgresMain 7.3 检查与重启sys-log进程 # SysLogger_Start 7.4 \u0026#39;检查与重启审计进程\u0026#39; 7.5 检查与重启checkpointer进程 # StartCheckpointer 7.6 检查与重启wal-writer进程 # StartWalWriter 二、收集审计事件 目前，只有以下2类进程，会生成审计事件：\n",
+  "keywords": [
+    "审计", "设计文档"
+  ],
+  "articleBody": "1 E100审计功能 1.1 功能简述 【审计功能】\n审计是重要的安全特性，核心功能是收集数据库内的事件，例如：登录用户、创建对象、查询数据等，根据事件生成与审计日志，存储审计日志，向用户提供日志查询接口。使用方式请看需求文档。\n【审计架构】\n审计整体架构如下图所示：（“线程“替换为“进程”，原图不小心弄丢了，不好修改了，将就看）\n【审计流程】\n1.2 实现方案 一、启动审计进程 1. 启动postmaster进程 # PostmasterMain 2. 加载GUC参数 # SelectConfigFiles 2.1 '---加载审计GUC---' 3. 创建共享内存和信号量 # reset_shared -\u003e CreateSharedMemoryAndSemaphores 3.1 计算共享内存总大小 '计算审计共享内存大小：根据GUC配置' 3.2 创建共享内存 # PGSharedMemoryCreate 3.3 创建LwLock # CreateLWLocks 3.4 初始化wal-buffer共享内存 # XLOGShmemInit 3.5 初始化share-buffer共享内存 # InitBufferPool 3.6 '如果开启审计：初始化审计共享内存：划分共享内存，包括audit-buffer' 4. 启动sys-log进程 # SysLogger_Start 5. '如果开启审计：初始化审计模块' 5.1 '日志目录：检验与创建审计日志目录' 5.2 '日志文件：每次重启，使用新的日志文件，方便用户单个删除日志文件' 5.3 '内存上下文：创建审计全局内存上下文' 5.4 '审计缓存区：初始化audit-buffer' 5.5 '审计文件：初始化审计文件（并发write, read, delete日志）' 5.6 '回调函数：在执行DDL、计划、函数等关键函数中，注册生成审计事件、日志的回调函数' # 后面详细介绍 6. '如果开启审计：启动审计进程' 6.1 '信号：注册信号处理函数：sighup, sigquit, sigusr1' 6.2 '显示：设置ps命令显示的进程信息' 6.3 主循环 6.4 '等待事件：关键是timeout' 6.5 '存储日志：读取audit-buffer中待落盘的日志，并存储' # 后面详细介绍 6.6 '调整速率：按照每次落盘数据的长度，动态调整timeout' 连续多次为0，timeout依次变为1ms, 100ms, 1s 单次落盘长度大于16m，timeout=0 7. '主循环' # ServerLoop 7.1 接收客户端连接 # select 7.2 创建postgres进程 # BackendStartup -\u003e BackendRun -\u003e PostgresMain 7.3 检查与重启sys-log进程 # SysLogger_Start 7.4 '检查与重启审计进程' 7.5 检查与重启checkpointer进程 # StartCheckpointer 7.6 检查与重启wal-writer进程 # StartWalWriter 二、收集审计事件 目前，只有以下2类进程，会生成审计事件：\npostmaster：启动集群、停止集群 postgres：登录用户、登出用户、执行SQL postmaster进程 对于postmaster进程，事件类型为：启动、停止集群。收集事件的流程如下：\n1. 启动postmaster进程 # PostmasterMain 2. 加载GUC参数 # InitializeGucOptions 3. 检查数据库目录 # CheckDataDir audit_dir_init 3. 创建共享内存和信号量 # reset_shared 3.x '如果开启审计：初始化审计共享内存：划分共享内存，包括audit-buffer' 4. 启动sys-log进程 # SysLogger_Start 5. '如果开启审计：初始化审计模块' 5.x '如果开启审计：基于PG已有的hook框架，注册审计回调函数（身份认证、执行DDL、执行DML等）' 6. '如果开启审计：启动审计进程' 6.1 '生成审计事件：启动系统' 7. '主循环' # ServerLoop postgres进程 对于postgres进程，事件类型为：登录用户、执行DDL、执行DML、执行函数、执行其他语句、登出用户。收集的事件的流程如下：\n1. 启动postgres进程 # PostgresMain 2. 加载GUC参数 # SelectConfigFiles 3. 初始化共享内存和信号量 # BaseInit-\u003eInitCommunication 4. 初始化postgres进程 # InitPostgres 4.1 初始化缓存 # InitCatalogCache 4.2 '注册进程结束回调函数：用户登出账号' 4.3 注册注册进程结束回调函数：清理事务、清理锁 # ShutdownPostgres 4.4 进行身份认证 # PerformAuthentication-\u003eClientAuthentication 4.4.1 校验密码 4.4.2 '执行回调函数：身份认证' 4.4.2.1 '执行审计回调函数：身份认证' 6. 主循环 7. 接收客户端数据 # ReadCommand 8. 重载SIGHUP级GUC参数 # ProcessConfigFile 9. 执行SQL # exec_simple_query 10. '记录当前原始SQL语句' 11. 语法解析 # pg_parse_query 12. 语义分析和查询重写 # pg_analyze_and_rewrite 13. 计划生成 # pg_plan_queries 13.1 预处理函数 # pg_plan_query-\u003eplanner-\u003e..-\u003epreprocess_expression 13.2 替换函数 # ExecInitFunc 13.3 '执行审计回调函数：执行函数' # RunFunctionExecuteHook 13.3.1 '执行审计回调函数：执行函数' 14. 执行 # PobtrtalRun-\u003ePortalRunMulti 15. 执行DDL/DCL/等 # PortalRunUtility-\u003eProcessUtility 15.1 执行回调函数：处理DDL/DCL/等非DML # ProcessUtility_hook 15.1.1 '执行审计回调函数：处理DDL/DCL/等非DML' switch (nodeTag(parsetree)) { case T_CreatedbStmt: case T_DropStmt: case T_ExecuteStmt: case T_DoStmt: ... '工作量：识别所有DDL中的主体、操作、客体等信息' } 15.2 执行标准函数：处理DDL/DCL/等非DML # standard_ProcessUtility 16. 执行DML等 # ProcessQuery 17. 初始化计划 # ExecutorStart-\u003eInitPlan 17.1 检查对象访问权限 # ExecCheckRTPerms 17.2 执行回调函数：检查对象访问权限 17.2.1 '执行审计回调函数：检查对象访问权限，入参为{操作、对象}的列表' （基于访问控制框架） 17.3 初始化算子 # ExecInitNode 17.3.1 初始化算子中的函数 # ExecInitFunc 17.3.2 执行回调函数：执行函数 # InvokeFunctionExecuteHook 17.3.2.1 '执行审计回调函数：执行函数' 18. 执行计划 # ExecutorRun-\u003eExecutePlan 18.1 执行算子 18.2 执行qual/project中的函数 # FunctionCallInvoke 18.3 执行回调函数：执行函数 # InvokeFunctionExecuteHook 18.3.1 '执行审计回调函数：执行函数' 18.4 调用heapam等接口 18.4.1 访问share-buffer 18.4.2 生成xlog 18.4.3 访问wal-buffer 19. 清理计划 # ExecutorEnd 20. 提交事务 # finish_xact_command-\u003eCommitTransactionCommand-\u003eCommitTransaction 21. 等待xlog落盘 # XLogFlush 22. '以后版本计划：审计同步落盘：等待审计日志落盘' 三、发送审计日志 审计缓冲区的模型如下：\n工作进程，发送日志的流程如下：\n1. 工作进程：发送审计日志，长度为x 2. 加锁：audit-buffer读锁 2. 加锁：预留空间自旋锁 3. 申请的预留位置 = '预留空间指针' 3. '预留空间指针' += x 2. 解锁：预留空间自旋锁 3. 写入审计日志到audit-buffer 4. '已写入指针' += x 3. 解锁：audit-buffer读锁 审计进程： 1. 申请audit-buffer写锁，需等待工作进程 2. 获取audit-buffer写锁时，一定满足'预留空间指针 == 已写入指针' (极低概率异常：'预留空间指针 != 已写入指针'，触发异常处理：检查日志，如果发现异常的，则丢弃异常之后的整段日志) 并发场景，工作流程如下：\n（假设：3个工作进程，并发发送日志，日志长度分为为a,b,c）\n时刻 工作进程1 工作进程2 工作进程3 工作线程4 审计进程 1 发送日志 - - - - 2 - 发送日志 - - - 3 - 发送日志 - - 4 获取读锁 - - - - 5 - 获取读锁 - - - 6 - - 获取读锁 - - 7 预留空间指针 + a - - - - 8 - 预留空间指针 + b - - - 9 - - 预留空间指针 + c - - 10 - - - - 申请写锁 11 已发送指针 + a - - - - 12 - 已发送指针 + b - - - 13 - - 已发送指针 + c - - 14 释放读锁 - - - - 15 - - - 申请读锁 - 16 - 释放读锁 - - - 17 - - 释放读锁 - - 18 - - - - 获取写锁 19 - - - - 获取待落盘长度 a + b + c 20 - - - - 落盘 a + b + c 21 - - - - 已落盘指针 + a + b + c 22 - - - - 释放写锁 23 - - - 获取读锁 - 五、组织审计日志 AuditFile：1个AuditFile，由多个AuditPage组成。大小固定为64M AuditPage：1个AuditPage，大小固定为4k，存储多条AuditLog。引入AuditPage的作用如下： 内容校验：CRC校验的粒度 并发控制：并发写日志、读日志、删日志时，判断是否需加锁保护 完整性保护：发生断电等异常时，避免只写入半条日志等特殊情况（1条日志跨越2个物理block） 快速查找：根据页面头部的时间信息，快速找打符合条件的日志 –\u003e以后版本：哈希、加密、区块链的粒度 –\u003e以后版本：方便从后往前读日志 AuditLog：1条审计日志。 六、读取审计日志 （这块并发管理写的不是很好，需再优化）\n以下3种场景，读日志存在并发冲突：\n审计进程：写日志，单进程 读到(正在写的文件，正在写的Page)，等待写锁 工作进程：读日志，多进程 并发读 工作进程：删日志，单进程 如果存在任意一个删进程，等待删锁 1. 工作进程执行pg_audit_log(begin_time, end_time) 2. 获取指定的最早和最晚时间 3. 如果为指定最晚时间，则最晚时间为当前时间 4. '初始化TupleStore' # 由PG提供，具有自动物化的功能 5. 扫描文件：查找日志目录所有文件，按文件名过滤不符合时间的文件 6. 排序文件：按文件名中的时间排序日志文件 7. 循环： 8. 读取日志： 8.1 打开文件：按顺序从头打开、读取文件 8.2 '并发控制：如果读取审计进程正在写的文件和AuditPage，则获取文件读锁' '提示：审计进程写日志时，获取文件写锁，不读日志时，无人竞争写锁' 8.3 读取AuditPage：1次读取1个AuditPage 8.4 获取AuditLog：1次获取1个AuditLog 9. '缓存日志：将日志缓存在TupleStore中，必要时自动物化' 10. '保护机制：如果日志条数 \u003e 10000，则中止，并提示用户：' 日志数量过多，缩小begin_time和end_time的区间 七、删除审计日志 以下3种场景，删日志存在并发冲突：\n审计进程：写日志，单进程 删到（正在写的文件），等待写锁 工作进程：读日志，多进程 竞争删锁 工作进程：删日志，单进程 如果存在任意一个删进程，报错，只允许1个删进程 1. 工作进程执行pg_delete_audit_log(begin_time, end_time) 2. 同一时刻，只能有1个进程删除日志，否则报错 3. 如果为指定最晚时间，则最晚时间为当前时间 4. 扫描文件：查找日志目录所有文件，按文件名过滤不符合时间的文件 5. 排序文件：按文件名中的时间排序日志文件 6. 循环： 7. '并发控制：如果涉及审计进程在写的文件，则获取文件写锁，删除文件中符合条件的日志，更新审计进程write偏移' 8. 快速删除：根据文件名，获取文件中最早日志。读取文件最后1个Page，获取文件中最晚日志。可判断是否直接删除整个文件 9. 其他删除逻辑较简单，此处不再介绍 八、审计测试工具 release版本，audit_tool支持功能如下：\n解析日志文件 打印日志文件（复用内置函数pg_audit_log()的代码） debug版本，audit_tool额外支持\n随机生成日志文件与日志 删除审计日志（复用内置函数pg_audit_delete_log()的代码） 多进程并发生成、存储审计日志（复用audit-buffer、audit-writer进程的代码） 1.3 接口说明 用户接口\n新增4个函数\n-- 查看可选审计范围 pg_audit_scope() -- 查看审计日志 pg_audig_log() pg_audig_log(timestamptz begtime, timestamptz endtime) -- 删除审计日志 pg_audit_delete_log(timestamptz begtime, timestamptz endtime) 新增1个视图\nCREATE VIEW pg_audit_log AS SELECT * FROM pg_audig_log(); 新增1个工具\naudit_tool -h # 输出如下： audit_tool is a utility to process audit log. usage: audit_tool decode [options] audit_tool print [options] [options] could be: -h,-?, --help show this help, then exit -v, --version show the version of this tool, then exit -d, --direcotry=LOG_DIR directory of audit logs -f, --file=LOG_FILE audit log file -o, --output=DIR_OR_FILE used with the --direcotry or --file parameter -b, --begin-time=BEGIN_TIME the earliest audit log, format example: '2020/01/01 12:00:00' -e, --end-time=END_TIME the latest audit log 1. command to decode directory: audit_tool decode -d LOG_DIR [-o OUTPUT_DIR] [-b BEGIN_TIME] [-e END_TIME] 2. command to decode file: audit_tool decode -f LOG_FILE [-o OUTPUT_FILE] [-b BEGIN_TIME] [-e END_TIME] 代码接口\n此处仅列举审计模块对外接口：\n/* 资源管理 */ Size audit_shm_size(); /* 计算共享内存总大小 */ void audit_init_shmem(); /* 划分共享内存 */ void audit_init(); /* 初始化所有审计资源 */ /* 进程管理 */ int audit_writer_start(); /* 启动审计进程 */ void audit_writer_exit(); /* 退出审计进程 */ /* 事件管理：无法通过PG内置hook框架获取的事件 */ void audit_hook_logout_user(int code, Datum arg); /* 审计登出用户 */ void audit_hook_start_system(); /* 审计启动集群 */ void audit_hook_exit_system(int code, Datum arg); /* 审计停止集群 */ /* 事件管理：获取原始SQL语句（在执行器之前，可能生成事件） */ void audit_event_init(const char *sql); /* 记录原始SQL语句 */ /* 内置函数 */ Datum pg_audit_scope(PG_FUNCTION_ARGS); /* 查询可选审计范围 */ Datum pg_audit_log(PG_FUNCTION_ARGS); /* 查询审计日志 */ Datum pg_delete_audit_log(PG_FUNCTION_ARGS); /* 删除审计日志 */ 代码文件\n审计的关键代码都集中在审计文件夹下，以下文件包含审计90%以上的代码。\n| -- e100 |-- src |-- beckend |-- audit |-- audit.c # 所有审计的对外接口 |-- adt_config.c |-- adt_time.c |-- adt_query.c # 识别每种DML、DDL，收集事件 |-- adt_event.c |-- adt_log.c |-- adt_page.c |-- adt_file.c |-- adt_buffer.c |-- adt_writer.c |-- bin |-- adt_tool |-- adt_tool.c |-- 软链接：adt_config.c adt_event.c adt_log.c等 1.4 内存管理 共享内存 临时内存 收集事件 生成日志：临时申请内存（一般1k以内） 发送日志：销毁临时内存 1.5 安全 在执行以下3个函数时，检查是否具有审计权限：\n查询日志：pg_audit_log() 查询日志：pg_audit_log(begin_time, end_time) 删除日志：pg_audit_delete_log(begin_time, end_time)\n检查方式： 是否是superuser：访问pg_authid系统表，判断rolsuper列 是否是pg_monitor：访问pg_auth_members系统表，查找{roloid， member}符合{pg_monitor, 当前用户} 1.6 性能 实现方案中，发送审计日志章节，已介绍性能瓶颈。\n1.7 专利 无\n1.8 升级管理 新增5个GUC参数\n新增4个内置函数\n新增1个视图\n（新增1个功能audit_tool，无任何依赖）\n1.9 其他说明 无\n",
+  "wordCount" : "944",
+  "inLanguage": "en",
+  "datePublished": "2025-07-22T14:28:00+08:00",
+  "dateModified": "2026-08-14T17:47:31+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/projectdocs/9-design-e100-audit/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      海量 9 设计 E100审计
+    </h1>
+    <div class="post-meta">
+      <span title='2025-07-22 14:28:00 +0800 CST'>July 22, 2025</span>&nbsp;·&nbsp;<span>5 min</span>&nbsp;·&nbsp;<span>944 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#1-e100%e5%ae%a1%e8%ae%a1%e5%8a%9f%e8%83%bd" aria-label="1 E100审计功能">1 E100审计功能</a><ul>
+                        
+                <li>
+                    <a href="#11-%e5%8a%9f%e8%83%bd%e7%ae%80%e8%bf%b0" aria-label="1.1 功能简述">1.1 功能简述</a></li>
+                <li>
+                    <a href="#12-%e5%ae%9e%e7%8e%b0%e6%96%b9%e6%a1%88" aria-label="1.2 实现方案">1.2 实现方案</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e5%90%af%e5%8a%a8%e5%ae%a1%e8%ae%a1%e8%bf%9b%e7%a8%8b" aria-label="一、启动审计进程">一、启动审计进程</a></li>
+                <li>
+                    <a href="#%e4%ba%8c%e6%94%b6%e9%9b%86%e5%ae%a1%e8%ae%a1%e4%ba%8b%e4%bb%b6" aria-label="二、收集审计事件">二、收集审计事件</a><ul>
+                        
+                <li>
+                    <a href="#postmaster%e8%bf%9b%e7%a8%8b" aria-label="postmaster进程">postmaster进程</a></li>
+                <li>
+                    <a href="#postgres%e8%bf%9b%e7%a8%8b" aria-label="postgres进程">postgres进程</a></li></ul>
+                </li>
+                <li>
+                    <a href="#%e4%b8%89%e5%8f%91%e9%80%81%e5%ae%a1%e8%ae%a1%e6%97%a5%e5%bf%97" aria-label="三、发送审计日志">三、发送审计日志</a></li>
+                <li>
+                    <a href="#%e4%ba%94%e7%bb%84%e7%bb%87%e5%ae%a1%e8%ae%a1%e6%97%a5%e5%bf%97" aria-label="五、组织审计日志">五、组织审计日志</a></li>
+                <li>
+                    <a href="#%e5%85%ad%e8%af%bb%e5%8f%96%e5%ae%a1%e8%ae%a1%e6%97%a5%e5%bf%97" aria-label="六、读取审计日志">六、读取审计日志</a></li>
+                <li>
+                    <a href="#%e4%b8%83%e5%88%a0%e9%99%a4%e5%ae%a1%e8%ae%a1%e6%97%a5%e5%bf%97" aria-label="七、删除审计日志">七、删除审计日志</a></li>
+                <li>
+                    <a href="#%e5%85%ab%e5%ae%a1%e8%ae%a1%e6%b5%8b%e8%af%95%e5%b7%a5%e5%85%b7" aria-label="八、审计测试工具">八、审计测试工具</a></li></ul>
+                </li>
+                <li>
+                    <a href="#13-%e6%8e%a5%e5%8f%a3%e8%af%b4%e6%98%8e" aria-label="1.3 接口说明">1.3 接口说明</a></li>
+                <li>
+                    <a href="#14-%e5%86%85%e5%ad%98%e7%ae%a1%e7%90%86" aria-label="1.4 内存管理">1.4 内存管理</a></li>
+                <li>
+                    <a href="#15-%e5%ae%89%e5%85%a8" aria-label="1.5 安全">1.5 安全</a></li>
+                <li>
+                    <a href="#16-%e6%80%a7%e8%83%bd" aria-label="1.6 性能">1.6 性能</a></li>
+                <li>
+                    <a href="#17-%e4%b8%93%e5%88%a9" aria-label="1.7 专利">1.7 专利</a></li>
+                <li>
+                    <a href="#18-%e5%8d%87%e7%ba%a7%e7%ae%a1%e7%90%86" aria-label="1.8 升级管理">1.8 升级管理</a></li>
+                <li>
+                    <a href="#19-%e5%85%b6%e4%bb%96%e8%af%b4%e6%98%8e" aria-label="1.9 其他说明">1.9 其他说明</a>
+                </li>
+            </ul>
+            </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h1 id="1-e100审计功能">1 E100审计功能<a hidden class="anchor" aria-hidden="true" href="#1-e100审计功能">#</a></h1>
+<h2 id="11-功能简述">1.1 功能简述<a hidden class="anchor" aria-hidden="true" href="#11-功能简述">#</a></h2>
+<p>【审计功能】<br>
+审计是重要的安全特性，核心功能是收集数据库内的事件，例如：登录用户、创建对象、查询数据等，根据事件生成与审计日志，存储审计日志，向用户提供日志查询接口。使用方式请看需求文档。</p>
+<p>【审计架构】<br>
+审计整体架构如下图所示：（<strong>“线程“替换为“进程”</strong>，原图不小心弄丢了，不好修改了，将就看）</p>
+<p><img alt="adt-1" loading="lazy" src="/images/ProjectDocs/9-design-e100-audit/adt-1.png"></p>
+<p>【审计流程】</p>
+<p><img alt="adt-2" loading="lazy" src="/images/ProjectDocs/9-design-e100-audit/adt-2.png"></p>
+<h2 id="12-实现方案">1.2 实现方案<a hidden class="anchor" aria-hidden="true" href="#12-实现方案">#</a></h2>
+<h3 id="一启动审计进程">一、启动审计进程<a hidden class="anchor" aria-hidden="true" href="#一启动审计进程">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">1. 启动postmaster进程    <span class="c1"># PostmasterMain</span>
+</span></span><span class="line"><span class="cl">    2. 加载GUC参数      <span class="c1"># SelectConfigFiles</span>
+</span></span><span class="line"><span class="cl">        2.1 <span class="s1">&#39;---加载审计GUC---&#39;</span>
+</span></span><span class="line"><span class="cl">    3. 创建共享内存和信号量     <span class="c1"># reset_shared -&gt; CreateSharedMemoryAndSemaphores</span>
+</span></span><span class="line"><span class="cl">        3.1 计算共享内存总大小
+</span></span><span class="line"><span class="cl">            <span class="s1">&#39;计算审计共享内存大小：根据GUC配置&#39;</span>
+</span></span><span class="line"><span class="cl">        3.2 创建共享内存  <span class="c1"># PGSharedMemoryCreate</span>
+</span></span><span class="line"><span class="cl">        3.3 创建LwLock   <span class="c1"># CreateLWLocks</span>
+</span></span><span class="line"><span class="cl">        3.4 初始化wal-buffer共享内存 <span class="c1"># XLOGShmemInit</span>
+</span></span><span class="line"><span class="cl">        3.5 初始化share-buffer共享内存 <span class="c1"># InitBufferPool</span>
+</span></span><span class="line"><span class="cl">        3.6 <span class="s1">&#39;如果开启审计：初始化审计共享内存：划分共享内存，包括audit-buffer&#39;</span>
+</span></span><span class="line"><span class="cl">    4. 启动sys-log进程 <span class="c1"># SysLogger_Start</span>
+</span></span><span class="line"><span class="cl">    5. <span class="s1">&#39;如果开启审计：初始化审计模块&#39;</span>
+</span></span><span class="line"><span class="cl">        5.1 <span class="s1">&#39;日志目录：检验与创建审计日志目录&#39;</span>
+</span></span><span class="line"><span class="cl">        5.2 <span class="s1">&#39;日志文件：每次重启，使用新的日志文件，方便用户单个删除日志文件&#39;</span>
+</span></span><span class="line"><span class="cl">        5.3 <span class="s1">&#39;内存上下文：创建审计全局内存上下文&#39;</span>
+</span></span><span class="line"><span class="cl">        5.4 <span class="s1">&#39;审计缓存区：初始化audit-buffer&#39;</span>
+</span></span><span class="line"><span class="cl">        5.5 <span class="s1">&#39;审计文件：初始化审计文件（并发write, read, delete日志）&#39;</span>
+</span></span><span class="line"><span class="cl">        5.6 <span class="s1">&#39;回调函数：在执行DDL、计划、函数等关键函数中，注册生成审计事件、日志的回调函数&#39;</span> <span class="c1"># 后面详细介绍</span>
+</span></span><span class="line"><span class="cl">    6. <span class="s1">&#39;如果开启审计：启动审计进程&#39;</span>
+</span></span><span class="line"><span class="cl">        6.1 <span class="s1">&#39;信号：注册信号处理函数：sighup, sigquit, sigusr1&#39;</span>
+</span></span><span class="line"><span class="cl">        6.2 <span class="s1">&#39;显示：设置ps命令显示的进程信息&#39;</span>
+</span></span><span class="line"><span class="cl">        6.3 主循环
+</span></span><span class="line"><span class="cl">            6.4 <span class="s1">&#39;等待事件：关键是timeout&#39;</span>
+</span></span><span class="line"><span class="cl">            6.5 <span class="s1">&#39;存储日志：读取audit-buffer中待落盘的日志，并存储&#39;</span> <span class="c1"># 后面详细介绍</span>
+</span></span><span class="line"><span class="cl">            6.6 <span class="s1">&#39;调整速率：按照每次落盘数据的长度，动态调整timeout&#39;</span>
+</span></span><span class="line"><span class="cl">                连续多次为0，timeout依次变为1ms, 100ms, 1s
+</span></span><span class="line"><span class="cl">                单次落盘长度大于16m，timeout<span class="o">=</span><span class="m">0</span>
+</span></span><span class="line"><span class="cl">    7. <span class="s1">&#39;主循环&#39;</span> <span class="c1"># ServerLoop</span>
+</span></span><span class="line"><span class="cl">        7.1 接收客户端连接       <span class="c1"># select</span>
+</span></span><span class="line"><span class="cl">        7.2 创建postgres进程    <span class="c1"># BackendStartup -&gt; BackendRun -&gt; PostgresMain</span>
+</span></span><span class="line"><span class="cl">        7.3 检查与重启sys-log进程 <span class="c1"># SysLogger_Start</span>
+</span></span><span class="line"><span class="cl">        7.4 <span class="s1">&#39;检查与重启审计进程&#39;</span>
+</span></span><span class="line"><span class="cl">        7.5 检查与重启checkpointer进程 <span class="c1"># StartCheckpointer</span>
+</span></span><span class="line"><span class="cl">        7.6 检查与重启wal-writer进程   <span class="c1"># StartWalWriter</span>
+</span></span></code></pre></div><h3 id="二收集审计事件">二、收集审计事件<a hidden class="anchor" aria-hidden="true" href="#二收集审计事件">#</a></h3>
+<p>目前，只有以下2类进程，会生成审计事件：</p>
+<ul>
+<li>postmaster：启动集群、停止集群</li>
+<li>postgres：登录用户、登出用户、执行SQL</li>
+</ul>
+<h4 id="postmaster进程">postmaster进程<a hidden class="anchor" aria-hidden="true" href="#postmaster进程">#</a></h4>
+<p>对于postmaster进程，事件类型为：启动、停止集群。收集事件的流程如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">1. 启动postmaster进程 <span class="c1"># PostmasterMain</span>
+</span></span><span class="line"><span class="cl">    2. 加载GUC参数 <span class="c1"># InitializeGucOptions</span>
+</span></span><span class="line"><span class="cl">    3. 检查数据库目录 <span class="c1"># CheckDataDir</span>
+</span></span><span class="line"><span class="cl">    audit_dir_init
+</span></span><span class="line"><span class="cl">    3. 创建共享内存和信号量 <span class="c1"># reset_shared</span>
+</span></span><span class="line"><span class="cl">        3.x <span class="s1">&#39;如果开启审计：初始化审计共享内存：划分共享内存，包括audit-buffer&#39;</span>
+</span></span><span class="line"><span class="cl">    4. 启动sys-log进程 <span class="c1"># SysLogger_Start</span>
+</span></span><span class="line"><span class="cl">    5. <span class="s1">&#39;如果开启审计：初始化审计模块&#39;</span>
+</span></span><span class="line"><span class="cl">        5.x <span class="s1">&#39;如果开启审计：基于PG已有的hook框架，注册审计回调函数（身份认证、执行DDL、执行DML等）&#39;</span>
+</span></span><span class="line"><span class="cl">    6. <span class="s1">&#39;如果开启审计：启动审计进程&#39;</span>
+</span></span><span class="line"><span class="cl">        6.1 <span class="s1">&#39;生成审计事件：启动系统&#39;</span>
+</span></span><span class="line"><span class="cl">    7. <span class="s1">&#39;主循环&#39;</span> <span class="c1"># ServerLoop</span>
+</span></span></code></pre></div><h4 id="postgres进程">postgres进程<a hidden class="anchor" aria-hidden="true" href="#postgres进程">#</a></h4>
+<p>对于postgres进程，事件类型为：登录用户、执行DDL、执行DML、执行函数、执行其他语句、登出用户。收集的事件的流程如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">1. 启动postgres进程 <span class="c1"># PostgresMain</span>
+</span></span><span class="line"><span class="cl">    2. 加载GUC参数 <span class="c1"># SelectConfigFiles</span>
+</span></span><span class="line"><span class="cl">    3. 初始化共享内存和信号量 <span class="c1"># BaseInit-&gt;InitCommunication</span>
+</span></span><span class="line"><span class="cl">    4. 初始化postgres进程 <span class="c1"># InitPostgres</span>
+</span></span><span class="line"><span class="cl">        4.1 初始化缓存 <span class="c1"># InitCatalogCache</span>
+</span></span><span class="line"><span class="cl">        4.2 <span class="s1">&#39;注册进程结束回调函数：用户登出账号&#39;</span>
+</span></span><span class="line"><span class="cl">        4.3 注册注册进程结束回调函数：清理事务、清理锁 <span class="c1"># ShutdownPostgres</span>
+</span></span><span class="line"><span class="cl">        4.4 进行身份认证 <span class="c1"># PerformAuthentication-&gt;ClientAuthentication</span>
+</span></span><span class="line"><span class="cl">            4.4.1 校验密码
+</span></span><span class="line"><span class="cl">            4.4.2 <span class="s1">&#39;执行回调函数：身份认证&#39;</span>
+</span></span><span class="line"><span class="cl">                4.4.2.1 <span class="s1">&#39;执行审计回调函数：身份认证&#39;</span>
+</span></span><span class="line"><span class="cl">    6. 主循环
+</span></span><span class="line"><span class="cl">        7. 接收客户端数据 <span class="c1"># ReadCommand</span>
+</span></span><span class="line"><span class="cl">        8. 重载SIGHUP级GUC参数 <span class="c1"># ProcessConfigFile</span>
+</span></span><span class="line"><span class="cl">        9. 执行SQL <span class="c1"># exec_simple_query</span>
+</span></span><span class="line"><span class="cl">            10. <span class="s1">&#39;记录当前原始SQL语句&#39;</span>
+</span></span><span class="line"><span class="cl">            11. 语法解析 <span class="c1"># pg_parse_query</span>
+</span></span><span class="line"><span class="cl">            12. 语义分析和查询重写 <span class="c1"># pg_analyze_and_rewrite</span>
+</span></span><span class="line"><span class="cl">            13. 计划生成 <span class="c1"># pg_plan_queries</span>
+</span></span><span class="line"><span class="cl">                13.1 预处理函数 <span class="c1"># pg_plan_query-&gt;planner-&gt;..-&gt;preprocess_expression</span>
+</span></span><span class="line"><span class="cl">                    13.2 替换函数 <span class="c1"># ExecInitFunc</span>
+</span></span><span class="line"><span class="cl">                    13.3 <span class="s1">&#39;执行审计回调函数：执行函数&#39;</span> <span class="c1"># RunFunctionExecuteHook</span>
+</span></span><span class="line"><span class="cl">                        13.3.1 <span class="s1">&#39;执行审计回调函数：执行函数&#39;</span>
+</span></span><span class="line"><span class="cl">            14. 执行 <span class="c1"># PobtrtalRun-&gt;PortalRunMulti</span>
+</span></span><span class="line"><span class="cl">                15. 执行DDL/DCL/等 <span class="c1"># PortalRunUtility-&gt;ProcessUtility</span>
+</span></span><span class="line"><span class="cl">                    15.1 执行回调函数：处理DDL/DCL/等非DML <span class="c1"># ProcessUtility_hook</span>
+</span></span><span class="line"><span class="cl">                        15.1.1 <span class="s1">&#39;执行审计回调函数：处理DDL/DCL/等非DML&#39;</span>
+</span></span><span class="line"><span class="cl">                            switch <span class="o">(</span>nodeTag<span class="o">(</span>parsetree<span class="o">))</span> <span class="o">{</span>
+</span></span><span class="line"><span class="cl">                                <span class="k">case</span> T_CreatedbStmt:
+</span></span><span class="line"><span class="cl">                                <span class="k">case</span> T_DropStmt:
+</span></span><span class="line"><span class="cl">                                <span class="k">case</span> T_ExecuteStmt:
+</span></span><span class="line"><span class="cl">                                <span class="k">case</span> T_DoStmt:
+</span></span><span class="line"><span class="cl">                                ...
+</span></span><span class="line"><span class="cl">                                <span class="s1">&#39;工作量：识别所有DDL中的主体、操作、客体等信息&#39;</span>
+</span></span><span class="line"><span class="cl">                            <span class="o">}</span>
+</span></span><span class="line"><span class="cl">                    15.2 执行标准函数：处理DDL/DCL/等非DML <span class="c1"># standard_ProcessUtility</span>
+</span></span><span class="line"><span class="cl">                16. 执行DML等 <span class="c1"># ProcessQuery</span>
+</span></span><span class="line"><span class="cl">                    17. 初始化计划 <span class="c1"># ExecutorStart-&gt;InitPlan</span>
+</span></span><span class="line"><span class="cl">                        17.1 检查对象访问权限 <span class="c1"># ExecCheckRTPerms</span>
+</span></span><span class="line"><span class="cl">                        17.2 执行回调函数：检查对象访问权限
+</span></span><span class="line"><span class="cl">                            17.2.1 <span class="s1">&#39;执行审计回调函数：检查对象访问权限，入参为{操作、对象}的列表&#39;</span>
+</span></span><span class="line"><span class="cl">                            （基于访问控制框架）
+</span></span><span class="line"><span class="cl">                        17.3 初始化算子 <span class="c1"># ExecInitNode</span>
+</span></span><span class="line"><span class="cl">                            17.3.1 初始化算子中的函数 <span class="c1"># ExecInitFunc</span>
+</span></span><span class="line"><span class="cl">                                17.3.2 执行回调函数：执行函数 <span class="c1"># InvokeFunctionExecuteHook</span>
+</span></span><span class="line"><span class="cl">                                    17.3.2.1 <span class="s1">&#39;执行审计回调函数：执行函数&#39;</span>
+</span></span><span class="line"><span class="cl">                    18. 执行计划  <span class="c1"># ExecutorRun-&gt;ExecutePlan</span>
+</span></span><span class="line"><span class="cl">                        18.1 执行算子
+</span></span><span class="line"><span class="cl">                            18.2 执行qual/project中的函数 <span class="c1"># FunctionCallInvoke</span>
+</span></span><span class="line"><span class="cl">                            18.3 执行回调函数：执行函数 <span class="c1"># InvokeFunctionExecuteHook</span>
+</span></span><span class="line"><span class="cl">                                18.3.1 <span class="s1">&#39;执行审计回调函数：执行函数&#39;</span>
+</span></span><span class="line"><span class="cl">                            18.4 调用heapam等接口
+</span></span><span class="line"><span class="cl">                                18.4.1 访问share-buffer
+</span></span><span class="line"><span class="cl">                                18.4.2 生成xlog
+</span></span><span class="line"><span class="cl">                                18.4.3 访问wal-buffer
+</span></span><span class="line"><span class="cl">                    19. 清理计划 <span class="c1"># ExecutorEnd</span>
+</span></span><span class="line"><span class="cl">            20. 提交事务 <span class="c1"># finish_xact_command-&gt;CommitTransactionCommand-&gt;CommitTransaction</span>
+</span></span><span class="line"><span class="cl">                21. 等待xlog落盘 <span class="c1"># XLogFlush</span>
+</span></span><span class="line"><span class="cl">                22. <span class="s1">&#39;以后版本计划：审计同步落盘：等待审计日志落盘&#39;</span>
+</span></span></code></pre></div><h3 id="三发送审计日志">三、发送审计日志<a hidden class="anchor" aria-hidden="true" href="#三发送审计日志">#</a></h3>
+<p>审计缓冲区的模型如下：</p>
+<p><img alt="adt-3" loading="lazy" src="/images/ProjectDocs/9-design-e100-audit/adt-3.png"></p>
+<p>工作进程，发送日志的流程如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="mf">1.</span> <span class="n">工作进程</span><span class="err">：</span><span class="n">发送审计日志</span><span class="err">，</span><span class="n">长度为x</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">2.</span> <span class="n">加锁</span><span class="err">：</span><span class="n">audit</span><span class="o">-</span><span class="n">buffer读锁</span>
+</span></span><span class="line"><span class="cl">        <span class="mf">2.</span> <span class="n">加锁</span><span class="err">：</span><span class="n">预留空间自旋锁</span>
+</span></span><span class="line"><span class="cl">            <span class="mf">3.</span> <span class="n">申请的预留位置</span> <span class="o">=</span> <span class="s1">&#39;预留空间指针&#39;</span>
+</span></span><span class="line"><span class="cl">            <span class="mf">3.</span> <span class="s1">&#39;预留空间指针&#39;</span> <span class="o">+=</span> <span class="n">x</span>
+</span></span><span class="line"><span class="cl">        <span class="mf">2.</span> <span class="n">解锁</span><span class="err">：</span><span class="n">预留空间自旋锁</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="mf">3.</span> <span class="n">写入审计日志到audit</span><span class="o">-</span><span class="n">buffer</span>
+</span></span><span class="line"><span class="cl">        <span class="mf">4.</span> <span class="s1">&#39;已写入指针&#39;</span> <span class="o">+=</span> <span class="n">x</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">3.</span> <span class="n">解锁</span><span class="err">：</span><span class="n">audit</span><span class="o">-</span><span class="n">buffer读锁</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">审计进程</span><span class="err">：</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">1.</span> <span class="n">申请audit</span><span class="o">-</span><span class="n">buffer写锁</span><span class="err">，</span><span class="n">需等待工作进程</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">2.</span> <span class="n">获取audit</span><span class="o">-</span><span class="n">buffer写锁时</span><span class="err">，</span><span class="n">一定满足</span><span class="s1">&#39;预留空间指针 == 已写入指针&#39;</span>
+</span></span><span class="line"><span class="cl">        <span class="p">(</span><span class="n">极低概率异常</span><span class="err">：</span><span class="s1">&#39;预留空间指针 != 已写入指针&#39;</span><span class="err">，</span><span class="n">触发异常处理</span><span class="err">：</span><span class="n">检查日志</span><span class="err">，</span><span class="n">如果发现异常的</span><span class="err">，</span><span class="n">则丢弃异常之后的整段日志</span><span class="p">)</span>
+</span></span></code></pre></div><p>并发场景，工作流程如下：<br>
+（假设：3个工作进程，并发发送日志，日志长度分为为a,b,c）</p>
+<table>
+  <thead>
+      <tr>
+          <th>时刻</th>
+          <th>工作进程1</th>
+          <th>工作进程2</th>
+          <th>工作进程3</th>
+          <th>工作线程4</th>
+          <th>审计进程</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td>发送日志</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td>-</td>
+          <td>发送日志</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td>-</td>
+          <td></td>
+          <td>发送日志</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td>获取读锁</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td>-</td>
+          <td>获取读锁</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td>-</td>
+          <td>-</td>
+          <td>获取读锁</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td>预留空间指针 + a</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>8</td>
+          <td>-</td>
+          <td>预留空间指针 + b</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>9</td>
+          <td>-</td>
+          <td>-</td>
+          <td>预留空间指针 + c</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>10</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>申请写锁</td>
+      </tr>
+      <tr>
+          <td>11</td>
+          <td>已发送指针 + a</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>12</td>
+          <td>-</td>
+          <td>已发送指针 + b</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>13</td>
+          <td>-</td>
+          <td>-</td>
+          <td>已发送指针 + c</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>14</td>
+          <td>释放读锁</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>15</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>申请读锁</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>16</td>
+          <td>-</td>
+          <td>释放读锁</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>17</td>
+          <td>-</td>
+          <td>-</td>
+          <td>释放读锁</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>18</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>获取写锁</td>
+      </tr>
+      <tr>
+          <td>19</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>获取待落盘长度 a + b + c</td>
+      </tr>
+      <tr>
+          <td>20</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>落盘 a + b + c</td>
+      </tr>
+      <tr>
+          <td>21</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>已落盘指针 + a + b + c</td>
+      </tr>
+      <tr>
+          <td>22</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>释放写锁</td>
+      </tr>
+      <tr>
+          <td>23</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>获取读锁</td>
+          <td>-</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="五组织审计日志">五、组织审计日志<a hidden class="anchor" aria-hidden="true" href="#五组织审计日志">#</a></h3>
+<ul>
+<li>AuditFile：1个AuditFile，由多个AuditPage组成。大小固定为64M</li>
+<li>AuditPage：1个AuditPage，大小固定为4k，存储多条AuditLog。引入AuditPage的作用如下：
+<ol>
+<li>内容校验：CRC校验的粒度</li>
+<li>并发控制：并发写日志、读日志、删日志时，判断是否需加锁保护</li>
+<li>完整性保护：发生断电等异常时，避免只写入半条日志等特殊情况（1条日志跨越2个物理block）</li>
+<li>快速查找：根据页面头部的时间信息，快速找打符合条件的日志</li>
+<li>–&gt;以后版本：哈希、加密、区块链的粒度</li>
+<li>–&gt;以后版本：方便从后往前读日志</li>
+</ol>
+</li>
+<li>AuditLog：1条审计日志。</li>
+</ul>
+<p><img alt="adt-4" loading="lazy" src="/images/ProjectDocs/9-design-e100-audit/adt-4.png"></p>
+<h3 id="六读取审计日志">六、读取审计日志<a hidden class="anchor" aria-hidden="true" href="#六读取审计日志">#</a></h3>
+<p>（这块并发管理写的不是很好，需再优化）<br>
+以下3种场景，读日志存在并发冲突：</p>
+<ul>
+<li>审计进程：写日志，单进程
+<ul>
+<li>读到(正在写的文件，正在写的Page)，等待写锁</li>
+</ul>
+</li>
+<li>工作进程：读日志，多进程
+<ul>
+<li>并发读</li>
+</ul>
+</li>
+<li>工作进程：删日志，单进程
+<ul>
+<li>如果存在任意一个删进程，等待删锁</li>
+</ul>
+</li>
+</ul>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="mf">1.</span> <span class="n">工作进程执行pg_audit_log</span><span class="p">(</span><span class="n">begin_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">2.</span> <span class="n">获取指定的最早和最晚时间</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">3.</span> <span class="n">如果为指定最晚时间</span><span class="err">，</span><span class="n">则最晚时间为当前时间</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">4.</span> <span class="s1">&#39;初始化TupleStore&#39;</span> <span class="c1"># 由PG提供，具有自动物化的功能</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">5.</span> <span class="n">扫描文件</span><span class="err">：</span><span class="n">查找日志目录所有文件</span><span class="err">，</span><span class="n">按文件名过滤不符合时间的文件</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">6.</span> <span class="n">排序文件</span><span class="err">：</span><span class="n">按文件名中的时间排序日志文件</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">7.</span> <span class="n">循环</span><span class="err">：</span>
+</span></span><span class="line"><span class="cl">        <span class="mf">8.</span> <span class="n">读取日志</span><span class="err">：</span>
+</span></span><span class="line"><span class="cl">            <span class="mf">8.1</span> <span class="n">打开文件</span><span class="err">：</span><span class="n">按顺序从头打开</span><span class="err">、</span><span class="n">读取文件</span>
+</span></span><span class="line"><span class="cl">            <span class="mf">8.2</span> <span class="s1">&#39;并发控制：如果读取审计进程正在写的文件和AuditPage，则获取文件读锁&#39;</span>
+</span></span><span class="line"><span class="cl">                <span class="s1">&#39;提示：审计进程写日志时，获取文件写锁，不读日志时，无人竞争写锁&#39;</span>
+</span></span><span class="line"><span class="cl">            <span class="mf">8.3</span> <span class="n">读取AuditPage</span><span class="err">：</span><span class="mi">1</span><span class="n">次读取1个AuditPage</span>
+</span></span><span class="line"><span class="cl">            <span class="mf">8.4</span> <span class="n">获取AuditLog</span><span class="err">：</span><span class="mi">1</span><span class="n">次获取1个AuditLog</span>
+</span></span><span class="line"><span class="cl">        <span class="mf">9.</span> <span class="s1">&#39;缓存日志：将日志缓存在TupleStore中，必要时自动物化&#39;</span>
+</span></span><span class="line"><span class="cl">        <span class="mf">10.</span> <span class="s1">&#39;保护机制：如果日志条数 &gt; 10000，则中止，并提示用户：&#39;</span>
+</span></span><span class="line"><span class="cl">            <span class="n">日志数量过多</span><span class="err">，</span><span class="n">缩小begin_time和end_time的区间</span>
+</span></span></code></pre></div><h3 id="七删除审计日志">七、删除审计日志<a hidden class="anchor" aria-hidden="true" href="#七删除审计日志">#</a></h3>
+<p>以下3种场景，删日志存在并发冲突：</p>
+<ul>
+<li>审计进程：写日志，单进程
+<ul>
+<li>删到（正在写的文件），等待写锁</li>
+</ul>
+</li>
+<li>工作进程：读日志，多进程
+<ul>
+<li>竞争删锁</li>
+</ul>
+</li>
+<li>工作进程：删日志，单进程
+<ul>
+<li>如果存在任意一个删进程，报错，只允许1个删进程</li>
+</ul>
+</li>
+</ul>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="mf">1.</span> <span class="n">工作进程执行pg_delete_audit_log</span><span class="p">(</span><span class="n">begin_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">2.</span> <span class="n">同一时刻</span><span class="err">，</span><span class="n">只能有1个进程删除日志</span><span class="err">，</span><span class="n">否则报错</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">3.</span> <span class="n">如果为指定最晚时间</span><span class="err">，</span><span class="n">则最晚时间为当前时间</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">4.</span> <span class="n">扫描文件</span><span class="err">：</span><span class="n">查找日志目录所有文件</span><span class="err">，</span><span class="n">按文件名过滤不符合时间的文件</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">5.</span> <span class="n">排序文件</span><span class="err">：</span><span class="n">按文件名中的时间排序日志文件</span>
+</span></span><span class="line"><span class="cl">    <span class="mf">6.</span> <span class="n">循环</span><span class="err">：</span>
+</span></span><span class="line"><span class="cl">        <span class="mf">7.</span> <span class="s1">&#39;并发控制：如果涉及审计进程在写的文件，则获取文件写锁，删除文件中符合条件的日志，更新审计进程write偏移&#39;</span>
+</span></span><span class="line"><span class="cl">        <span class="mf">8.</span> <span class="n">快速删除</span><span class="err">：</span><span class="n">根据文件名</span><span class="err">，</span><span class="n">获取文件中最早日志</span><span class="err">。</span><span class="n">读取文件最后1个Page</span><span class="err">，</span><span class="n">获取文件中最晚日志</span><span class="err">。</span><span class="n">可判断是否直接删除整个文件</span>
+</span></span><span class="line"><span class="cl">        <span class="mf">9.</span> <span class="n">其他删除逻辑较简单</span><span class="err">，</span><span class="n">此处不再介绍</span>
+</span></span></code></pre></div><h3 id="八审计测试工具">八、审计测试工具<a hidden class="anchor" aria-hidden="true" href="#八审计测试工具">#</a></h3>
+<p>release版本，audit_tool支持功能如下：</p>
+<ul>
+<li>解析日志文件</li>
+<li>打印日志文件（复用内置函数pg_audit_log()的代码）</li>
+</ul>
+<p>debug版本，audit_tool额外支持</p>
+<ul>
+<li>随机生成日志文件与日志</li>
+<li>删除审计日志（复用内置函数pg_audit_delete_log()的代码）</li>
+<li>多进程并发生成、存储审计日志（复用audit-buffer、audit-writer进程的代码）</li>
+</ul>
+<h2 id="13-接口说明">1.3 接口说明<a hidden class="anchor" aria-hidden="true" href="#13-接口说明">#</a></h2>
+<ul>
+<li>
+<p>用户接口<br>
+新增4个函数</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 查看可选审计范围
+</span></span></span><span class="line"><span class="cl"><span class="n">pg_audit_scope</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 查看审计日志
+</span></span></span><span class="line"><span class="cl"><span class="n">pg_audig_log</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="n">pg_audig_log</span><span class="p">(</span><span class="n">timestamptz</span><span class="w"> </span><span class="n">begtime</span><span class="p">,</span><span class="w"> </span><span class="n">timestamptz</span><span class="w"> </span><span class="n">endtime</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 删除审计日志
+</span></span></span><span class="line"><span class="cl"><span class="n">pg_audit_delete_log</span><span class="p">(</span><span class="n">timestamptz</span><span class="w"> </span><span class="n">begtime</span><span class="p">,</span><span class="w"> </span><span class="n">timestamptz</span><span class="w"> </span><span class="n">endtime</span><span class="p">)</span><span class="w">
+</span></span></span></code></pre></div><p>新增1个视图</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">VIEW</span><span class="w"> </span><span class="n">pg_audit_log</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_audig_log</span><span class="p">();</span><span class="w">
+</span></span></span></code></pre></div><p>新增1个工具</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">audit_tool -h
+</span></span><span class="line"><span class="cl"><span class="c1"># 输出如下：</span>
+</span></span><span class="line"><span class="cl">audit_tool is a utility to process audit log.
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">usage:
+</span></span><span class="line"><span class="cl">audit_tool decode <span class="o">[</span>options<span class="o">]</span>
+</span></span><span class="line"><span class="cl">audit_tool print  <span class="o">[</span>options<span class="o">]</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="o">[</span>options<span class="o">]</span> could be:
+</span></span><span class="line"><span class="cl">-h,-?, --help                show this help, <span class="k">then</span> <span class="nb">exit</span>
+</span></span><span class="line"><span class="cl">-v, --version                show the version of this tool, <span class="k">then</span> <span class="nb">exit</span>
+</span></span><span class="line"><span class="cl">-d, --direcotry<span class="o">=</span>LOG_DIR      directory of audit logs
+</span></span><span class="line"><span class="cl">-f, --file<span class="o">=</span>LOG_FILE          audit log file
+</span></span><span class="line"><span class="cl">-o, --output<span class="o">=</span>DIR_OR_FILE     used with the --direcotry or --file parameter
+</span></span><span class="line"><span class="cl">-b, --begin-time<span class="o">=</span>BEGIN_TIME  the earliest audit log, format example: <span class="s1">&#39;2020/01/01 12:00:00&#39;</span>
+</span></span><span class="line"><span class="cl">-e, --end-time<span class="o">=</span>END_TIME      the latest audit log
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">1. <span class="nb">command</span> to decode directory:
+</span></span><span class="line"><span class="cl">audit_tool decode -d LOG_DIR <span class="o">[</span>-o OUTPUT_DIR<span class="o">]</span> <span class="o">[</span>-b BEGIN_TIME<span class="o">]</span> <span class="o">[</span>-e END_TIME<span class="o">]</span>
+</span></span><span class="line"><span class="cl">2. <span class="nb">command</span> to decode file:
+</span></span><span class="line"><span class="cl">audit_tool decode -f LOG_FILE <span class="o">[</span>-o OUTPUT_FILE<span class="o">]</span> <span class="o">[</span>-b BEGIN_TIME<span class="o">]</span> <span class="o">[</span>-e END_TIME<span class="o">]</span>
+</span></span></code></pre></div></li>
+<li>
+<p>代码接口<br>
+此处仅列举审计模块对外接口：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="cm">/* 资源管理 */</span>
+</span></span><span class="line"><span class="cl"><span class="n">Size</span> <span class="nf">audit_shm_size</span><span class="p">();</span> <span class="cm">/* 计算共享内存总大小 */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">audit_init_shmem</span><span class="p">();</span> <span class="cm">/* 划分共享内存 */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">audit_init</span><span class="p">();</span>  <span class="cm">/* 初始化所有审计资源 */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 进程管理 */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">audit_writer_start</span><span class="p">();</span> <span class="cm">/* 启动审计进程 */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">audit_writer_exit</span><span class="p">();</span> <span class="cm">/* 退出审计进程 */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 事件管理：无法通过PG内置hook框架获取的事件 */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">audit_hook_logout_user</span><span class="p">(</span><span class="kt">int</span> <span class="n">code</span><span class="p">,</span> <span class="n">Datum</span> <span class="n">arg</span><span class="p">);</span> <span class="cm">/* 审计登出用户 */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">audit_hook_start_system</span><span class="p">();</span> <span class="cm">/* 审计启动集群 */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">audit_hook_exit_system</span><span class="p">(</span><span class="kt">int</span> <span class="n">code</span><span class="p">,</span> <span class="n">Datum</span> <span class="n">arg</span><span class="p">);</span> <span class="cm">/* 审计停止集群 */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 事件管理：获取原始SQL语句（在执行器之前，可能生成事件） */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">audit_event_init</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">sql</span><span class="p">);</span> <span class="cm">/* 记录原始SQL语句 */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 内置函数 */</span>
+</span></span><span class="line"><span class="cl"><span class="n">Datum</span> <span class="nf">pg_audit_scope</span><span class="p">(</span><span class="n">PG_FUNCTION_ARGS</span><span class="p">);</span>  <span class="cm">/* 查询可选审计范围 */</span>
+</span></span><span class="line"><span class="cl"><span class="n">Datum</span> <span class="nf">pg_audit_log</span><span class="p">(</span><span class="n">PG_FUNCTION_ARGS</span><span class="p">);</span> <span class="cm">/* 查询审计日志 */</span>
+</span></span><span class="line"><span class="cl"><span class="n">Datum</span> <span class="nf">pg_delete_audit_log</span><span class="p">(</span><span class="n">PG_FUNCTION_ARGS</span><span class="p">);</span> <span class="cm">/* 删除审计日志 */</span>
+</span></span></code></pre></div></li>
+<li>
+<p>代码文件<br>
+审计的关键代码都集中在审计文件夹下，以下文件包含审计90%以上的代码。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="p">|</span> -- e100
+</span></span><span class="line"><span class="cl">    <span class="p">|</span>-- src
+</span></span><span class="line"><span class="cl">        <span class="p">|</span>-- beckend
+</span></span><span class="line"><span class="cl">            <span class="p">|</span>-- audit
+</span></span><span class="line"><span class="cl">                <span class="p">|</span>-- audit.c <span class="c1"># 所有审计的对外接口</span>
+</span></span><span class="line"><span class="cl">                <span class="p">|</span>-- adt_config.c
+</span></span><span class="line"><span class="cl">                <span class="p">|</span>-- adt_time.c
+</span></span><span class="line"><span class="cl">                <span class="p">|</span>-- adt_query.c <span class="c1"># 识别每种DML、DDL，收集事件</span>
+</span></span><span class="line"><span class="cl">                <span class="p">|</span>-- adt_event.c
+</span></span><span class="line"><span class="cl">                <span class="p">|</span>-- adt_log.c
+</span></span><span class="line"><span class="cl">                <span class="p">|</span>-- adt_page.c
+</span></span><span class="line"><span class="cl">                <span class="p">|</span>-- adt_file.c
+</span></span><span class="line"><span class="cl">                <span class="p">|</span>-- adt_buffer.c
+</span></span><span class="line"><span class="cl">                <span class="p">|</span>-- adt_writer.c
+</span></span><span class="line"><span class="cl">        <span class="p">|</span>-- bin
+</span></span><span class="line"><span class="cl">            <span class="p">|</span>-- adt_tool
+</span></span><span class="line"><span class="cl">                <span class="p">|</span>-- adt_tool.c
+</span></span><span class="line"><span class="cl">                <span class="p">|</span>-- 软链接：adt_config.c adt_event.c adt_log.c等
+</span></span></code></pre></div></li>
+</ul>
+<h2 id="14-内存管理">1.4 内存管理<a hidden class="anchor" aria-hidden="true" href="#14-内存管理">#</a></h2>
+<ul>
+<li>共享内存</li>
+<li>临时内存
+<ol>
+<li>收集事件</li>
+<li>生成日志：临时申请内存（一般1k以内）</li>
+<li>发送日志：销毁临时内存</li>
+</ol>
+</li>
+</ul>
+<h2 id="15-安全">1.5 安全<a hidden class="anchor" aria-hidden="true" href="#15-安全">#</a></h2>
+<p>在执行以下3个函数时，检查是否具有审计权限：</p>
+<ol>
+<li>查询日志：pg_audit_log()</li>
+<li>查询日志：pg_audit_log(begin_time, end_time)</li>
+<li>删除日志：pg_audit_delete_log(begin_time, end_time)<br>
+检查方式：</li>
+<li>是否是superuser：访问pg_authid系统表，判断rolsuper列</li>
+<li>是否是pg_monitor：访问pg_auth_members系统表，查找{roloid， member}符合{pg_monitor, 当前用户}</li>
+</ol>
+<h2 id="16-性能">1.6 性能<a hidden class="anchor" aria-hidden="true" href="#16-性能">#</a></h2>
+<p>实现方案中，发送审计日志章节，已介绍性能瓶颈。</p>
+<h2 id="17-专利">1.7 专利<a hidden class="anchor" aria-hidden="true" href="#17-专利">#</a></h2>
+<p>无</p>
+<h2 id="18-升级管理">1.8 升级管理<a hidden class="anchor" aria-hidden="true" href="#18-升级管理">#</a></h2>
+<p>新增5个GUC参数<br>
+新增4个内置函数<br>
+新增1个视图<br>
+（新增1个功能audit_tool，无任何依赖）</p>
+<h2 id="19-其他说明">1.9 其他说明<a hidden class="anchor" aria-hidden="true" href="#19-其他说明">#</a></h2>
+<p>无</p>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/%E5%AE%A1%E8%AE%A1/">审计</a></li><li><a href="http://localhost:1313/tags/%E8%AE%BE%E8%AE%A1%E6%96%87%E6%A1%A3/">设计文档</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/projectdocs/5-design-g100-audit-refactor/">海量 5 设计 G100审计</a></li><li><a href="/posts/projectdocs/5-solution-g100-audit-refactor/">海量 5 方案 G100审计重构</a></li><li><a href="/posts/projectdocs/15-design-logical-replication/">海量 15 设计 逻辑复制性能优化</a></li><li><a href="/posts/projectdocs/14-design-mac/">海量 mac 设计</a></li><li><a href="/posts/projectdocs/13-design-tde/">海量 透明加密 设计</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./项目文档</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

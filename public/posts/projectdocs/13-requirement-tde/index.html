@@ -1,0 +1,1914 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>海量 透明加密 需求 | Kernel Notes</title>
+<meta name="keywords" content="加密, 需求文档">
+<meta name="description" content="1 简介
+1.1 目的
+透明加密特性提供数据加密功能，核心原理是在数据库将数据存储至磁盘时，先加密再存储。
+本需求将从0设计透明加密特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。
+1.2 适用范围
+Vastbase V5版本。
+1.3 术语定义、首字母缩写词和缩略语
+
+TDE：Transparent Data Encryption，透明数据加密，由数据库提供的数据加密特性
+
+1.4 参考资料
+
+oracle 透明加密特性：https://docs.oracle.com/en/database/oracle/oracle-database/26/dbtde/preface.html
+sql server 透明加密特性：https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/transparent-data-encryption?view=sql-server-ver17
+oceanbase 透明加密特性：https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475958
+kingbase 透明加密特性：https://docs.kingbase.com.cn/cn/KES-V9R1C10/safe/transparent-data-Encyption
+dm8 透明加密特性：https://eco.dameng.com/document/dm/zh-cn/pm/storage-encryption.html#7.1.1%20%E5%85%A8%E5%BA%93%E5%8A%A0%E5%AF%86
+gaussdb 透明加密特性：https://support.huaweicloud.com/intl/zh-cn/fg-gaussdb-dist-v8/gaussdb-18-0019.html
+
+2 透明加密
+2.1 功能简述
+一、基本原理
+通常，用户将数据传输给数据库后，数据库将数据存储到磁盘。攻击者可能利用多种数据库内部或外部漏洞，例如操作系统漏洞等，绕过数据库安全机制，直接从磁盘读取数文件，窃取用户数据。
+透明加密，是一种由数据库提供的加密特性，可有效解决攻击者从磁盘窃取数据的问题。开启透明加密后，数据库将数据存储到磁盘时，先加密数据，再存储数据密文；数据库从磁盘读取数据时，先解密数据密文，再进行其他计算。用户访问透明加密表时，包括存储、读取数据等，与访问普通表无任何区别，加密和解密过程由数据库自动完成，即对用户透明。
+二、竞品分析
+几乎所有商用关系数据库中，都支持透明加密特性，包括oracle, sql server, oceanbase, kingbase, dm8等，postgresql不支持透明加密特性。
+使用透明加密时，通常包括3个阶段：
+
+定义用于加密的密钥
+使用SQL语法，定义哪些对象需加密，不同产品，定义加密对象的粒度不同
+使用SQL语法，访问透明加密表，以及进行其他运维等操作
+
+各产品中，定义加密对象的SQL语法如下：
+-- 一、oracle
+CREATE TABLE t1(c1 INT, c2 TEXT ENCRYPT);
+CREATE TABLESPACE ts1 DATAFILE .. ENCRYPTION USING &#39;AES192&#39; ENCRYPT;
+-- 二、sql server
+CREATE DATABASE ENCRYPTION KEY WITH ALGORITHM = AES_256 ..
+ALTER DATABASE db1 SET ENCRYPTION ON;
+-- 三、oceanbase
+CREATE TABLESPACE ts1 encryption = &#39;y&#39;; -- mysql cmpt
+CREATE TABLESPACE ts1 ENCRYPTION USING &#39;aes-256&#39;; -- oracle cmpt
+-- 四、kingbase
+CREATE TABLESPACE ts .. WITH (ENCRYPTION = TRUE);
+CREATE TABLE ts .. ENCRYPTED BY &#39;this is a key&#39;;
+-- 五、dm8
+intdb .. ENCRYPT_NAME ..
+CREATE TABLESPACE .. ENCRYPT WITH ..
+CREATE TABLE t1 (c1 INT, c2 INT ENCRYPT WITH ..);
+-- 六、gaussdb
+CREATE TABLE t1 .. WITH (enable_tde=on);
+各产品中，按定义加密对象的粒度，区别如下：">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/projectdocs/13-requirement-tde/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/projectdocs/13-requirement-tde/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/projectdocs/13-requirement-tde/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="海量 透明加密 需求">
+  <meta property="og:description" content="1 简介 1.1 目的 透明加密特性提供数据加密功能，核心原理是在数据库将数据存储至磁盘时，先加密再存储。
+本需求将从0设计透明加密特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。
+1.2 适用范围 Vastbase V5版本。
+1.3 术语定义、首字母缩写词和缩略语 TDE：Transparent Data Encryption，透明数据加密，由数据库提供的数据加密特性 1.4 参考资料 oracle 透明加密特性：https://docs.oracle.com/en/database/oracle/oracle-database/26/dbtde/preface.html sql server 透明加密特性：https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/transparent-data-encryption?view=sql-server-ver17 oceanbase 透明加密特性：https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475958 kingbase 透明加密特性：https://docs.kingbase.com.cn/cn/KES-V9R1C10/safe/transparent-data-Encyption dm8 透明加密特性：https://eco.dameng.com/document/dm/zh-cn/pm/storage-encryption.html#7.1.1%20%E5%85%A8%E5%BA%93%E5%8A%A0%E5%AF%86 gaussdb 透明加密特性：https://support.huaweicloud.com/intl/zh-cn/fg-gaussdb-dist-v8/gaussdb-18-0019.html 2 透明加密 2.1 功能简述 一、基本原理 通常，用户将数据传输给数据库后，数据库将数据存储到磁盘。攻击者可能利用多种数据库内部或外部漏洞，例如操作系统漏洞等，绕过数据库安全机制，直接从磁盘读取数文件，窃取用户数据。
+透明加密，是一种由数据库提供的加密特性，可有效解决攻击者从磁盘窃取数据的问题。开启透明加密后，数据库将数据存储到磁盘时，先加密数据，再存储数据密文；数据库从磁盘读取数据时，先解密数据密文，再进行其他计算。用户访问透明加密表时，包括存储、读取数据等，与访问普通表无任何区别，加密和解密过程由数据库自动完成，即对用户透明。
+二、竞品分析 几乎所有商用关系数据库中，都支持透明加密特性，包括oracle, sql server, oceanbase, kingbase, dm8等，postgresql不支持透明加密特性。
+使用透明加密时，通常包括3个阶段：
+定义用于加密的密钥 使用SQL语法，定义哪些对象需加密，不同产品，定义加密对象的粒度不同 使用SQL语法，访问透明加密表，以及进行其他运维等操作 各产品中，定义加密对象的SQL语法如下：
+-- 一、oracle CREATE TABLE t1(c1 INT, c2 TEXT ENCRYPT); CREATE TABLESPACE ts1 DATAFILE .. ENCRYPTION USING &#39;AES192&#39; ENCRYPT; -- 二、sql server CREATE DATABASE ENCRYPTION KEY WITH ALGORITHM = AES_256 .. ALTER DATABASE db1 SET ENCRYPTION ON; -- 三、oceanbase CREATE TABLESPACE ts1 encryption = &#39;y&#39;; -- mysql cmpt CREATE TABLESPACE ts1 ENCRYPTION USING &#39;aes-256&#39;; -- oracle cmpt -- 四、kingbase CREATE TABLESPACE ts .. WITH (ENCRYPTION = TRUE); CREATE TABLE ts .. ENCRYPTED BY &#39;this is a key&#39;; -- 五、dm8 intdb .. ENCRYPT_NAME .. CREATE TABLESPACE .. ENCRYPT WITH .. CREATE TABLE t1 (c1 INT, c2 INT ENCRYPT WITH ..); -- 六、gaussdb CREATE TABLE t1 .. WITH (enable_tde=on); 各产品中，按定义加密对象的粒度，区别如下：">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-03-20T10:47:00+08:00">
+    <meta property="article:modified_time" content="2026-08-14T17:47:31+08:00">
+    <meta property="article:tag" content="加密">
+    <meta property="article:tag" content="需求文档">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="海量 透明加密 需求">
+<meta name="twitter:description" content="1 简介
+1.1 目的
+透明加密特性提供数据加密功能，核心原理是在数据库将数据存储至磁盘时，先加密再存储。
+本需求将从0设计透明加密特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。
+1.2 适用范围
+Vastbase V5版本。
+1.3 术语定义、首字母缩写词和缩略语
+
+TDE：Transparent Data Encryption，透明数据加密，由数据库提供的数据加密特性
+
+1.4 参考资料
+
+oracle 透明加密特性：https://docs.oracle.com/en/database/oracle/oracle-database/26/dbtde/preface.html
+sql server 透明加密特性：https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/transparent-data-encryption?view=sql-server-ver17
+oceanbase 透明加密特性：https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475958
+kingbase 透明加密特性：https://docs.kingbase.com.cn/cn/KES-V9R1C10/safe/transparent-data-Encyption
+dm8 透明加密特性：https://eco.dameng.com/document/dm/zh-cn/pm/storage-encryption.html#7.1.1%20%E5%85%A8%E5%BA%93%E5%8A%A0%E5%AF%86
+gaussdb 透明加密特性：https://support.huaweicloud.com/intl/zh-cn/fg-gaussdb-dist-v8/gaussdb-18-0019.html
+
+2 透明加密
+2.1 功能简述
+一、基本原理
+通常，用户将数据传输给数据库后，数据库将数据存储到磁盘。攻击者可能利用多种数据库内部或外部漏洞，例如操作系统漏洞等，绕过数据库安全机制，直接从磁盘读取数文件，窃取用户数据。
+透明加密，是一种由数据库提供的加密特性，可有效解决攻击者从磁盘窃取数据的问题。开启透明加密后，数据库将数据存储到磁盘时，先加密数据，再存储数据密文；数据库从磁盘读取数据时，先解密数据密文，再进行其他计算。用户访问透明加密表时，包括存储、读取数据等，与访问普通表无任何区别，加密和解密过程由数据库自动完成，即对用户透明。
+二、竞品分析
+几乎所有商用关系数据库中，都支持透明加密特性，包括oracle, sql server, oceanbase, kingbase, dm8等，postgresql不支持透明加密特性。
+使用透明加密时，通常包括3个阶段：
+
+定义用于加密的密钥
+使用SQL语法，定义哪些对象需加密，不同产品，定义加密对象的粒度不同
+使用SQL语法，访问透明加密表，以及进行其他运维等操作
+
+各产品中，定义加密对象的SQL语法如下：
+-- 一、oracle
+CREATE TABLE t1(c1 INT, c2 TEXT ENCRYPT);
+CREATE TABLESPACE ts1 DATAFILE .. ENCRYPTION USING &#39;AES192&#39; ENCRYPT;
+-- 二、sql server
+CREATE DATABASE ENCRYPTION KEY WITH ALGORITHM = AES_256 ..
+ALTER DATABASE db1 SET ENCRYPTION ON;
+-- 三、oceanbase
+CREATE TABLESPACE ts1 encryption = &#39;y&#39;; -- mysql cmpt
+CREATE TABLESPACE ts1 ENCRYPTION USING &#39;aes-256&#39;; -- oracle cmpt
+-- 四、kingbase
+CREATE TABLESPACE ts .. WITH (ENCRYPTION = TRUE);
+CREATE TABLE ts .. ENCRYPTED BY &#39;this is a key&#39;;
+-- 五、dm8
+intdb .. ENCRYPT_NAME ..
+CREATE TABLESPACE .. ENCRYPT WITH ..
+CREATE TABLE t1 (c1 INT, c2 INT ENCRYPT WITH ..);
+-- 六、gaussdb
+CREATE TABLE t1 .. WITH (enable_tde=on);
+各产品中，按定义加密对象的粒度，区别如下：">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "海量 透明加密 需求",
+      "item": "http://localhost:1313/posts/projectdocs/13-requirement-tde/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "海量 透明加密 需求",
+  "name": "海量 透明加密 需求",
+  "description": "1 简介 1.1 目的 透明加密特性提供数据加密功能，核心原理是在数据库将数据存储至磁盘时，先加密再存储。\n本需求将从0设计透明加密特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。\n1.2 适用范围 Vastbase V5版本。\n1.3 术语定义、首字母缩写词和缩略语 TDE：Transparent Data Encryption，透明数据加密，由数据库提供的数据加密特性 1.4 参考资料 oracle 透明加密特性：https://docs.oracle.com/en/database/oracle/oracle-database/26/dbtde/preface.html sql server 透明加密特性：https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/transparent-data-encryption?view=sql-server-ver17 oceanbase 透明加密特性：https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475958 kingbase 透明加密特性：https://docs.kingbase.com.cn/cn/KES-V9R1C10/safe/transparent-data-Encyption dm8 透明加密特性：https://eco.dameng.com/document/dm/zh-cn/pm/storage-encryption.html#7.1.1%20%E5%85%A8%E5%BA%93%E5%8A%A0%E5%AF%86 gaussdb 透明加密特性：https://support.huaweicloud.com/intl/zh-cn/fg-gaussdb-dist-v8/gaussdb-18-0019.html 2 透明加密 2.1 功能简述 一、基本原理 通常，用户将数据传输给数据库后，数据库将数据存储到磁盘。攻击者可能利用多种数据库内部或外部漏洞，例如操作系统漏洞等，绕过数据库安全机制，直接从磁盘读取数文件，窃取用户数据。\n透明加密，是一种由数据库提供的加密特性，可有效解决攻击者从磁盘窃取数据的问题。开启透明加密后，数据库将数据存储到磁盘时，先加密数据，再存储数据密文；数据库从磁盘读取数据时，先解密数据密文，再进行其他计算。用户访问透明加密表时，包括存储、读取数据等，与访问普通表无任何区别，加密和解密过程由数据库自动完成，即对用户透明。\n二、竞品分析 几乎所有商用关系数据库中，都支持透明加密特性，包括oracle, sql server, oceanbase, kingbase, dm8等，postgresql不支持透明加密特性。\n使用透明加密时，通常包括3个阶段：\n定义用于加密的密钥 使用SQL语法，定义哪些对象需加密，不同产品，定义加密对象的粒度不同 使用SQL语法，访问透明加密表，以及进行其他运维等操作 各产品中，定义加密对象的SQL语法如下：\n-- 一、oracle CREATE TABLE t1(c1 INT, c2 TEXT ENCRYPT); CREATE TABLESPACE ts1 DATAFILE .. ENCRYPTION USING \u0026#39;AES192\u0026#39; ENCRYPT; -- 二、sql server CREATE DATABASE ENCRYPTION KEY WITH ALGORITHM = AES_256 .. ALTER DATABASE db1 SET ENCRYPTION ON; -- 三、oceanbase CREATE TABLESPACE ts1 encryption = \u0026#39;y\u0026#39;; -- mysql cmpt CREATE TABLESPACE ts1 ENCRYPTION USING \u0026#39;aes-256\u0026#39;; -- oracle cmpt -- 四、kingbase CREATE TABLESPACE ts .. WITH (ENCRYPTION = TRUE); CREATE TABLE ts .. ENCRYPTED BY \u0026#39;this is a key\u0026#39;; -- 五、dm8 intdb .. ENCRYPT_NAME .. CREATE TABLESPACE .. ENCRYPT WITH .. CREATE TABLE t1 (c1 INT, c2 INT ENCRYPT WITH ..); -- 六、gaussdb CREATE TABLE t1 .. WITH (enable_tde=on); 各产品中，按定义加密对象的粒度，区别如下：\n",
+  "keywords": [
+    "加密", "需求文档"
+  ],
+  "articleBody": "1 简介 1.1 目的 透明加密特性提供数据加密功能，核心原理是在数据库将数据存储至磁盘时，先加密再存储。\n本需求将从0设计透明加密特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。\n1.2 适用范围 Vastbase V5版本。\n1.3 术语定义、首字母缩写词和缩略语 TDE：Transparent Data Encryption，透明数据加密，由数据库提供的数据加密特性 1.4 参考资料 oracle 透明加密特性：https://docs.oracle.com/en/database/oracle/oracle-database/26/dbtde/preface.html sql server 透明加密特性：https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/transparent-data-encryption?view=sql-server-ver17 oceanbase 透明加密特性：https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475958 kingbase 透明加密特性：https://docs.kingbase.com.cn/cn/KES-V9R1C10/safe/transparent-data-Encyption dm8 透明加密特性：https://eco.dameng.com/document/dm/zh-cn/pm/storage-encryption.html#7.1.1%20%E5%85%A8%E5%BA%93%E5%8A%A0%E5%AF%86 gaussdb 透明加密特性：https://support.huaweicloud.com/intl/zh-cn/fg-gaussdb-dist-v8/gaussdb-18-0019.html 2 透明加密 2.1 功能简述 一、基本原理 通常，用户将数据传输给数据库后，数据库将数据存储到磁盘。攻击者可能利用多种数据库内部或外部漏洞，例如操作系统漏洞等，绕过数据库安全机制，直接从磁盘读取数文件，窃取用户数据。\n透明加密，是一种由数据库提供的加密特性，可有效解决攻击者从磁盘窃取数据的问题。开启透明加密后，数据库将数据存储到磁盘时，先加密数据，再存储数据密文；数据库从磁盘读取数据时，先解密数据密文，再进行其他计算。用户访问透明加密表时，包括存储、读取数据等，与访问普通表无任何区别，加密和解密过程由数据库自动完成，即对用户透明。\n二、竞品分析 几乎所有商用关系数据库中，都支持透明加密特性，包括oracle, sql server, oceanbase, kingbase, dm8等，postgresql不支持透明加密特性。\n使用透明加密时，通常包括3个阶段：\n定义用于加密的密钥 使用SQL语法，定义哪些对象需加密，不同产品，定义加密对象的粒度不同 使用SQL语法，访问透明加密表，以及进行其他运维等操作 各产品中，定义加密对象的SQL语法如下：\n-- 一、oracle CREATE TABLE t1(c1 INT, c2 TEXT ENCRYPT); CREATE TABLESPACE ts1 DATAFILE .. ENCRYPTION USING 'AES192' ENCRYPT; -- 二、sql server CREATE DATABASE ENCRYPTION KEY WITH ALGORITHM = AES_256 .. ALTER DATABASE db1 SET ENCRYPTION ON; -- 三、oceanbase CREATE TABLESPACE ts1 encryption = 'y'; -- mysql cmpt CREATE TABLESPACE ts1 ENCRYPTION USING 'aes-256'; -- oracle cmpt -- 四、kingbase CREATE TABLESPACE ts .. WITH (ENCRYPTION = TRUE); CREATE TABLE ts .. ENCRYPTED BY 'this is a key'; -- 五、dm8 intdb .. ENCRYPT_NAME .. CREATE TABLESPACE .. ENCRYPT WITH .. CREATE TABLE t1 (c1 INT, c2 INT ENCRYPT WITH ..); -- 六、gaussdb CREATE TABLE t1 .. WITH (enable_tde=on); 各产品中，按定义加密对象的粒度，区别如下：\n产品 加密粒度 加密范围 oracle tablespace, column relfile, redo sql server database relfile, transaction log oceanbase tablespace relfile, clog kingbase tabpespace, table relfile, wal dm8 cluster, tablespace, coulumn relfile, redo gaussdb table relfile, wal 三、实现难点 在第1版本的特性中，出于工作量考虑，部分功能无法满足。\n加密范围\n当用户执行SQL时，例如INSERT INTO t1 VALUES ('data1')，在磁盘上，以下多类文件中，都可能存在数据data1，本版本只支持加密部分文件中的数据：\nrelation file（支持） toast file (支持) index file (支持) materialized view file (不支持) double write file (如果有，可以支持) catalog file (pg_stats) （不支持） wal file （不支持） 物理备份 物理复制流 逻辑复制流 … 密钥管理\n大部分数据库的加密方案中，数据库只存储密钥密文，高级别的密钥，由第三方密钥管理服务存储。\n但是，为考虑易用性、可测试性、可扩展性等，本版本暂时只支持数据库本机管理密钥。\n2.2 功能说明 2.2.1 使用流程 场景一、配置透明加密 -- 1. 创建数据密钥 CREATE ENCRYPTION KEY tde_key WITH (source=local, password='pass.123'); -- 集群中所有表，都使用同1个密钥加密 -- 集群中，暂时只允许存在1个密钥，CREATE多余密钥报错 -- 参考openGauss gs_guc encrypt命令，生成密钥，并简单加密存储 -- 未来计划：全密态主密钥、数据密钥，审计日志加密密钥，系统表password加密密钥（fdw, replication等）等其他特性， 可统一使用该语法，统一管理密钥 -- 2. 查看数据密钥 SELECT * FROM vb_encryption_key; keyoid | keyname | keyinfo --------+----------+------------- 17000 |tde_key | type=local -- password单独加密存储 场景二、为表设置加密属性 -- 1. 创建表 CREATE TABLE t1 (c1 TEXT, c2 TEXT)； -- 2. 创建加密策略 CREATE ENCRYPTION POLICY ep1 FOR public.t1 KEY tde_key ALGORITHEM aes_256_ctr MAC ALGORITHM sha256; -- ALGORITHEM： 默认aes_256_ctr，可选aes_256_gcm，aes_256_cbc -- MAC ALGORITHM：默认无，可选sha256 -- 未来计划： 可指定密钥来源，指定硬件加密，指定密钥自动乱转等 -- 暂不支持国密算法 -- 设置初衷：规范化多个对象安全特性 -- (1) 审计 -- CREATE AUDIPT POLICY ap1 OPERATE select,insert,... -- (2) 强制访问控制 -- CREATE ACCESS POLICY acp1 FOR t1 .. -- (3) 防篡改 -- CRATE LEDGER POLICY lp1 FOR .. -- (4) 脱敏 -- CREATE MASK POLLICY mp1 FOR .. -- (5) 全密态 -- CREATE ENCRYPTION POLICY ep1 FOR .. -- 3. 查看表加密策略 SELECT * FROM vb_encryption_policy; polname | polkey | polalgo | polmacalgo ---------+---------+------------+------------ ep1 | tde_key |aes_256_ctr | sha256 -- 4. 查看加密对象 SELECT * FROM vb_secure_class; relid | relname | encryption_policy | access_policy ------+---------+-------------------+--------------- 17001 | t1 | ep1 | -- 5. 向表中存储数据（数据存储至） INSERT INTO t1 VALUES ('data11', 'data12'); -- 6. 查看表文件路径 SELECT setting || '/' || pg_relation_filepath('t1') FROM pg_settings WHERE name = 'data_directory'; -- 示例输出 ?column? ------------------------------------------------------- /path/to/data_directory/base/16386/16387 -- 7. 验证数据加密存储 \\! hexdump -C /path/to/data_directory/base/16386/16387 -- 预期输出：文件中，查看不到明文数据 ('data11', 'data12') -- 8. 从表中查询数据 SELECT * FROM t1; -- 预期输出：查询到数据明文，用户无法直观感受到自动解密过程 -- 9. 清理环境 DROP TABLE t1; 场景三、为表修改加密属性 -- 1. 创建非加密表 CREATE TABLE t1 (c1 TEXT, c2 TEXT)； -- 2. 为表修改加密属性 CREATE ENCRYPTION POLICY ep1 KEY tde_key ALGORITHEM aes_256_ctr MAC ALGORITHM sha256; ALTER ENCRYPTION POLICY ep1 ADD public.t1; -- 预期：表中新生成的page，数据将被加密，旧数据不会立刻被加密 -- 3. 立即加密旧数据 VACUUM FULL t1; -- 5. 为表取消加密属性 ALTER ENCRYPTION POLICY ep1 REMOVE public.t1; -- 提示用户：旧数据仍然出于加密状态，用VACUUM FULL等语法，可立即解密旧数据 -- 预期：表中新生成的page，数据不再被加密，旧数据仍然处于加密状态 -- 6. 立即解密旧数据 VACUUM FULL t1; -- 7. 为表修改其他加密属性 ALTER ENCRYPTION POLICY ep1 ALGORITHEM aes_256_cbc; -- 8. 清理环境 DROP TABLE t1; 场景四、轮转密钥 -- 1. 创建表 CREATE TABLE t1 (c1 TEXT, c2 TEXT); INSERT INTO t1 VALUES ('data11', 'data12'); -- 2. 加密表 CREATE ENCRYPTION POLICY ep1 FOR t1; -- 3. 轮转密钥 ALTER ENCRYPTION KEY tde_key ROTATION; -- 预期：表中新写入的数据，将使用新密钥加密 -- 4. 重启 或 不重启集群 -- 5. 查询旧数据 SELECT * FROM t1; -- 预期：旧数据仍然使用旧密钥，但是可正常解密 -- 8. 清理环境 DROP TABLE t1; 场景五、为索引设置加密属性 基表加密时，索引也会默认加密\n扩展场景一、为其他类型表设置加密属性 加密toast表\n-- 1. 创建表 CREATE TABLE t1 (c1 INT, c2 TEXT); -- 包含TEXT等可变长度的列 CREATE ENCRYPTION POLICY ep1 KEY tde_key FOR t1; -- 2. 存储超长数据 INSERT INTO t1 VALUES (1, REPEAT('a', 3000)); -- 3. 查看toast表的oid SELECT reltoastrelid FROM pg_class WHERE relname = 't1'; -- 4. 查看toast表的物理文件 SELECT setting || '/' || pg_relation_filenode(xxx) FROM pg_settings WHERE name = 'data_directory'; -- 预期：t1对应toast表，文件中，数据被加密存储 加密分区表\n预期：每个分区对应的文件中，数据被加密存储\n临时表\n预期：临时文件中，数据被加密存储\n扩展场景二、主备加密一致性 主机加密数据\nCREATE TABLE t1 (c1 INT, c2 TEXT); -- 包含TEXT等可变长度的列 CREATE ENCRYPTION POLICY ep1 KEY tde_key FOR t1; INSERT INTO t1 VALUES (generate_series(1, 2000), 'cipher'); ALTER ENCRYPTION POLICY ep1 REMOTE t1; INSERT INTO t1 VALUES (generate_series(1, 2000), 'plain'); 备机数据需与主机一致\n在备机上，数据文件需与主机严格一致。\n解释：大部分加密场景中，加密数据会产生膨胀，导致文件中page容量变小。例如，主机page 1加密，数据容量为7.9k，备机page 1不加密，数据容量为8k。发生主备切换后，可能出现1个节点的page 1有容量，可以写入数据，另一个阶段的page 1容量不够，无法进行redo。 扩展场景三、加密其他文件 双写文件（如果有）\n需要加密 wal文件\n本版本暂不支持加密 异常场景一、关闭透明加密 如果使用第三方密钥服务，可能出现密钥服务异常，影响数据库集群状态的问题，需关闭透明加密以降低影响范围。\n关闭透明加密后，可能出现很多功能问题。比如：无法向表中写数据、无法从表中读数据、无法故障恢复等。\n本版本无复杂场景，不会出现这些问题。\n异常场景二、密钥异常 执行CREATE ENCRYPTION KEY tde_key语法，会生成密钥文体，存放在数据目录下，同时生成wal日志。基于主备物理复制、物理备份等方式，保证密钥安全。\n2.2.2 配置参数和文件 新增密钥文件\n在数据目录下，新增文件夹 /vb_sec，新增文件 /vb_sec/key_info，用于存储数据密钥\n当执行CREATE ENCRYPTION KEY时，生成密钥文件。 2.2.3 数据相关性 新增wal类型：当执行CREATE ENCRYPTION KEY时，生成密钥文件，产生redo log，用于向备机同步密钥文件。\n2.3 接口信息 新增密钥管理语法\nCREATE ENCRYPTION KEY $key_name (source = local, password = $password) ALTER ENCRYPTION KEY $key_nam ROTATION; DROP ENCRYPTION KEY $key_name; 新增加密策略语法\nCREATE ENCRYPTION POLICY $pollicy_name [FOR [TABLE] $table_name [, $table_name ...]] KEY $key_name [ALGORITHEM {aes_256_ct | aes_256_gcm | aes_256_cbc} ] -- 默认：aes_256_ct [MAC ALGORITHM {sha256}] -- 默认：空 ALTER ENCRYPTION POLICY $pollicy_name [ADD [TABLE] $table_name [, $table_name ...]] [REMOVE [TABLE] $table_name [, $table_name ...]] [ALGORITHEM {aes_256_ct | aes_256_gcm | aes_256_cbc} ] DROP ENCRYPTION POLICY $pollicy_name; 新增系统表vb_encryption_key\n-- 表结构： keyoid | keyname | keyinfo -------+---------+--------- 新增系统表vb_encryption_policy\n-- 表结构： polname | polkey | polalgo | polmacalgo ---------+---------+------------+------------ 新增系统表vb_secure_class\n-- 表结构： relid | relname | encryption_policy | access_policy ------+---------+-------------------+--------------- 2.4 正反向行为 2.4.1 生效说明 查看系统表，判断密钥、策略等是否设置成功\n查看表物理文件，判断数据是否加密成功\n2.4.2 提示信息 加密解密异常时，日志中会记录相关错误信息\n2.4.3 约束和依赖 无\n2.5 安全性 2.5.1 权限控制 使用ENCRYPTION KEY、ENCRYPTION POLICY语法时，需特权用户，例如superuser，sysadmin等，三权分立场景，需安全管理员\n2.5.2 审计 ENCRYPTION KEY、ENCRYPTION POLICY语法作为通用DDL审计\n2.6 影响范围 2.6.1 对已有UDT,UDF, ECPG的影响 无\n2.6.2 对系统函数的影响 未新增\n2.6.3 对系统CATALOG的影响 关于新增系统表的详细信息，请看上文接口信息章节：\n新增系统表vb_encryption_key 新增系统表vb_encryption_policy 新增系统表vb_secure_class 2.6.4 对xlog日志格式、数据格式的影响 在执行CRETE/ALTER/DROP ENCRYPTION KEY时，参数wal，新增wal类型\n2.6.5 与其他功能交互时的行为表现 无\n2.6.6 版本兼容性 前向兼容：本版本首次支持透明加密，不涉及兼容性 后向兼容：设计阶段，已考虑将来可能接收的需求： 加密算法：支持国密sm4等算法 密钥管理：支持对接第三方密钥管理服务 加密组件：支持对接第三方加密机 加密范围：支持加密wal日志 2.6.7 用户行为变更 无\n2.7 指标相关 2.7.1 关键资源指标 CPU：开启透明加密，数据存储时，需加密数据，占用CPU。tpcc场景，加密全部表，CPU占用率升高10%以内。 内存：额外占用内存可忽略，加密存储时，在page上原地加密即可，无需额外申请内存 IO：无占用 2.7.2 系统性指标 无\n2.7.3 性能指标 tpcc场景，加密全部表、索引，与不加密相比，使用默认加密算法aes_256_ctr，性能劣化5%以内。\n2.8 测试建议 无\n2.8 其他说明 无\n",
+  "wordCount" : "916",
+  "inLanguage": "en",
+  "datePublished": "2026-03-20T10:47:00+08:00",
+  "dateModified": "2026-08-14T17:47:31+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/projectdocs/13-requirement-tde/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      海量 透明加密 需求
+    </h1>
+    <div class="post-meta">
+      <span title='2026-03-20 10:47:00 +0800 CST'>March 20, 2026</span>&nbsp;·&nbsp;<span>5 min</span>&nbsp;·&nbsp;<span>916 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#1-%e7%ae%80%e4%bb%8b" aria-label="1 简介">1 简介</a><ul>
+                        
+                <li>
+                    <a href="#11-%e7%9b%ae%e7%9a%84" aria-label="1.1 目的">1.1 目的</a></li>
+                <li>
+                    <a href="#12-%e9%80%82%e7%94%a8%e8%8c%83%e5%9b%b4" aria-label="1.2 适用范围">1.2 适用范围</a></li>
+                <li>
+                    <a href="#13-%e6%9c%af%e8%af%ad%e5%ae%9a%e4%b9%89%e9%a6%96%e5%ad%97%e6%af%8d%e7%bc%a9%e5%86%99%e8%af%8d%e5%92%8c%e7%bc%a9%e7%95%a5%e8%af%ad" aria-label="1.3 术语定义、首字母缩写词和缩略语">1.3 术语定义、首字母缩写词和缩略语</a></li>
+                <li>
+                    <a href="#14-%e5%8f%82%e8%80%83%e8%b5%84%e6%96%99" aria-label="1.4 参考资料">1.4 参考资料</a></li></ul>
+                </li>
+                <li>
+                    <a href="#2-%e9%80%8f%e6%98%8e%e5%8a%a0%e5%af%86" aria-label="2 透明加密">2 透明加密</a><ul>
+                        
+                <li>
+                    <a href="#21-%e5%8a%9f%e8%83%bd%e7%ae%80%e8%bf%b0" aria-label="2.1 功能简述">2.1 功能简述</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e5%9f%ba%e6%9c%ac%e5%8e%9f%e7%90%86" aria-label="一、基本原理">一、基本原理</a></li>
+                <li>
+                    <a href="#%e4%ba%8c%e7%ab%9e%e5%93%81%e5%88%86%e6%9e%90" aria-label="二、竞品分析">二、竞品分析</a></li>
+                <li>
+                    <a href="#%e4%b8%89%e5%ae%9e%e7%8e%b0%e9%9a%be%e7%82%b9" aria-label="三、实现难点">三、实现难点</a></li></ul>
+                </li>
+                <li>
+                    <a href="#22-%e5%8a%9f%e8%83%bd%e8%af%b4%e6%98%8e" aria-label="2.2 功能说明">2.2 功能说明</a><ul>
+                        
+                <li>
+                    <a href="#221-%e4%bd%bf%e7%94%a8%e6%b5%81%e7%a8%8b" aria-label="2.2.1 使用流程">2.2.1 使用流程</a><ul>
+                        
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e4%b8%80%e9%85%8d%e7%bd%ae%e9%80%8f%e6%98%8e%e5%8a%a0%e5%af%86" aria-label="场景一、配置透明加密">场景一、配置透明加密</a></li>
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e4%ba%8c%e4%b8%ba%e8%a1%a8%e8%ae%be%e7%bd%ae%e5%8a%a0%e5%af%86%e5%b1%9e%e6%80%a7" aria-label="场景二、为表设置加密属性">场景二、为表设置加密属性</a></li>
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e4%b8%89%e4%b8%ba%e8%a1%a8%e4%bf%ae%e6%94%b9%e5%8a%a0%e5%af%86%e5%b1%9e%e6%80%a7" aria-label="场景三、为表修改加密属性">场景三、为表修改加密属性</a></li>
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e5%9b%9b%e8%bd%ae%e8%bd%ac%e5%af%86%e9%92%a5" aria-label="场景四、轮转密钥">场景四、轮转密钥</a></li>
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e4%ba%94%e4%b8%ba%e7%b4%a2%e5%bc%95%e8%ae%be%e7%bd%ae%e5%8a%a0%e5%af%86%e5%b1%9e%e6%80%a7" aria-label="场景五、为索引设置加密属性">场景五、为索引设置加密属性</a></li>
+                <li>
+                    <a href="#%e6%89%a9%e5%b1%95%e5%9c%ba%e6%99%af%e4%b8%80%e4%b8%ba%e5%85%b6%e4%bb%96%e7%b1%bb%e5%9e%8b%e8%a1%a8%e8%ae%be%e7%bd%ae%e5%8a%a0%e5%af%86%e5%b1%9e%e6%80%a7" aria-label="扩展场景一、为其他类型表设置加密属性">扩展场景一、为其他类型表设置加密属性</a></li>
+                <li>
+                    <a href="#%e6%89%a9%e5%b1%95%e5%9c%ba%e6%99%af%e4%ba%8c%e4%b8%bb%e5%a4%87%e5%8a%a0%e5%af%86%e4%b8%80%e8%87%b4%e6%80%a7" aria-label="扩展场景二、主备加密一致性">扩展场景二、主备加密一致性</a></li>
+                <li>
+                    <a href="#%e6%89%a9%e5%b1%95%e5%9c%ba%e6%99%af%e4%b8%89%e5%8a%a0%e5%af%86%e5%85%b6%e4%bb%96%e6%96%87%e4%bb%b6" aria-label="扩展场景三、加密其他文件">扩展场景三、加密其他文件</a></li>
+                <li>
+                    <a href="#%e5%bc%82%e5%b8%b8%e5%9c%ba%e6%99%af%e4%b8%80%e5%85%b3%e9%97%ad%e9%80%8f%e6%98%8e%e5%8a%a0%e5%af%86" aria-label="异常场景一、关闭透明加密">异常场景一、关闭透明加密</a></li>
+                <li>
+                    <a href="#%e5%bc%82%e5%b8%b8%e5%9c%ba%e6%99%af%e4%ba%8c%e5%af%86%e9%92%a5%e5%bc%82%e5%b8%b8" aria-label="异常场景二、密钥异常">异常场景二、密钥异常</a></li></ul>
+                </li>
+                <li>
+                    <a href="#222-%e9%85%8d%e7%bd%ae%e5%8f%82%e6%95%b0%e5%92%8c%e6%96%87%e4%bb%b6" aria-label="2.2.2 配置参数和文件">2.2.2 配置参数和文件</a></li>
+                <li>
+                    <a href="#223-%e6%95%b0%e6%8d%ae%e7%9b%b8%e5%85%b3%e6%80%a7" aria-label="2.2.3 数据相关性">2.2.3 数据相关性</a></li></ul>
+                </li>
+                <li>
+                    <a href="#23-%e6%8e%a5%e5%8f%a3%e4%bf%a1%e6%81%af" aria-label="2.3 接口信息">2.3 接口信息</a></li>
+                <li>
+                    <a href="#24-%e6%ad%a3%e5%8f%8d%e5%90%91%e8%a1%8c%e4%b8%ba" aria-label="2.4 正反向行为">2.4 正反向行为</a><ul>
+                        
+                <li>
+                    <a href="#241-%e7%94%9f%e6%95%88%e8%af%b4%e6%98%8e" aria-label="2.4.1 生效说明">2.4.1 生效说明</a></li>
+                <li>
+                    <a href="#242-%e6%8f%90%e7%a4%ba%e4%bf%a1%e6%81%af" aria-label="2.4.2 提示信息">2.4.2 提示信息</a></li>
+                <li>
+                    <a href="#243-%e7%ba%a6%e6%9d%9f%e5%92%8c%e4%be%9d%e8%b5%96" aria-label="2.4.3 约束和依赖">2.4.3 约束和依赖</a></li></ul>
+                </li>
+                <li>
+                    <a href="#25-%e5%ae%89%e5%85%a8%e6%80%a7" aria-label="2.5 安全性">2.5 安全性</a><ul>
+                        
+                <li>
+                    <a href="#251-%e6%9d%83%e9%99%90%e6%8e%a7%e5%88%b6" aria-label="2.5.1 权限控制">2.5.1 权限控制</a></li>
+                <li>
+                    <a href="#252-%e5%ae%a1%e8%ae%a1" aria-label="2.5.2 审计">2.5.2 审计</a></li></ul>
+                </li>
+                <li>
+                    <a href="#26-%e5%bd%b1%e5%93%8d%e8%8c%83%e5%9b%b4" aria-label="2.6 影响范围">2.6 影响范围</a><ul>
+                        
+                <li>
+                    <a href="#261-%e5%af%b9%e5%b7%b2%e6%9c%89udtudf-ecpg%e7%9a%84%e5%bd%b1%e5%93%8d" aria-label="2.6.1 对已有UDT,UDF, ECPG的影响">2.6.1 对已有UDT,UDF, ECPG的影响</a></li>
+                <li>
+                    <a href="#262-%e5%af%b9%e7%b3%bb%e7%bb%9f%e5%87%bd%e6%95%b0%e7%9a%84%e5%bd%b1%e5%93%8d" aria-label="2.6.2 对系统函数的影响">2.6.2 对系统函数的影响</a></li>
+                <li>
+                    <a href="#263-%e5%af%b9%e7%b3%bb%e7%bb%9fcatalog%e7%9a%84%e5%bd%b1%e5%93%8d" aria-label="2.6.3 对系统CATALOG的影响">2.6.3 对系统CATALOG的影响</a></li>
+                <li>
+                    <a href="#264-%e5%af%b9xlog%e6%97%a5%e5%bf%97%e6%a0%bc%e5%bc%8f%e6%95%b0%e6%8d%ae%e6%a0%bc%e5%bc%8f%e7%9a%84%e5%bd%b1%e5%93%8d" aria-label="2.6.4 对xlog日志格式、数据格式的影响">2.6.4 对xlog日志格式、数据格式的影响</a></li>
+                <li>
+                    <a href="#265-%e4%b8%8e%e5%85%b6%e4%bb%96%e5%8a%9f%e8%83%bd%e4%ba%a4%e4%ba%92%e6%97%b6%e7%9a%84%e8%a1%8c%e4%b8%ba%e8%a1%a8%e7%8e%b0" aria-label="2.6.5 与其他功能交互时的行为表现">2.6.5 与其他功能交互时的行为表现</a></li>
+                <li>
+                    <a href="#266-%e7%89%88%e6%9c%ac%e5%85%bc%e5%ae%b9%e6%80%a7" aria-label="2.6.6 版本兼容性">2.6.6 版本兼容性</a></li>
+                <li>
+                    <a href="#267-%e7%94%a8%e6%88%b7%e8%a1%8c%e4%b8%ba%e5%8f%98%e6%9b%b4" aria-label="2.6.7 用户行为变更">2.6.7 用户行为变更</a></li></ul>
+                </li>
+                <li>
+                    <a href="#27-%e6%8c%87%e6%a0%87%e7%9b%b8%e5%85%b3" aria-label="2.7 指标相关">2.7 指标相关</a><ul>
+                        
+                <li>
+                    <a href="#271-%e5%85%b3%e9%94%ae%e8%b5%84%e6%ba%90%e6%8c%87%e6%a0%87" aria-label="2.7.1 关键资源指标">2.7.1 关键资源指标</a></li>
+                <li>
+                    <a href="#272-%e7%b3%bb%e7%bb%9f%e6%80%a7%e6%8c%87%e6%a0%87" aria-label="2.7.2 系统性指标">2.7.2 系统性指标</a></li>
+                <li>
+                    <a href="#273-%e6%80%a7%e8%83%bd%e6%8c%87%e6%a0%87" aria-label="2.7.3 性能指标">2.7.3 性能指标</a></li></ul>
+                </li>
+                <li>
+                    <a href="#28-%e6%b5%8b%e8%af%95%e5%bb%ba%e8%ae%ae" aria-label="2.8 测试建议">2.8 测试建议</a></li>
+                <li>
+                    <a href="#28-%e5%85%b6%e4%bb%96%e8%af%b4%e6%98%8e" aria-label="2.8 其他说明">2.8 其他说明</a>
+                </li>
+            </ul>
+            </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h1 id="1-简介">1 简介<a hidden class="anchor" aria-hidden="true" href="#1-简介">#</a></h1>
+<h2 id="11-目的">1.1 目的<a hidden class="anchor" aria-hidden="true" href="#11-目的">#</a></h2>
+<p>透明加密特性提供数据加密功能，核心原理是在数据库将数据存储至磁盘时，先加密再存储。<br>
+本需求将从0设计透明加密特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。</p>
+<h2 id="12-适用范围">1.2 适用范围<a hidden class="anchor" aria-hidden="true" href="#12-适用范围">#</a></h2>
+<p>Vastbase V5版本。</p>
+<h2 id="13-术语定义首字母缩写词和缩略语">1.3 术语定义、首字母缩写词和缩略语<a hidden class="anchor" aria-hidden="true" href="#13-术语定义首字母缩写词和缩略语">#</a></h2>
+<ul>
+<li>TDE：Transparent Data Encryption，透明数据加密，由数据库提供的数据加密特性</li>
+</ul>
+<h2 id="14-参考资料">1.4 参考资料<a hidden class="anchor" aria-hidden="true" href="#14-参考资料">#</a></h2>
+<ul>
+<li>oracle 透明加密特性：<a href="https://docs.oracle.com/en/database/oracle/oracle-database/26/dbtde/preface.html">https://docs.oracle.com/en/database/oracle/oracle-database/26/dbtde/preface.html</a></li>
+<li>sql server 透明加密特性：<a href="https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/transparent-data-encryption?view=sql-server-ver17">https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/transparent-data-encryption?view=sql-server-ver17</a></li>
+<li>oceanbase 透明加密特性：<a href="https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475958">https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475958</a></li>
+<li>kingbase 透明加密特性：<a href="https://docs.kingbase.com.cn/cn/KES-V9R1C10/safe/transparent-data-Encyption">https://docs.kingbase.com.cn/cn/KES-V9R1C10/safe/transparent-data-Encyption</a></li>
+<li>dm8 透明加密特性：<a href="https://eco.dameng.com/document/dm/zh-cn/pm/storage-encryption.html#7.1.1%20%E5%85%A8%E5%BA%93%E5%8A%A0%E5%AF%86">https://eco.dameng.com/document/dm/zh-cn/pm/storage-encryption.html#7.1.1%20%E5%85%A8%E5%BA%93%E5%8A%A0%E5%AF%86</a></li>
+<li>gaussdb 透明加密特性：<a href="https://support.huaweicloud.com/intl/zh-cn/fg-gaussdb-dist-v8/gaussdb-18-0019.html">https://support.huaweicloud.com/intl/zh-cn/fg-gaussdb-dist-v8/gaussdb-18-0019.html</a></li>
+</ul>
+<h1 id="2-透明加密">2 透明加密<a hidden class="anchor" aria-hidden="true" href="#2-透明加密">#</a></h1>
+<h2 id="21-功能简述">2.1 功能简述<a hidden class="anchor" aria-hidden="true" href="#21-功能简述">#</a></h2>
+<h3 id="一基本原理">一、基本原理<a hidden class="anchor" aria-hidden="true" href="#一基本原理">#</a></h3>
+<p>通常，用户将数据传输给数据库后，数据库将数据存储到磁盘。攻击者可能利用多种数据库内部或外部漏洞，例如操作系统漏洞等，绕过数据库安全机制，直接从磁盘读取数文件，窃取用户数据。</p>
+<p><strong>透明加密</strong>，是一种由数据库提供的加密特性，可有效解决攻击者从磁盘窃取数据的问题。开启透明加密后，数据库将数据存储到磁盘时，先加密数据，再存储数据密文；数据库从磁盘读取数据时，先解密数据密文，再进行其他计算。用户访问透明加密表时，包括存储、读取数据等，与访问普通表无任何区别，加密和解密过程由数据库自动完成，即对用户透明。</p>
+<h3 id="二竞品分析">二、竞品分析<a hidden class="anchor" aria-hidden="true" href="#二竞品分析">#</a></h3>
+<p>几乎所有商用关系数据库中，都支持透明加密特性，包括oracle, sql server, oceanbase, kingbase, dm8等，postgresql不支持透明加密特性。<br>
+使用透明加密时，通常包括3个阶段：</p>
+<ol>
+<li>定义用于加密的密钥</li>
+<li>使用SQL语法，定义哪些对象需加密，不同产品，定义加密对象的粒度不同</li>
+<li>使用SQL语法，访问透明加密表，以及进行其他运维等操作</li>
+</ol>
+<p>各产品中，定义加密对象的SQL语法如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 一、oracle
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="n">ENCRYPT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">TABLESPACE</span><span class="w"> </span><span class="n">ts1</span><span class="w"> </span><span class="n">DATAFILE</span><span class="w"> </span><span class="p">..</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="k">USING</span><span class="w"> </span><span class="s1">&#39;AES192&#39;</span><span class="w"> </span><span class="n">ENCRYPT</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 二、sql server
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">DATABASE</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="n">ALGORITHM</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AES_256</span><span class="w"> </span><span class="p">..</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">DATABASE</span><span class="w"> </span><span class="n">db1</span><span class="w"> </span><span class="k">SET</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="k">ON</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 三、oceanbase
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">TABLESPACE</span><span class="w"> </span><span class="n">ts1</span><span class="w"> </span><span class="n">encryption</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;y&#39;</span><span class="p">;</span><span class="w"> </span><span class="c1">-- mysql cmpt
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">TABLESPACE</span><span class="w"> </span><span class="n">ts1</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="k">USING</span><span class="w"> </span><span class="s1">&#39;aes-256&#39;</span><span class="p">;</span><span class="w"> </span><span class="c1">-- oracle cmpt
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 四、kingbase
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">TABLESPACE</span><span class="w"> </span><span class="n">ts</span><span class="w"> </span><span class="p">..</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="p">(</span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">TRUE</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">ts</span><span class="w"> </span><span class="p">..</span><span class="w"> </span><span class="k">ENCRYPTED</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="s1">&#39;this is a key&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 五、dm8
+</span></span></span><span class="line"><span class="cl"><span class="n">intdb</span><span class="w"> </span><span class="p">..</span><span class="w"> </span><span class="n">ENCRYPT_NAME</span><span class="w"> </span><span class="p">..</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">TABLESPACE</span><span class="w"> </span><span class="p">..</span><span class="w"> </span><span class="n">ENCRYPT</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="p">..</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">INT</span><span class="w"> </span><span class="n">ENCRYPT</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="p">..);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 六、gaussdb
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">..</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="p">(</span><span class="n">enable_tde</span><span class="o">=</span><span class="k">on</span><span class="p">);</span><span class="w">
+</span></span></span></code></pre></div><p>各产品中，按定义加密对象的粒度，区别如下：</p>
+<table>
+  <thead>
+      <tr>
+          <th>产品</th>
+          <th>加密粒度</th>
+          <th>加密范围</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>oracle</td>
+          <td>tablespace, column</td>
+          <td>relfile, redo</td>
+      </tr>
+      <tr>
+          <td>sql server</td>
+          <td>database</td>
+          <td>relfile, transaction log</td>
+      </tr>
+      <tr>
+          <td>oceanbase</td>
+          <td>tablespace</td>
+          <td>relfile, clog</td>
+      </tr>
+      <tr>
+          <td>kingbase</td>
+          <td>tabpespace, table</td>
+          <td>relfile, wal</td>
+      </tr>
+      <tr>
+          <td>dm8</td>
+          <td>cluster, tablespace, coulumn</td>
+          <td>relfile, redo</td>
+      </tr>
+      <tr>
+          <td>gaussdb</td>
+          <td>table</td>
+          <td>relfile, wal</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="三实现难点">三、实现难点<a hidden class="anchor" aria-hidden="true" href="#三实现难点">#</a></h3>
+<p>在第1版本的特性中，出于工作量考虑，部分功能无法满足。</p>
+<ol>
+<li>
+<p>加密范围<br>
+当用户执行SQL时，例如<code>INSERT INTO t1 VALUES ('data1')</code>，在磁盘上，以下多类文件中，都可能存在数据<code>data1</code>，本版本只支持加密部分文件中的数据：</p>
+<ol>
+<li>relation file（支持）</li>
+<li>toast file (支持)</li>
+<li>index file (支持)</li>
+<li>materialized view file (不支持)</li>
+<li>double write file (如果有，可以支持)</li>
+<li>catalog file (pg_stats) （不支持）</li>
+<li>wal file （不支持）
+<ul>
+<li>物理备份</li>
+<li>物理复制流</li>
+<li>逻辑复制流</li>
+</ul>
+</li>
+</ol>
+<ul>
+<li>…</li>
+</ul>
+</li>
+<li>
+<p>密钥管理<br>
+大部分数据库的加密方案中，数据库只存储密钥密文，高级别的密钥，由第三方密钥管理服务存储。<br>
+但是，为考虑易用性、可测试性、可扩展性等，本版本暂时只支持数据库本机管理密钥。</p>
+</li>
+</ol>
+<h2 id="22-功能说明">2.2 功能说明<a hidden class="anchor" aria-hidden="true" href="#22-功能说明">#</a></h2>
+<h3 id="221-使用流程">2.2.1 使用流程<a hidden class="anchor" aria-hidden="true" href="#221-使用流程">#</a></h3>
+<h4 id="场景一配置透明加密">场景一、配置透明加密<a hidden class="anchor" aria-hidden="true" href="#场景一配置透明加密">#</a></h4>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 1. 创建数据密钥
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">tde_key</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="p">(</span><span class="k">source</span><span class="o">=</span><span class="k">local</span><span class="p">,</span><span class="w"> </span><span class="n">password</span><span class="o">=</span><span class="s1">&#39;pass.123&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 集群中所有表，都使用同1个密钥加密
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 集群中，暂时只允许存在1个密钥，CREATE多余密钥报错
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 参考openGauss gs_guc encrypt命令，生成密钥，并简单加密存储
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 未来计划：全密态主密钥、数据密钥，审计日志加密密钥，系统表password加密密钥（fdw, replication等）等其他特性， 可统一使用该语法，统一管理密钥
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 2. 查看数据密钥
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">vb_encryption_key</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">     </span><span class="n">keyoid</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">keyname</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">keyinfo</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">--------+----------+-------------
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="mi">17000</span><span class="w"> </span><span class="o">|</span><span class="n">tde_key</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="k">type</span><span class="o">=</span><span class="k">local</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- password单独加密存储
+</span></span></span></code></pre></div><h4 id="场景二为表设置加密属性">场景二、为表设置加密属性<a hidden class="anchor" aria-hidden="true" href="#场景二为表设置加密属性">#</a></h4>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 1. 创建表
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">)</span><span class="err">；</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 2. 创建加密策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">ep1</span><span class="w"> </span><span class="k">FOR</span><span class="w"> </span><span class="k">public</span><span class="p">.</span><span class="n">t1</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">tde_key</span><span class="w"> </span><span class="n">ALGORITHEM</span><span class="w"> </span><span class="n">aes_256_ctr</span><span class="w"> </span><span class="n">MAC</span><span class="w"> </span><span class="n">ALGORITHM</span><span class="w"> </span><span class="n">sha256</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- ALGORITHEM：   默认aes_256_ctr，可选aes_256_gcm，aes_256_cbc
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- MAC ALGORITHM：默认无，可选sha256
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 未来计划： 可指定密钥来源，指定硬件加密，指定密钥自动乱转等
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 暂不支持国密算法
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 设置初衷：规范化多个对象安全特性
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- (1) 审计
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">--     CREATE AUDIPT POLICY ap1 OPERATE select,insert,...
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- (2) 强制访问控制
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">--     CREATE ACCESS POLICY acp1 FOR t1 ..
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- (3) 防篡改
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">--     CRATE LEDGER POLICY lp1 FOR ..
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- (4) 脱敏
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">--     CREATE MASK POLLICY mp1 FOR ..
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- (5) 全密态
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">--     CREATE ENCRYPTION POLICY ep1 FOR  ..
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3. 查看表加密策略
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">vb_encryption_policy</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">polname</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">polkey</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">polalgo</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">polmacalgo</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">---------+---------+------------+------------
+</span></span></span><span class="line"><span class="cl"><span class="w">       </span><span class="n">ep1</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="n">tde_key</span><span class="w"> </span><span class="o">|</span><span class="n">aes_256_ctr</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">sha256</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 4. 查看加密对象
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">vb_secure_class</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">relid</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">relname</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">encryption_policy</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">access_policy</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">------+---------+-------------------+---------------
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="mi">17001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">t1</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="n">ep1</span><span class="w">               </span><span class="o">|</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 5. 向表中存储数据（数据存储至）
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="s1">&#39;data11&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;data12&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 6. 查看表文件路径
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">setting</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="s1">&#39;/&#39;</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">pg_relation_filepath</span><span class="p">(</span><span class="s1">&#39;t1&#39;</span><span class="p">)</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_settings</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;data_directory&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 示例输出
+</span></span></span><span class="line"><span class="cl"><span class="w">                       </span><span class="o">?</span><span class="k">column</span><span class="o">?</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-------------------------------------------------------
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="o">/</span><span class="n">path</span><span class="o">/</span><span class="k">to</span><span class="o">/</span><span class="n">data_directory</span><span class="o">/</span><span class="n">base</span><span class="o">/</span><span class="mi">16386</span><span class="o">/</span><span class="mi">16387</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 7. 验证数据加密存储
+</span></span></span><span class="line"><span class="cl"><span class="err">\</span><span class="o">!</span><span class="w"> </span><span class="n">hexdump</span><span class="w"> </span><span class="o">-</span><span class="k">C</span><span class="w"> </span><span class="o">/</span><span class="n">path</span><span class="o">/</span><span class="k">to</span><span class="o">/</span><span class="n">data_directory</span><span class="o">/</span><span class="n">base</span><span class="o">/</span><span class="mi">16386</span><span class="o">/</span><span class="mi">16387</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 预期输出：文件中，查看不到明文数据 (&#39;data11&#39;, &#39;data12&#39;)
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 8. 从表中查询数据
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 预期输出：查询到数据明文，用户无法直观感受到自动解密过程
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 9. 清理环境
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h4 id="场景三为表修改加密属性">场景三、为表修改加密属性<a hidden class="anchor" aria-hidden="true" href="#场景三为表修改加密属性">#</a></h4>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 1. 创建非加密表
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">)</span><span class="err">；</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 2. 为表修改加密属性
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">ep1</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">tde_key</span><span class="w"> </span><span class="n">ALGORITHEM</span><span class="w"> </span><span class="n">aes_256_ctr</span><span class="w"> </span><span class="n">MAC</span><span class="w"> </span><span class="n">ALGORITHM</span><span class="w"> </span><span class="n">sha256</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">ep1</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">public</span><span class="p">.</span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 预期：表中新生成的page，数据将被加密，旧数据不会立刻被加密
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3. 立即加密旧数据
+</span></span></span><span class="line"><span class="cl"><span class="k">VACUUM</span><span class="w"> </span><span class="k">FULL</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 5. 为表取消加密属性
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">ep1</span><span class="w"> </span><span class="n">REMOVE</span><span class="w"> </span><span class="k">public</span><span class="p">.</span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 提示用户：旧数据仍然出于加密状态，用VACUUM FULL等语法，可立即解密旧数据
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 预期：表中新生成的page，数据不再被加密，旧数据仍然处于加密状态
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 6. 立即解密旧数据
+</span></span></span><span class="line"><span class="cl"><span class="k">VACUUM</span><span class="w"> </span><span class="k">FULL</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 7. 为表修改其他加密属性
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">ep1</span><span class="w"> </span><span class="n">ALGORITHEM</span><span class="w"> </span><span class="n">aes_256_cbc</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 8. 清理环境
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h4 id="场景四轮转密钥">场景四、轮转密钥<a hidden class="anchor" aria-hidden="true" href="#场景四轮转密钥">#</a></h4>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 1. 创建表
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="s1">&#39;data11&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;data12&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 2. 加密表
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">ep1</span><span class="w"> </span><span class="k">FOR</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3. 轮转密钥
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">tde_key</span><span class="w"> </span><span class="n">ROTATION</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 预期：表中新写入的数据，将使用新密钥加密
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 4. 重启 或 不重启集群
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 5. 查询旧数据
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 预期：旧数据仍然使用旧密钥，但是可正常解密
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 8. 清理环境
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h4 id="场景五为索引设置加密属性">场景五、为索引设置加密属性<a hidden class="anchor" aria-hidden="true" href="#场景五为索引设置加密属性">#</a></h4>
+<p>基表加密时，索引也会默认加密</p>
+<h4 id="扩展场景一为其他类型表设置加密属性">扩展场景一、为其他类型表设置加密属性<a hidden class="anchor" aria-hidden="true" href="#扩展场景一为其他类型表设置加密属性">#</a></h4>
+<ol>
+<li>
+<p>加密toast表</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 1. 创建表
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 包含TEXT等可变长度的列
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">ep1</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">tde_key</span><span class="w"> </span><span class="k">FOR</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 2. 存储超长数据
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">REPEAT</span><span class="p">(</span><span class="s1">&#39;a&#39;</span><span class="p">,</span><span class="w"> </span><span class="mi">3000</span><span class="p">));</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3. 查看toast表的oid
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">reltoastrelid</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_class</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">relname</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;t1&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 4. 查看toast表的物理文件
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">setting</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="s1">&#39;/&#39;</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">pg_relation_filenode</span><span class="p">(</span><span class="n">xxx</span><span class="p">)</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_settings</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;data_directory&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 预期：t1对应toast表，文件中，数据被加密存储
+</span></span></span></code></pre></div></li>
+<li>
+<p>加密分区表<br>
+预期：每个分区对应的文件中，数据被加密存储</p>
+</li>
+<li>
+<p>临时表<br>
+预期：临时文件中，数据被加密存储</p>
+</li>
+</ol>
+<h4 id="扩展场景二主备加密一致性">扩展场景二、主备加密一致性<a hidden class="anchor" aria-hidden="true" href="#扩展场景二主备加密一致性">#</a></h4>
+<ol>
+<li>
+<p>主机加密数据</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 包含TEXT等可变长度的列
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">ep1</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">tde_key</span><span class="w"> </span><span class="k">FOR</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="n">generate_series</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2000</span><span class="p">),</span><span class="w"> </span><span class="s1">&#39;cipher&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">ep1</span><span class="w"> </span><span class="n">REMOTE</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="n">generate_series</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2000</span><span class="p">),</span><span class="w"> </span><span class="s1">&#39;plain&#39;</span><span class="p">);</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>备机数据需与主机一致<br>
+在备机上，数据文件需与主机严格一致。</p>
+<ul>
+<li>解释：大部分加密场景中，加密数据会产生膨胀，导致文件中page容量变小。例如，主机page 1加密，数据容量为7.9k，备机page 1不加密，数据容量为8k。发生主备切换后，可能出现1个节点的page 1有容量，可以写入数据，另一个阶段的page 1容量不够，无法进行redo。</li>
+</ul>
+</li>
+</ol>
+<h4 id="扩展场景三加密其他文件">扩展场景三、加密其他文件<a hidden class="anchor" aria-hidden="true" href="#扩展场景三加密其他文件">#</a></h4>
+<ol>
+<li>双写文件（如果有）<br>
+需要加密</li>
+<li>wal文件<br>
+本版本暂不支持加密</li>
+</ol>
+<h4 id="异常场景一关闭透明加密">异常场景一、关闭透明加密<a hidden class="anchor" aria-hidden="true" href="#异常场景一关闭透明加密">#</a></h4>
+<p>如果使用第三方密钥服务，可能出现密钥服务异常，影响数据库集群状态的问题，需关闭透明加密以降低影响范围。<br>
+关闭透明加密后，可能出现很多功能问题。比如：无法向表中写数据、无法从表中读数据、无法故障恢复等。<br>
+本版本无复杂场景，不会出现这些问题。</p>
+<h4 id="异常场景二密钥异常">异常场景二、密钥异常<a hidden class="anchor" aria-hidden="true" href="#异常场景二密钥异常">#</a></h4>
+<p>执行<code>CREATE ENCRYPTION KEY tde_key</code>语法，会生成密钥文体，存放在数据目录下，同时生成wal日志。基于主备物理复制、物理备份等方式，保证密钥安全。</p>
+<h3 id="222-配置参数和文件">2.2.2 配置参数和文件<a hidden class="anchor" aria-hidden="true" href="#222-配置参数和文件">#</a></h3>
+<ol>
+<li>新增密钥文件<br>
+在数据目录下，新增文件夹 /vb_sec，新增文件 /vb_sec/key_info，用于存储数据密钥<br>
+当执行<code>CREATE ENCRYPTION KEY</code>时，生成密钥文件。</li>
+</ol>
+<h3 id="223-数据相关性">2.2.3 数据相关性<a hidden class="anchor" aria-hidden="true" href="#223-数据相关性">#</a></h3>
+<p>新增wal类型：当执行<code>CREATE ENCRYPTION KEY</code>时，生成密钥文件，产生redo log，用于向备机同步密钥文件。</p>
+<h2 id="23-接口信息">2.3 接口信息<a hidden class="anchor" aria-hidden="true" href="#23-接口信息">#</a></h2>
+<ol>
+<li>
+<p>新增密钥管理语法</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="err">$</span><span class="n">key_name</span><span class="w"> </span><span class="p">(</span><span class="k">source</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">local</span><span class="p">,</span><span class="w"> </span><span class="n">password</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="err">$</span><span class="n">password</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="err">$</span><span class="n">key_nam</span><span class="w"> </span><span class="n">ROTATION</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="err">$</span><span class="n">key_name</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>新增加密策略语法</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="err">$</span><span class="n">pollicy_name</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="k">FOR</span><span class="w"> </span><span class="p">[</span><span class="k">TABLE</span><span class="p">]</span><span class="w"> </span><span class="err">$</span><span class="k">table_name</span><span class="w"> </span><span class="p">[,</span><span class="w"> </span><span class="err">$</span><span class="k">table_name</span><span class="w"> </span><span class="p">...]]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">KEY</span><span class="w"> </span><span class="err">$</span><span class="n">key_name</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="n">ALGORITHEM</span><span class="w"> </span><span class="err">{</span><span class="n">aes_256_ct</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">aes_256_gcm</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">aes_256_cbc</span><span class="err">}</span><span class="w"> </span><span class="p">]</span><span class="w"> </span><span class="c1">-- 默认：aes_256_ct
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="n">MAC</span><span class="w"> </span><span class="n">ALGORITHM</span><span class="w"> </span><span class="err">{</span><span class="n">sha256</span><span class="err">}</span><span class="p">]</span><span class="w"> </span><span class="c1">-- 默认：空
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="err">$</span><span class="n">pollicy_name</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="k">ADD</span><span class="w"> </span><span class="p">[</span><span class="k">TABLE</span><span class="p">]</span><span class="w"> </span><span class="err">$</span><span class="k">table_name</span><span class="w"> </span><span class="p">[,</span><span class="w"> </span><span class="err">$</span><span class="k">table_name</span><span class="w"> </span><span class="p">...]]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="n">REMOVE</span><span class="w"> </span><span class="p">[</span><span class="k">TABLE</span><span class="p">]</span><span class="w"> </span><span class="err">$</span><span class="k">table_name</span><span class="w"> </span><span class="p">[,</span><span class="w"> </span><span class="err">$</span><span class="k">table_name</span><span class="w"> </span><span class="p">...]]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="n">ALGORITHEM</span><span class="w"> </span><span class="err">{</span><span class="n">aes_256_ct</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">aes_256_gcm</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">aes_256_cbc</span><span class="err">}</span><span class="w"> </span><span class="p">]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="n">ENCRYPTION</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="err">$</span><span class="n">pollicy_name</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>新增系统表vb_encryption_key</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 表结构：
+</span></span></span><span class="line"><span class="cl"><span class="n">keyoid</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">keyname</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">keyinfo</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-------+---------+---------
+</span></span></span></code></pre></div></li>
+<li>
+<p>新增系统表vb_encryption_policy</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 表结构：
+</span></span></span><span class="line"><span class="cl"><span class="n">polname</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">polkey</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">polalgo</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">polmacalgo</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">---------+---------+------------+------------
+</span></span></span></code></pre></div></li>
+<li>
+<p>新增系统表vb_secure_class</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 表结构：
+</span></span></span><span class="line"><span class="cl"><span class="n">relid</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">relname</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">encryption_policy</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">access_policy</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">------+---------+-------------------+---------------
+</span></span></span></code></pre></div></li>
+</ol>
+<h2 id="24-正反向行为">2.4 正反向行为<a hidden class="anchor" aria-hidden="true" href="#24-正反向行为">#</a></h2>
+<h3 id="241-生效说明">2.4.1 生效说明<a hidden class="anchor" aria-hidden="true" href="#241-生效说明">#</a></h3>
+<p>查看系统表，判断密钥、策略等是否设置成功<br>
+查看表物理文件，判断数据是否加密成功</p>
+<h3 id="242-提示信息">2.4.2 提示信息<a hidden class="anchor" aria-hidden="true" href="#242-提示信息">#</a></h3>
+<p>加密解密异常时，日志中会记录相关错误信息</p>
+<h3 id="243-约束和依赖">2.4.3 约束和依赖<a hidden class="anchor" aria-hidden="true" href="#243-约束和依赖">#</a></h3>
+<p>无</p>
+<h2 id="25-安全性">2.5 安全性<a hidden class="anchor" aria-hidden="true" href="#25-安全性">#</a></h2>
+<h3 id="251-权限控制">2.5.1 权限控制<a hidden class="anchor" aria-hidden="true" href="#251-权限控制">#</a></h3>
+<p>使用ENCRYPTION KEY、ENCRYPTION POLICY语法时，需特权用户，例如superuser，sysadmin等，三权分立场景，需安全管理员</p>
+<h3 id="252-审计">2.5.2 审计<a hidden class="anchor" aria-hidden="true" href="#252-审计">#</a></h3>
+<p>ENCRYPTION KEY、ENCRYPTION POLICY语法作为通用DDL审计</p>
+<h2 id="26-影响范围">2.6 影响范围<a hidden class="anchor" aria-hidden="true" href="#26-影响范围">#</a></h2>
+<h3 id="261-对已有udtudf-ecpg的影响">2.6.1 对已有UDT,UDF, ECPG的影响<a hidden class="anchor" aria-hidden="true" href="#261-对已有udtudf-ecpg的影响">#</a></h3>
+<p>无</p>
+<h3 id="262-对系统函数的影响">2.6.2 对系统函数的影响<a hidden class="anchor" aria-hidden="true" href="#262-对系统函数的影响">#</a></h3>
+<p>未新增</p>
+<h3 id="263-对系统catalog的影响">2.6.3 对系统CATALOG的影响<a hidden class="anchor" aria-hidden="true" href="#263-对系统catalog的影响">#</a></h3>
+<p>关于新增系统表的详细信息，请看上文接口信息章节：</p>
+<ol>
+<li>新增系统表vb_encryption_key</li>
+<li>新增系统表vb_encryption_policy</li>
+<li>新增系统表vb_secure_class</li>
+</ol>
+<h3 id="264-对xlog日志格式数据格式的影响">2.6.4 对xlog日志格式、数据格式的影响<a hidden class="anchor" aria-hidden="true" href="#264-对xlog日志格式数据格式的影响">#</a></h3>
+<p>在执行CRETE/ALTER/DROP ENCRYPTION KEY时，参数wal，新增wal类型</p>
+<h3 id="265-与其他功能交互时的行为表现">2.6.5 与其他功能交互时的行为表现<a hidden class="anchor" aria-hidden="true" href="#265-与其他功能交互时的行为表现">#</a></h3>
+<p>无</p>
+<h3 id="266-版本兼容性">2.6.6 版本兼容性<a hidden class="anchor" aria-hidden="true" href="#266-版本兼容性">#</a></h3>
+<ul>
+<li>前向兼容：本版本首次支持透明加密，不涉及兼容性</li>
+<li>后向兼容：设计阶段，已考虑将来可能接收的需求：
+<ul>
+<li>加密算法：支持国密sm4等算法</li>
+<li>密钥管理：支持对接第三方密钥管理服务</li>
+<li>加密组件：支持对接第三方加密机</li>
+<li>加密范围：支持加密wal日志</li>
+</ul>
+</li>
+</ul>
+<h3 id="267-用户行为变更">2.6.7 用户行为变更<a hidden class="anchor" aria-hidden="true" href="#267-用户行为变更">#</a></h3>
+<p>无</p>
+<h2 id="27-指标相关">2.7 指标相关<a hidden class="anchor" aria-hidden="true" href="#27-指标相关">#</a></h2>
+<h3 id="271-关键资源指标">2.7.1 关键资源指标<a hidden class="anchor" aria-hidden="true" href="#271-关键资源指标">#</a></h3>
+<ul>
+<li>CPU：开启透明加密，数据存储时，需加密数据，占用CPU。tpcc场景，加密全部表，CPU占用率升高10%以内。</li>
+<li>内存：额外占用内存可忽略，加密存储时，在page上原地加密即可，无需额外申请内存</li>
+<li>IO：无占用</li>
+</ul>
+<h3 id="272-系统性指标">2.7.2 系统性指标<a hidden class="anchor" aria-hidden="true" href="#272-系统性指标">#</a></h3>
+<p>无</p>
+<h3 id="273-性能指标">2.7.3 性能指标<a hidden class="anchor" aria-hidden="true" href="#273-性能指标">#</a></h3>
+<p>tpcc场景，加密全部表、索引，与不加密相比，使用默认加密算法aes_256_ctr，性能劣化5%以内。</p>
+<h2 id="28-测试建议">2.8 测试建议<a hidden class="anchor" aria-hidden="true" href="#28-测试建议">#</a></h2>
+<p>无</p>
+<h2 id="28-其他说明">2.8 其他说明<a hidden class="anchor" aria-hidden="true" href="#28-其他说明">#</a></h2>
+<p>无</p>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/%E5%8A%A0%E5%AF%86/">加密</a></li><li><a href="http://localhost:1313/tags/%E9%9C%80%E6%B1%82%E6%96%87%E6%A1%A3/">需求文档</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/projectdocs/3-requirement-pg-hba-encrypt/">海量 3 需求 pg_hba.conf加密</a></li><li><a href="/posts/projectdocs/1-requirement-oracle-crypto-func/">海量 1 需求 oracle加密函数</a></li><li><a href="/posts/projectdocs/15-requirement-logical-replication/">海量 15 需求 逻辑复制性能优化</a></li><li><a href="/posts/projectdocs/14-requirement-mac/">海量 mac 需求</a></li><li><a href="/posts/projectdocs/13-design-tde/">海量 透明加密 设计</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./项目文档</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

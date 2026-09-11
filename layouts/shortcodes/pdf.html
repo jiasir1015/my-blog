@@ -1,0 +1,20 @@
+{{- $src := .Get "src" -}}
+{{- $title := .Get "title" | default "PDF" -}}
+{{- $height := .Get "height" | default "720" -}}
+{{- if not $src -}}
+  {{- errorf "pdf shortcode requires src" -}}
+{{- end -}}
+<figure class="pdf-embed">
+  <div class="pdf-embed__bar">
+    <span class="pdf-embed__title">{{ $title }}</span>
+    <a class="pdf-embed__link" href="{{ $src | relURL }}" target="_blank" rel="noopener">新窗口打开</a>
+    <a class="pdf-embed__link" href="{{ $src | relURL }}" download>下载</a>
+  </div>
+  <iframe
+    class="pdf-embed__frame"
+    src="{{ $src | relURL }}"
+    title="{{ $title }}"
+    height="{{ $height }}"
+    loading="lazy"
+  ></iframe>
+</figure>

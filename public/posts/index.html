@@ -10,7 +10,7 @@
 <meta name="description" content="Posts - Kernel Notes">
 <meta name="author" content="Me">
 <link rel="canonical" href="http://localhost:1313/posts/">
-<link crossorigin="anonymous" href="/assets/css/stylesheet.c4b1cb4d6ac76f08d6d9adf3f8ae2ef1847c2bc8378bc8d6a67e24a8690b647a.css" integrity="sha256-xLHLTWrHbwjW2a3z&#43;K4u8YR8K8g3i8jWpn4kqGkLZHo=" rel="preload stylesheet" as="style">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
 <link rel="icon" href="http://localhost:1313/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
@@ -145,6 +145,16 @@
                     <span>归档</span>
                 </a>
             </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
         </ul>
     </nav>
 </header>
@@ -157,95 +167,203 @@
 
 <article class="post-entry"> 
   <header class="entry-header">
-    <h2 class="entry-hint-parent">Babelfish搭建指南
+    <h2 class="entry-hint-parent">PostgresInternal
     </h2>
   </header>
   <div class="entry-content">
-    <p>Babelfish 编译环境搭建指南 适用环境：CentOS 7，离线环境，vastbase-server &#43; sqlserver-extensions
-一、创建用户 # 创建用户并设置密码 useradd vast echo &#34;vast:gauss@123&#34; | chpasswd # 授予 sudo 权限（加入 wheel 组） usermod -aG wheel vast # 验证 id vast 二、配置环境变量 将以下内容写入 ~/.bash_profile，每次登录自动生效：
-cat &gt;&gt; ~/.bash_profile &lt;&lt; &#39;EOF&#39; # Babelfish 基础路径 export BABELFISH_HOME=~/vastbase-server/install export BINARYLIBS=~/vastbase-server/binarylibs export GCC_PATH=$BINARYLIBS/buildtools/gcc7.3 # 编译器 export CC=$GCC_PATH/gcc/bin/gcc export CXX=$GCC_PATH/gcc/bin/g&#43;&#43; # cmake（优先使用项目自带版本，放在 PATH 最前面） export PATH=$BINARYLIBS/buildtools/cmake/bin:$GCC_PATH/gcc/bin:$BABELFISH_HOME/bin:$PATH # 动态库路径 export LD_LIBRARY_PATH=$GCC_PATH/gcc/lib64:$BABELFISH_HOME/lib:$BINARYLIBS/kernel/dependency/openssl/comm/lib:$LD_LIBRARY_PATH # cmake 变量（防止 Makefile 调用系统旧版本） export cmake=$(which cmake) # PG 相关 export PG_CONFIG=$BABELFISH_HOME/bin/pg_config export PG_SRC=`pwd` EOF source ~/.bash_profile 验证工具版本：
+    <p>Postgres Internals 14 阅读笔记 Egor Rogov 的 PostgreSQL 14 Internals 读书笔记入口。中文在线版方便查阅，英文 PDF 方便离线精读。
+资料 中文在线版：PostgreSQL 14 Internals（中文） 英文 PDF（本站电子书库）：postgresql_internals-14_parts1-3_en.pdf PostgreSQL 14 Internals (EN, Parts 1–3) 新窗口打开 下载 数据组织 数据库 当初始化一个 PG 实例之后，PGDATA 会自动创建以下三种基础数据库：
+template0: 用来通过逻辑复制，或创建不同编码数据库的原型/样板； template1: 用户在此实例下创建所有其他数据库的模版，新建库都基于它； postgres: 自带的一个常规库； </p>
+  </div>
+  <footer class="entry-footer"><span title='2026-09-11 15:06:30 +0800 CST'>September 11, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>39 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgresInternal" href="http://localhost:1313/posts/postgresql/postgresinternal/"></a>
+</article>
+
+<article class="post-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">安全架构
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>4 安全架构 4.1 威胁模型 | STRIDE类别 | 威胁描述 | 针对的生命周期阶段 | 对应安全功能（章节） | |------------|----------|------------------|----------------------| | **S** 欺骗 | 攻击者伪造合法用户/系统身份 | 访问、传输 | 身份认证、安全传输（TLS/TLCP） | | **T** 篡改 | 攻击者修改数据或代码 | 传输、计算、存储 | 安全传输、数据防篡改（账本表）、全密态加密、审计日志防篡改 | | **R** 否认 | 用户否认执行过某操作 | 所有阶段 | 安全审计（不可否认记录） | | **I** 信息泄露 | 敏感数据被未授权读取 | 访问、传输、计算、存储 | 访问控制、安全传输、透明加密、全密态加密、机密计算、数据脱敏 | | **D** 拒绝服务 | 攻击者使系统不可用 | 访问、网络 | 网络ACL、SQL防火墙（阻断异常大查询） | | **E** 权限提升 | 普通用户获得更高权限 | 访问、计算 | 访问控制（三权分立、最小权限）、数据库防火墙 | 角色 动机 目标 技术 分类 黑客 售卖获利 鉴别数据 不可信IP登录 欺骗 内部运维人员 勒索获利 用户表 暴力破解 篡改 内部研发人员 情报窃取 系统表 凭证重放 否认 系统维护人员 蓄意报复 事务日志 默认账户攻击 信息泄露 供应链 规避审计 审计日志 过期账号攻击 拒绝服务 网络中间人 炫耀技能 内存数据 弱口令攻击 权限提升 机房管理人员 人为过失 配置文件 内存凭证残留 - - - - 认证耗尽 - - - - 密码泄露 - - - - 数据泄露 - - - - 流量伪造 - - - - 流量重放 - - - - 密钥泄露 - - - - 证书伪造 - - - - 身份伪造 - - - - 未授权访问 - - - - 越权访问 - - - - 权限提升 - - - - 权限滥用 - - - - 磁盘窃取 - - - - 恶意软件 - - - - 系统隔离失效 - - - - 文件篡改 - - - - 日志伪造 - - - - 特权窥探 - - - - 供应链后门 - - - - 内存嗅探 - - - - 调试工具滥用 - - - - 操作抵赖 - - - - 攻击隐匿 - - - - 合规证据缺失 - 攻击者画像 攻击动机 攻击阶段 攻击类型 攻击目标 攻击技术（ATT&amp;CK） 影响的安全域（GB/T 20273） 风险等级 安全功能与标准映射 外部渗透测试者 数据窃取 侦察 欺骗(S) 认证凭据 暴力破解(T1110) 身份鉴别(4.1) 高 身份认证；GB/T 20273 4.1；ISO 27001 A.9；NIST IA-5 内部恶意DBA 数据篡改 武器化 篡改(T) 会话令牌 中间人攻击(T1557) 传输数据保密性(4.8.2) 高 TLS双向认证；GB/T 20273 4.8.2；ISO 27001 A.13.2；NIST SC-8 内部开发人员 权限提升 投递 否认(R) 数据字典 账户操纵(T1098) 安全审计(4.6) 高 统一审计；GB/T 20273 4.6；ISO 27001 A.12.4；NIST AU-3 第三方运维人员 拒绝服务 利用 信息泄露(I) 用户表数据 SQL注入(T1190) 自主访问控制(4.2) 高 数据脱敏；GB/T 20273 4.2；PCI DSS 3.2 网络中间人 规避审计 安装 拒绝服务(D) 审计日志 日志清除(T1070) 用户数据完整性(4.7) 高 审计日志防篡改；GB/T 20273 4.7；ISO 27001 A.12.4；NIST AU-9 云租户（恶意） 勒索 命令与控制 权限提升(E) 存储过程/函数 服务器软件组件劫持(T1505) 强制访问控制(4.4) 中 最小权限原则；GB/T 20273 4.4；NIST AC-6 恶意应用程序 报复 目标达成 - 备份集 数据加密（防御绕过）(T1022) 存储数据保密性(4.8.1) 高 透明加密(TDE)；GB/T 20273 4.8.1；ISO 27001 A.10.1 恶意OS管理员 间谍活动 - - 内存中的明文 进程注入(T1055) 标记(4.3) 高 机密计算(TEE)；NIST SC-3 物理入侵者 误操作 - - 配置文件 系统信息发现(T1082) 可信路径(4.9) 中 网络ACL；GB/T 20273 4.9；ISO 27001 A.13.1 - 身份伪造 - - 数据导出文件 数据破坏(T1485) - 低 备份加密 - 会话劫持 - - 数据库链接 服务停止(T1489) - - SQL防火墙 - - - - 索引/分区 通过API攻击(T1559) - - 行级安全(RLS) - - - - 物化视图 客户端连接劫持(T1184) - - 列级加密 - - - - 同义词 网络嗅探(T1040) - - 三权分立 - - - - 触发器等对象 创建账户(T1136) - - 密钥管理(KMS/HSM) - - - - 临时表空间 数据从本地拉取(T1213) - - 全密态执行 - - - - Undo日志 禁用安全工具(T1562) - - 权限分析工具 - - - - 控制文件 受信关系利用(T1199) - - - - - - - 监听器/端口 反向工程(T1598) - - - - - - - SSL证书私钥 数据加密(自身通讯)(T1573) - - - - - - - 数据库参数 域策略修改(T1484) - - - - - - - 数据库进程内存 - - - - - - - - 数据快照 - - - - - - - - 数据库服务端口 - - - - gemini 攻击者画像 攻击动机 攻击阶段 (Kill Chain) 攻击类型 (STRIDE) 攻击目标 (数据库资产) 攻击技术（MITRE ATT&amp;CK） ISO 15408 (CC) 功能组件映射 商业标杆对标 (Oracle企业版组件) 本内核架构防御机制基线 外部黑客/APT组织 经济利益(勒索/售卖) 侦察 (Recon) 欺骗(Spoofing) 认证凭据 (Hash/密码) T1190 利用面向公众的应用 FIA_UAU.2 (用户鉴别) Oracle Centrally Managed Users (CMU) 统一身份认证与多因素(MFA) 内部恶意超管/DBA 商业间谍(数据窃密) 武器化 (Weaponization) 篡改(Tampering) 数据文件(MDF/PGDATA) T1110 暴力破解 FCS_COP.1 (密码运算) Oracle Advanced Security (TDE) 透明数据加密 (TDE) 内部研发/测试人员 蓄意破坏(报复社会) 投递 (Delivery) 否认(Repudiation) WAL/Redo/Undo日志 T1098 账户操纵 FAU_GEN.1 (审计数据产生) Oracle Audit Vault and DB Firewall (AVDF) 高性能异步统一审计与防篡改日志 供应链/第三方运维 掩盖罪行(规避审计) 漏洞利用 (Exploitation) 信息泄露(Info Disclosure) 系统目录/数据字典 T1078 有效账户(默认/后门) FDP_ACC.1 (子集访问控制) Oracle Database Vault (Realm特权隔离) 强三权分立与安全堡垒(Realm)隔离 网络中间人(MITM) 炫耀技能(黑客主义) 安装/植入 (Installation) 拒绝服务(DoS) 业务表核心数据 T1059 命令行解释器提权 FDP_DAU.1 (基本数据鉴别) Oracle Blockchain Tables / Immutable Tables 数据防篡改内核账本 (Ledger Hash) 恶意云租户/邻居 误操作(配置失误) 命令与控制 (C2) 特权提升(Elevation) 审计日志记录 T1552 访问非安全凭据 FMT_SMR.1 (安全管理角色) Oracle Label Security (OLS) 强制访问控制 (MAC 安全标签) 恶意OS管理员 资源盗用(挖矿) 横向移动 (Lateral Move) 侧信道探测(Side-Channel) 密钥/证书/Keystore T1040 网络嗅探 FDP_RIP.1 (残余信息保护) Oracle Advanced Security (Data Redaction) 动态数据脱敏 (DDM) 物理机房入侵者 合规性破坏(名誉打击) 目标达成 (Actions) - 存储过程/UDF/扩展插件 T1557 中间人攻击 FCS_CKM.1 (密码密钥产生与管理) Oracle Key Vault (OKV) 两级密钥管理架构 (KMS/HSM对接) 失陷的业务程序 - - - 数据库进程内存 (SGA) T1070 清除审计日志 FPT_ITT.1 (内部TOE传输保护) Oracle Virtual Private Database (VPD) 行级安全 / 列级安全 (RLS / CLS) 离职/僵尸账号 - - - 监听器/暴露网络端口 T1486 影响数据加密(勒索) FTA_TSE.1 (TOE会话建立) Oracle Data Safe (合规评估与发现) 敏感数据发现与分类分级扫描 - - - - 会话令牌/Session T1485 数据破坏(删库) FPT_PHP.3 (抗物理攻击的TSF) Always Encrypted (SQL Server标杆) 硬件级机密计算 (TEE/SGX 内核隔离) - - - - DBLink/跨库链接 T1005 收集本地系统数据 - - 全密态执行引擎 (内存密态运算) - - - - 物理备份集/快照 T1565 数据逻辑操纵 - - 全链路 TLS 1.3 / 国密 TLCP 加密通道 - - - - 视图/物化视图/触发器 T1184 客户端连接劫持 - - 细粒度网络准入 (IP/用户元组控制) - - - - 数据库配置文件 - - - 内核级 SQL 防火墙 (基于AST白名单) - - - - 临时表空间(Temp) - - - - deepseek 攻击者画像 攻击动机 攻击阶段 攻击类型 (STRIDE) 攻击目标 攻击技术 (ATT&amp;CK) 影响的安全域 (GB/T 20273-2019) 风险等级 安全功能与标准映射（示例） 外部渗透测试者 数据窃取 侦察 欺骗 (S) 认证凭据 暴力破解 (T1110) 身份鉴别 (4.1) 高 多因素认证；GB/T 20273 4.1；ISO 27001 A.8.5 内部恶意DBA 权限提升 武器化 篡改 (T) 会话令牌 SQL注入 (T1190) 自主访问控制 (4.2) 中 TLS双向认证；GB/T 20273 4.7.2；NIST SC-8 内部开发人员 数据篡改 投递 否认 (R) 数据字典 中间人攻击 (T1557) 强制访问控制 (4.4) 低 统一审计；GB/T 20273 4.5；ISO 27001 A.8.15 第三方运维人员 拒绝服务 利用 信息泄露 (I) 用户表数据 账户操纵 (T1098) 安全审计 (4.5) - 数据脱敏；PCI DSS 3.2 网络中间人 规避审计 安装 拒绝服务 (D) 审计日志 日志清除 (T1070) 用户数据完整性 (4.6) - 审计日志防篡改；NIST AU-9 恶意应用程序 勒索 命令与控制 权限提升 (E) 存储过程/函数 进程注入 (T1055) 存储数据保密性 (4.7.1) - 最小权限原则；GB/T 20273 4.4；NIST AC-6 恶意OS管理员 报复 目标达成 - 备份集 服务器软件组件劫持 (T1505) 传输数据保密性 (4.7.2) - 透明加密 (TDE)；ISO 27001 A.8.24 物理入侵者 间谍活动 持久化 - 内存中的明文 数据加密（影响）(T1485) 可信路径 (4.8) - 机密计算 (TEE)；NIST SC-3 云租户（恶意） 误操作 收集 - 配置文件 系统信息发现 (T1082) 网络安全 (4.9) - 网络ACL；GB/T 20273 4.9 恶意内部员工 身份伪造 渗出 - 数据导出文件 服务停止 (T1489) - - 备份加密；DLP 外部攻击者 会话劫持 物理访问 - 数据库链接 数据破坏 (T1485) - - SQL防火墙；连接限制 内部运维人员 侦察 - - 索引/分区 通过API攻击 (T1559) - - 行级安全 (RLS) 内部用户 - - - 物化视图 客户端连接劫持 (T1184) - - 列级加密 - - - - 同义词 网络嗅探 (T1040) - - 三权分立 - - - - 触发器等对象 创建账户 (T1136) - - 密钥管理 (KMS/HSM) - - - - 临时表空间 数据从本地拉取 (T1213) - - 全密态执行 - - - - Undo日志 禁用安全工具 (T1562) - - 权限分析工具 - - - - 控制文件 受信关系利用 (T1199) - - 不可变备份 - - - - 监听器/端口 反向工程 (T1598) - - 配置基线检查 - - - - SSL证书私钥 数据加密(自身通信) (T1573) - - 端口隐藏 - - - - 数据库参数 域策略修改 (T1484) - - 内存加密 - - - - 数据库进程内存 内存刮削 (T1535) - - 快照加密 - - - - 数据快照 数据泄露 (T1213) - - 文件系统权限 - - - - 数据库服务端口 端口扫描 (T1046) - - - 攻击者画像 攻击动机 攻击阶段 (Kill Chain) 攻击类型 (STRIDE) 攻击目标 (数据库资产) 攻击技术 (ATT&amp;CK) 影响的安全域 (GB/T 20273-2019) 风险等级 安全功能与标准映射（含商业组件 &amp; 内核防御） 外部黑客/APT组织 经济利益（勒索/售卖） 侦察 欺骗 (S) 认证凭据（密码Hash/票据） 暴力破解 (T1110) 身份鉴别 (4.1) 高 多因素认证；Oracle CMU；ISO 27001 A.8.5；NIST IA-5 → 统一身份认证与MFA内核模块 网络中间人 会话劫持 利用 篡改 (T) 会话令牌/Cookie 中间人攻击 (T1557) 传输数据保密性 (4.7.2) 高 TLS双向认证；Oracle Advanced Security；GB/T 20273 4.7.2；NIST SC-8 → 全链路TLS 1.3/国密TLCP加密通道 内部恶意DBA 商业间谍（数据窃密） 武器化 否认 (R) 数据字典/系统编目 账户操纵 (T1098) 安全审计 (4.5) 高 统一审计&#43;防篡改日志；Oracle Audit Vault；GB/T 20273 4.5；ISO 27001 A.8.15 → 高性能异步审计与只读日志内核 第三方运维人员 数据窃取 投递 信息泄露 (I) 业务核心表数据 SQL注入 (T1190) 自主访问控制 (4.2) 高 SQL防火墙&#43;静态脱敏；Oracle AVDF；PCI DSS 3.2 → 内核级AST白名单SQL防火墙 恶意内部员工 规避审计 安装 篡改 (T) 审计日志记录 日志清除 (T1070) 用户数据完整性 (4.6) 高 审计日志防篡改（只读表空间）；Oracle Blockchain Table；NIST AU-9 → 内核防篡改账本（Ledger Hash） 云租户（恶意邻居） 勒索 命令与控制 权限提升 (E) 存储过程/函数/包 服务器软件组件劫持 (T1505) 强制访问控制 (4.4) 中 最小权限&#43;代码签名；Oracle Database Vault；NIST AC-6 → 强三权分立与Realm特权隔离 恶意应用程序 报复 目标达成 拒绝服务 (D) 物理备份集/快照 数据破坏 (T1485) 存储数据保密性 (4.7.1) 高 不可变备份&#43;离线存储；Oracle RMAN；ISO 27001 A.8.13 → 备份加密与防删除兜底策略 恶意OS管理员 间谍活动 横向移动 信息泄露 (I) 数据库进程内存(SGA/PGA) 进程注入/内存刮削 (T1055/T1535) 用户数据保密性 (4.7.1) 高 机密计算(TEE/SGX)；Oracle Database 23ai Secure Enclaves；NIST SC-3 → 内存密态运算引擎 物理入侵者 误操作/物理破坏 物理访问 信息泄露 (I) 配置文件(spfile/pg_hba) 系统信息发现 (T1082) 可信路径 (4.8) 中 文件系统权限&#43;配置加密；Oracle Data Safe；GB/T 20273 4.8；ISO 27001 A.8.1 → 内核可信路径与完整性校验 离职/僵尸账号 身份伪造 利用 欺骗 (S) 数据库链接(DBLink) 有效账户滥用 (T1078) 身份鉴别 (4.1) 中 账户生命周期管理；Oracle CMU；ISO 27001 A.8.2 → 动态权限回收与实时拦截 失陷的业务程序 数据泄露 渗出 信息泄露 (I) 敏感数据列（身份证/手机号） 通过API攻击 (T1559) 存储数据保密性 (4.7.1) 中 动态数据脱敏&#43;行级安全；Oracle VPD/OLS；ISO 27001 A.8.26 → 列级加密(CLS)与行级安全(RLS) 内部运维人员 侦察 侦察 信息泄露 (I) 索引/分区/物化视图 网络嗅探 (T1040) 网络安全 (4.9) 低 加密通信&#43;网络ACL；Oracle CMAN；GB/T 20273 4.9；ISO 27001 A.8.20 → 细粒度网络准入控制 供应链/第三方开发 权限提升 持久化 权限提升 (E) 触发器/UDF/扩展插件 创建账户 (T1136) 强制访问控制 (4.4) 高 权限分析&#43;代码审查；Oracle Database Vault；NIST AC-6 → 插件签名验证与默认拒绝策略 内部恶意DBA 掩盖罪行 目标达成 篡改 (T) Undo/Redo/WAL日志 禁用安全工具 (T1562) 用户数据完整性 (4.6) 高 防篡改日志&#43;权限分析；Oracle Audit Vault；ISO 27001 A.8.15 → 写入只读日志流与篡改即报警 云租户（恶意） 权限提升 利用 欺骗 (S) 控制文件/密码文件 受信关系利用 (T1199) 身份鉴别 (4.1) 高 网络隔离&#43;强认证；Oracle MFA；GB/T 20273 4.1；NIST IA-5 → 基于TEE的密钥保护 外部攻击者 勒索 利用 拒绝服务 (D) 数据库监听器/服务端口 服务停止 (T1489) 网络安全 (4.9) 中 端口隐藏&#43;SQL防火墙；Oracle CMAN；ISO 27001 A.8.22 → 内核级连接限流与抗DDoS 网络中间人 数据窃取 利用 信息泄露 (I) SSL证书私钥/Keystore 数据加密(自身通信) (T1573) 传输数据保密性 (4.7.2) 高 HSM/KMS保护私钥；Oracle Key Vault；NIST SC-12 → 两级密钥管理架构 内部恶意DBA 规避审计 安装 篡改 (T) 数据库参数(init.ora) 域策略修改 (T1484) 安全审计 (4.5) 高 配置基线检查&#43;变更审计；Oracle AVDF；CIS 基线 → 参数修改自动回滚与告警 恶意内部员工 数据窃取 收集 信息泄露 (I) 临时表空间/临时文件 数据从本地拉取 (T1213) 存储数据保密性 (4.7.1) 中 全密态执行&#43;临时文件加密；Always Encrypted；ISO 27001 A.8.24 → 全密态查询处理引擎 物理入侵者 数据窃取 渗出 信息泄露 (I) 数据快照/克隆副本 数据泄露 (T1213) 存储数据保密性 (4.7.1) 中 快照加密&#43;访问审计；Oracle RMAN；ISO 27001 A.8.12 → 存储级加密与快照防激活 外部渗透测试者 侦察 侦察 信息泄露 (I) 数据库服务端口/监听器 端口扫描 (T1046) 网络安全 (4.9) 低 防火墙策略&#43;IPS；Oracle CMAN；GB/T 20273 4.9 → 端口敲门与隐身技术 chatgpt 攻击者画像 攻击动机 攻击阶段 攻击类型 攻击目标 攻击技术 影响安全域（GB/T 20273） 风险等级 安全功能与标准映射 外部攻击者 数据窃取 侦察 机密性攻击 用户凭据 暴力破解（T1110） 身份鉴别（4.1） 高 身份认证；GB/T 20273 4.1；ISO 27001 A.9；ISO 15408 FIA 内部恶意DBA 数据篡改 权限提升 完整性攻击 会话令牌 中间人攻击（T1557） 传输数据保密性（4.8.2） 中 TLS双向认证；GB/T 20273 4.8.2；ISO 27001 A.13.2；NIST SC-8 内部开发人员 权限提升 执行 否认攻击 数据字典 账户操纵（T1098） 安全审计（4.6） 高 统一审计；GB/T 20273 4.6；ISO 27001 A.12.4；NIST AU-3 第三方运维人员 拒绝服务 利用 信息泄露攻击 用户表数据 SQL注入（T1190） 自主访问控制（4.2） 高 数据脱敏；GB/T 20273 4.2；PCI DSS 3.2 网络中间人 规避审计 安装 可用性攻击 审计日志 日志清除（T1070） 用户数据完整性（4.7） 高 审计日志防篡改；GB/T 20273 4.7；ISO 27001 A.12.4；NIST AU-9 云租户 勒索 命令与控制 权限提升攻击 存储过程/函数 服务器组件劫持（T1505） 强制访问控制（4.4） 中 最小权限原则；GB/T 20273 4.4；NIST AC-6 恶意应用程序 报复 目标达成 机密性攻击 备份集 数据加密防绕过（T1022） 存储数据保密性（4.8.1） 高 透明加密(TDE)；GB/T 20273 4.8.1；ISO 27001 A.10.1 恶意操作系统管理员 间谍活动 - - 内存明文 进程注入（T1055） 标记（4.3） 高 机密计算(TEE)；NIST SC-3 物理入侵者 误操作 - - 配置文件 系统信息发现（T1082） 可信路径（4.9） 中 网络ACL；GB/T 20273 4.9；ISO 27001 A.13.1 - 身份伪造 - - 数据导出文件 数据破坏（T1485） - 低 备份加密 - 会话劫持 - - 数据库链接 服务停止（T1489） - - SQL防火墙 - - - - 索引/分区 通过API攻击（T1559） - - 行级安全(RLS) - - - - 物化视图 客户端连接劫持（T1184） - - 列级加密 - - - - 同义词 网络嗅探（T1040） - - 三权分立 - - - - 触发器等对象 创建账户（T1136） - - 密钥管理(KMS/HSM) - - - - 临时表空间 数据从本地拉取（T1213） - - 全密态执行 - - - - Undo日志 禁用安全工具（T1562） - - 权限分析工具 - - - - 控制文件 受信关系利用（T1199） - - - - - - - 监听器/端口 反向工程（T1598） - - - - - - - SSL证书私钥 数据加密（自身通讯）（T1573） - - - - - - - 数据库参数 域策略修改（T1484） - - - - - - - 数据库进程内存 - - - - - - - - 数据快照 - - - - - - - - 数据库服务端口 - - - - 关系数据库安全威胁维度字典（多维去重 · 结构化版） 攻击者画像 攻击动机 攻击阶段 攻击类型 攻击目标 攻击技术 影响安全域（GB/T 20273 / ISO 15408） 风险等级 安全功能与标准映射 外部攻击者 数据窃取 侦察 机密性攻击 用户凭据 暴力破解（T1110） 身份鉴别（4.1） 高 身份认证 / MFA 内部恶意DBA 数据篡改 初始访问 完整性攻击 会话令牌 SQL注入（T1190） 自主访问控制（4.2） 中 访问控制（RBAC/RLS） 内部开发人员 权限提升 执行 可用性攻击 数据字典 中间人攻击（T1557） 标记（4.3） 低 三权分立 第三方运维人员 拒绝服务 持久化 不可否认性攻击 用户表数据 账户操纵（T1098） 强制访问控制（4.4） - 最小权限 网络中间人 勒索 权限提升 - 索引/分区 日志清除（T1070） 安全审计（4.6） - 审计日志防篡改 云租户 报复 防御规避 - 物化视图 进程注入（T1055） 用户数据完整性（4.7） - 统一审计 恶意应用程序 间谍活动 凭据获取 - 同义词 服务器组件劫持（T1505） 存储数据保密性（4.8.1） - 透明加密（TDE） 恶意操作系统管理员 规避审计 内部侦察 - 存储过程/函数 数据加密防绕过（T1022） 传输数据保密性（4.8.2） - TLS / 双向认证 物理入侵者 误操作 横向移动 - 触发器等对象 系统信息发现（T1082） 可信路径（4.9） - 网络ACL 离职/僵尸账号 身份伪造 数据收集 - 临时表空间 通过API攻击（T1559） FIA / FDP / FAU / FMT / FCS / FPT - SQL防火墙 自动化攻击工具 会话劫持 数据外传 - Undo日志 客户端连接劫持（T1184） - - 行级安全（RLS） - - 影响/破坏 - 控制文件 创建账户（T1136） - - 列级安全（CLS） - - - - 监听器/端口 数据从本地拉取（T1213） - - 数据脱敏 - - - - SSL证书私钥 禁用安全工具（T1562） - - 密钥管理（KMS/HSM） - - - - 数据库参数 受信关系利用（T1199） - - 全密态执行 - - - - 数据库进程内存 反向工程（T1598） - - 机密计算（TEE） - - - - 数据快照 数据加密（自身通讯）（T1573） - - 数据分类分级 - - - - 数据库服务端口 - - - 配置基线检查 4.2 防御模型 一、访问安全 威胁ID 威胁描述 STRIDE 风险等级 缓解的安全功能 T-ACS-01 弱口令爆破或默认账户攻击 S 高 身份认证（密码策略、账户锁定、MFA） T-ACS-02 重放攻击（抓取认证报文后重放） S 中 身份认证（Challenge-Response、Kerberos时间戳） T-ACS-03 从不可信IP或恶意主机连接 S/D 中 网络ACL（IP白名单） T-ACS-04 SQL注入攻击绕过权限检查 E 高 SQL防火墙（SQL白名单）、最小权限原则 T-ACS-05 内部人员滥用合法权限（如DBA偷看数据） I/E 高 访问控制（三权分立、行级安全）、数据脱敏 T-ACS-06 权限过度授予导致横向越权 E 高 访问控制（RBAC、最小权限）、权限分析工具 T-ACS-07 用户否认执行了某项敏感操作 R 高 安全审计（统一审计、细粒度审计） 二、传输安全 威胁ID 威胁描述 STRIDE 风险等级 缓解的安全功能 T-TRP-01 网络嗅探窃听数据库通信 I 高 安全传输（TLS 1.3、国密TLCP） T-TRP-02 中间人攻击（MITM）篡改或劫持会话 T/S 高 安全传输（证书双向验证、防降级攻击） T-TRP-03 会话劫持后模拟合法用户 S 高 安全传输（会话加密、绑定认证） 三、计算安全 威胁ID 威胁描述 STRIDE 风险等级 缓解的安全功能 T-CPT-01 数据库管理员或恶意进程在内存中读取敏感数据 I 高 全密态加密、机密计算（TEE） T-CPT-02 通过侧信道攻击（如Cache时间）推断数据 I 中-高 机密计算（恒定时间执行）、全密态加密 T-CPT-03 SQL执行计划中泄露敏感值（如错误消息、执行计划） I 中 数据脱敏（返回结果遮盖）、错误消息泛化 T-CPT-04 攻击者调用加密函数进行暴力破解或穷举 I/D 中 加密函数（密钥强度限制、防暴力调用策略） T-CPT-05 云环境下虚拟机管理器直接读取数据库进程内存 I 高 机密计算（TEE内执行、加密内存） T-CPT-06 已授权用户通过脱敏绕过机制看到原始数据 I 中 数据脱敏（权限校验、防绕过） 四、存储安全 威胁ID 威胁描述 STRIDE 风险等级 缓解的安全功能 T-STR-01 攻击者窃取磁盘或备份介质，绕过数据库直接读取数据文件 I 高 透明加密（TDE）、备份加密 T-STR-02 攻击者或恶意OS篡改数据文件中的数据块 T 高 数据防篡改（哈希链、账本表）、块级校验 T-STR-03 未授权用户通过文件系统直接拷贝数据文件 I 高 透明加密（TDE）&#43; 文件权限保护 T-STR-04 备份介质丢失导致数据泄露 I 高 透明加密（备份加密） T-STR-05 密钥管理不当（硬编码、弱密钥、不轮换）导致加密失效 I/T 高 密钥管理（KMS、HSM、自动轮换） T-STR-06 敏感数据未被识别（未分类分级）导致保护缺失 I 高 数据发现（自动扫描、分类分级） 五、合法合规 威胁ID 威胁描述 STRIDE 风险等级 缓解的安全功能 T-AUD-01 攻击者或恶意管理员删除/篡改审计日志以掩盖痕迹 T/R 高 审计日志防篡改（只写一次、WORM存储、加密） T-AUD-02 审计日志被未授权读取（泄露用户行为） I 中 审计日志加密存储、访问控制 T-AUD-03 审计数据量过大导致性能下降或日志溢出 D 中 统一审计（条件审计、采样审计） T-AUD-04 合规性检查时无法证明对敏感数据的控制措施 R 高 合规对标（等保、ISO、GDPR）、审计记录完整性 4.3 安全功能 一、访问安全 身份认证、访问控制（自主访问控制、强制访问控制、角色访问控制（三权分立）、行级访问控制） 二、传输安全 SSL 三、计算安全 加密函数、全密态、机密计算、动态脱敏 四、存储安全 透明加密、防篡改 五、合法合规 安全审计、密钥管理 一、接入安全
+1. 网络防火墙
+- 不可信IP登录
+2. 身份认证
+暴力破解
+凭证重放
+默认账户攻击
+过期账号攻击
+弱口令攻击
+内存凭证残留
+认证耗尽
+密码泄露
+二、传输安全
+3. 安全传输
+数据泄露
+流量伪造
+流量重放
+会话密钥泄露
+证书伪造
+身份伪造
+三、访问安全
+4. 访问控制
+未授权访问
+越权访问
+权限提升
+权限滥用
+权限提升
 ...</p>
   </div>
-  <footer class="entry-footer"><span title='2026-02-27 14:30:01 +0800 CST'>February 27, 2026</span>&nbsp;·&nbsp;<span>3 min</span>&nbsp;·&nbsp;<span>470 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
-  <a class="entry-link" aria-label="post link to Babelfish搭建指南" href="http://localhost:1313/posts/database/babelfish_build/"></a>
+  <footer class="entry-footer"><span title='2026-06-11 10:50:00 +0800 CST'>June 11, 2026</span>&nbsp;·&nbsp;<span>11 min</span>&nbsp;·&nbsp;<span>2140 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 安全架构" href="http://localhost:1313/posts/security/1-security-architecture/"></a>
 </article>
 
 <article class="post-entry"> 
   <header class="entry-header">
-    <h2 class="entry-hint-parent">避免用户错误使用到pg插件
+    <h2 class="entry-hint-parent">海量 1 用例 oracle加密函数
     </h2>
   </header>
   <div class="entry-content">
-    <p>基本概念 这里是融合版的一个需求，属于兼容性需求类别，主要实现的是一个黑名单，是要把一个列表中的多个插件不允许在MSSQL兼容安装包中出现，或只能在5432端口（PG模式）中使用，不能在1433端口（MSSQL模式）中使用。
-初步分析 根据需求列表，可以基本将需要修改的插件分为三类：
-禁止在双端口安装使用； 在5432端口允许使用，1433端口禁止安装使用； 双端口都允许使用； 其中，需求描述特别提到，允许在编译阶段进行修改，由此可以对应的提出三类插件的修改方案：
-在编译阶段不安装，也就是在contrib/Makefile中的SUBDIR安装插件，删除这些不允许在双端口安装的插件； 在hooks.c中增加一个名单，名单中包含这些允许在5432不允许在1433安装的插件，首先检测当前dialect是否为tsql，如果为tsql，检查是否是T_CreExtensionStmt，如果是则检查插件名单是否在这个名单之内，如果没有则放行，有则报错； 不做任何处理； 理论上，以上方案实施后，能够达到双端口不可用则直接无法找到插件，用户自行安装则不保证可能出现的任何问题；对于5432可用1433不可用，会进行报错；其他类型不做处理；应该可以达到需求描述的目的实现；
-边界考虑 由于删除了某些插件编译且对某些插件在一定场景进行了屏蔽，考虑数据库升级场景，如果以前使用过此插件，现在进行了屏蔽，可能导致升级失败； 灵活性 现在的屏蔽方式是使用直接修改编译文件与硬编码名单的方式实现，如果在一个版本内，由于某些特殊原因想启用已屏蔽的插件，则在当前版本是无法实现的。如果将名单作成guc参数，则可以提供灵活性，但是一旦被手动篡改，则无法预料可能产生的问题； </p>
+    <p>CREATE SCHEMA pgcrypto_2_text; SET search_path TO pgcrypto_2_text; /* ------------------------------------------------------------------------------------------------ * part 0: create some utils functions * ------------------------------------------------------------------------------------------------ */ CREATE FUNCTION strtoraw(string VARCHAR2) RETURN RAW IS BEGIN RETURN utl_raw.cast_to_raw(string); END; / CREATE FUNCTION rawtostr(rawdata RAW) RETURN VARCHAR2 IS BEGIN RETURN utl_raw.cast_to_varchar2(rawdata); END; / -- get data type name CREATE OR REPLACE FUNCTION oidgettype(typeoid OID) RETURNS TEXT AS $$ BEGIN RETURN (SELECT typname FROM pg_type WHERE oid = typeoid); END; $$ LANGUAGE plpgsql; CREATE OR REPLACE FUNCTION oidgettype(typeoids OIDVECTOR) RETURNS TEXT[] AS $$ DECLARE result TEXT[] := &#39;{}&#39;; typoid OID; typename TEXT; BEGIN FOREACH typoid IN ARRAY typeoids LOOP SELECT typname INTO typename FROM pg_type WHERE oid = typoid; result := array_append(result, COALESCE(typename, &#39;Unknown OID&#39;)); END LOOP; RETURN result; END; $$ LANGUAGE plpgsql; -- find all functions from dbms_obfuscation_toolkit CREATE VIEW allfuncs AS SELECT proname name,pronargs args,oidgettype(prorettype) output,oidgettype(proargtypes) input FROM pg_proc WHERE pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = &#39;dbms_obfuscation_toolkit&#39;) ORDER BY 1,3,2; /* ------------------------------------------------------------------------------------------------ * part 1: install pgcrypt with different versions * ------------------------------------------------------------------------------------------------ */ -- available version SELECT * FROM pg_available_extension_versions WHERE name = &#39;pgcrypto&#39;; -- 2.0 (default version) CREATE EXTENSION pgcrypto; SELECT * FROM pg_extension WHERE extname = &#39;pgcrypto&#39;; SELECT * FROM allfuncs; DROP EXTENSION pgcrypto; -- 1.2 (old version) CREATE EXTENSION pgcrypto WITH VERSION &#39;1.2&#39;; SELECT * FROM pg_extension WHERE extname = &#39;pgcrypto&#39;; SELECT * FROM allfuncs; DROP EXTENSION pgcrypto; -- 2.0 --&gt; 1.2 CREATE EXTENSION pgcrypto; SELECT * FROM pg_extension WHERE extname = &#39;pgcrypto&#39;; ALTER EXTENSION pgcrypto UPDATE TO &#39;1.2&#39;; SELECT * FROM pg_extension WHERE extname = &#39;pgcrypto&#39;; SELECT * FROM allfuncs; DROP EXTENSION pgcrypto; -- 1.2 --&gt; 2.0 CREATE EXTENSION pgcrypto WITH VERSION &#39;1.2&#39;; SELECT * FROM pg_extension WHERE extname = &#39;pgcrypto&#39;; ALTER EXTENSION pgcrypto UPDATE TO &#39;2.0&#39;; SELECT * FROM pg_extension WHERE extname = &#39;pgcrypto&#39;; SELECT * FROM allfuncs; DROP EXTENSION pgcrypto; /* ------------------------------------------------------------------------------------------------ * part 2: core functions * ------------------------------------------------------------------------------------------------ */ CREATE EXTENSION pgcrypto; -- 1 desencrypt SELECT dbms_obfuscation_toolkit.desencrypt(strtoraw(&#39;11111111&#39;), strtoraw(&#39;11111111&#39;)) FROM dual; SELECT dbms_obfuscation_toolkit.desencrypt(strtoraw(&#39;1111111111111111&#39;), strtoraw(&#39;11111111&#39;)) FROM dual; -- 2 desdecrypt SELECT rawtostr(dbms_obfuscation_toolkit.desdecrypt(hextoraw(&#39;655EA628CF62585F&#39;), strtoraw(&#39;11111111&#39;))) FROM dual; SELECT rawtostr(dbms_obfuscation_toolkit.desdecrypt(hextoraw(&#39;655EA628CF62585F20D3B8A6E657876B&#39;), strtoraw(&#39;11111111&#39;))) FROM dual; -- 3 des3encrypt SELECT dbms_obfuscation_toolkit.des3encrypt(strtoraw(&#39;11111111&#39;), strtoraw(&#39;1111111122222222&#39;), 0, strtoraw(&#39;11111111&#39;)) FROM dual; SELECT dbms_obfuscation_toolkit.des3encrypt(strtoraw(&#39;1111111111111111&#39;), strtoraw(&#39;1111111122222222&#39;), 0, strtoraw(&#39;11111111&#39;)) FROM dual; -- 4 des3decrypt SELECT rawtostr(dbms_obfuscation_toolkit.des3decrypt(hextoraw(&#39;0D28E17571051319&#39;), strtoraw(&#39;1111111122222222&#39;), 0, strtoraw(&#39;11111111&#39;))) FROM dual; SELECT rawtostr(dbms_obfuscation_toolkit.des3decrypt(hextoraw(&#39;0D28E17571051319ACCE2D19D9AED5C8&#39;), strtoraw(&#39;1111111122222222&#39;), 0, strtoraw(&#39;11111111&#39;))) FROM dual; -- 5 des3encrypt -- without iv SELECT dbms_obfuscation_toolkit.des3encrypt(strtoraw(&#39;11111111&#39;), strtoraw(&#39;1111111122222222&#39;)) FROM dual; SELECT dbms_obfuscation_toolkit.des3encrypt(strtoraw(&#39;1111111111111111&#39;), strtoraw(&#39;1111111122222222&#39;)) FROM dual; -- 6 des3decrypt -- without iv SELECT rawtostr(dbms_obfuscation_toolkit.des3decrypt(hextoraw(&#39;7934131269E334A2&#39;), strtoraw(&#39;1111111122222222&#39;))) FROM dual; SELECT rawtostr(dbms_obfuscation_toolkit.des3decrypt(hextoraw(&#39;7934131269E334A2BCC64878CC5A075A&#39;), strtoraw(&#39;1111111122222222&#39;))) FROM dual; /* ------------------------------------------------------------------------------------------------ * part 3: different args * ------------------------------------------------------------------------------------------------ */ -- 1 des CREATE TABLE tplain (id INT, plain TEXT, key TEXT); INSERT INTO tplain VALUES (1, &#39;&#39;, &#39;&#39;), (2, NULL, NULL), -- different plain (11, NULL, &#39;88888888&#39;), (12, &#39;&#39;, &#39;88888888&#39;), (13, &#39;1&#39;, &#39;88888888&#39;), (14, &#39;7777777&#39;, &#39;88888888&#39;), (15, &#39;88888888&#39;, &#39;88888888&#39;), (16, &#39;999999999&#39;, &#39;88888888&#39;), (17, &#39;17171717171717171&#39;, &#39;88888888&#39;), (18, &#39;242424242424242422424242&#39;,&#39;88888888&#39;), -- different key (31, &#39;88888888&#39;, NULL), (32, &#39;88888888&#39;, &#39;&#39;), (33, &#39;88888888&#39;, &#39;1&#39;), (34, &#39;88888888&#39;, &#39;7777777&#39;), (37, &#39;88888888&#39;, &#39;88888888&#39;), (38, &#39;88888888&#39;, &#39;999999999&#39;), (37, &#39;88888888&#39;, &#39;17171717171717171&#39;), (38, &#39;88888888&#39;, &#39;242424242424242422424242&#39;); CREATE TABLE tcipher (id INT, key TEXT, cipher RAW); INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 1; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 2; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 11; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 12; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 13; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 14; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 15; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 16; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 17; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 18; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 31; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 32; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 33; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 34; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 35; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 36; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 37; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 38; SELECT id,cipher,length(cipher) FROM tcipher ORDER BY id; SELECT id,rawtostr(dbms_obfuscation_toolkit.desdecrypt(cipher, strtoraw(key))) FROM tcipher ORDER BY id; DROP TABLE tplain,tcipher; -- 2 3des CREATE TABLE tplain (id INT, plain TEXT, keymod INT, key TEXT, iv TEXT); INSERT INTO tplain VALUES (1, &#39;&#39;, 0, &#39;&#39;, &#39;&#39;), (2, NULL, 0, NULL, NULL), -- different plain (11, NULL, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (12, &#39;&#39;, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (13, &#39;1&#39;, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (14, &#39;7777777&#39;, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (15, &#39;88888888&#39;, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (16, &#39;999999999&#39;, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (17, &#39;17171717171717171&#39;, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (18, &#39;242424242424242422424242&#39;,0, &#39;1616161616161616&#39;, &#39;88888888&#39;), -- different keymod (31, &#39;1616161616161616&#39;, NULL, &#39;1616161616161616&#39;, &#39;88888888&#39;), (32, &#39;1616161616161616&#39;, -1, &#39;1616161616161616&#39;, &#39;88888888&#39;), (33, &#39;1616161616161616&#39;, -1.1, &#39;1616161616161616&#39;, &#39;88888888&#39;), (34, &#39;1616161616161616&#39;, 1.1, &#39;1616161616161616&#39;, &#39;88888888&#39;), (35, &#39;1616161616161616&#39;, 2, &#39;1616161616161616&#39;, &#39;88888888&#39;), (36, &#39;1616161616161616&#39;, &#39;0&#39;, &#39;1616161616161616&#39;, &#39;88888888&#39;), (37, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;88888888&#39;), -- different key (51, &#39;1616161616161616&#39;, 0, NULL, &#39;88888888&#39;), (52, &#39;1616161616161616&#39;, 0, &#39;&#39;, &#39;88888888&#39;), (53, &#39;1616161616161616&#39;, 0, &#39;1&#39;, &#39;88888888&#39;), (54, &#39;1616161616161616&#39;, 0, &#39;7777777&#39;, &#39;88888888&#39;), (55, &#39;1616161616161616&#39;, 0, &#39;88888888&#39;, &#39;88888888&#39;), (56, &#39;1616161616161616&#39;, 0, &#39;999999999&#39;, &#39;88888888&#39;), (57, &#39;1616161616161616&#39;, 0, &#39;17171717171717171&#39;, &#39;88888888&#39;), (58, &#39;1616161616161616&#39;, 0, &#39;242424242424242422424242&#39;, &#39;88888888&#39;), (59, &#39;1616161616161616&#39;, 0, &#39;272727272727272727272727272&#39;, &#39;88888888&#39;), (61, &#39;1616161616161616&#39;, 1, NULL, &#39;88888888&#39;), (62, &#39;1616161616161616&#39;, 1, &#39;&#39;, &#39;88888888&#39;), (63, &#39;1616161616161616&#39;, 1, &#39;1&#39;, &#39;88888888&#39;), (64, &#39;1616161616161616&#39;, 1, &#39;7777777&#39;, &#39;88888888&#39;), (65, &#39;1616161616161616&#39;, 1, &#39;88888888&#39;, &#39;88888888&#39;), (66, &#39;1616161616161616&#39;, 1, &#39;999999999&#39;, &#39;88888888&#39;), (67, &#39;1616161616161616&#39;, 1, &#39;17171717171717171&#39;, &#39;88888888&#39;), (68, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;88888888&#39;), (69, &#39;1616161616161616&#39;, 1, &#39;272727272727272727272727272&#39;, &#39;88888888&#39;), -- different iv (81, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, NULL), (82, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;&#39;), (83, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;1&#39;), (84, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;7777777&#39;), (85, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;88888888&#39;), (86, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;999999999&#39;), (87, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;17171717171717171&#39;), (88, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;242424242424242422424242&#39;), (89, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;272727272727272727272727272&#39;); CREATE TABLE tcipher (id INT, CIPHER RAW, keymod INT, key TEXT, iv TEXT); INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 1; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 2; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 11; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 12; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 13; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 14; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 15; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 16; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 17; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 18; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 31; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 32; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 33; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 34; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 35; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 36; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 37; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 51; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 52; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 53; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 54; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 55; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 56; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 57; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 58; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 59; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 61; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 62; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 63; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 64; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 65; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 66; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 67; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 68; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 69; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 81; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 82; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 83; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 84; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 85; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 86; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 87; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 88; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 89; SELECT * FROM tcipher; SELECT id, rawtostr(dbms_obfuscation_toolkit.des3decrypt(cipher, strtoraw(key), keymod, strtoraw(iv))) FROM tcipher ORDER BY id; DROP TABLE tplain, tcipher; /* ------------------------------------------------------------------------------------------------ * part 4: other functions * ------------------------------------------------------------------------------------------------ */ SELECT length(dbms_obfuscation_toolkit.desgetkey(strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;))) FROM dual; SELECT length(dbms_obfuscation_toolkit.des3getkey(0, strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;))) FROM dual; SELECT length(dbms_obfuscation_toolkit.des3getkey(1, strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;))) FROM dual; SELECT dbms_obfuscation_toolkit.md5(strtoraw(&#39;1111111111111111&#39;)) FROM dual; CREATE TABLE deskey(id INT, key RAW); CREATE TABLE des3key0 (id INT, key RAW); CREATE TABLE des3key1 (id INT, key RAW); INSERT INTO deskey SELECT generate_series(1, 1000), dbms_obfuscation_toolkit.desgetkey(strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;)); INSERT INTO des3key0 SELECT generate_series(1, 1000), dbms_obfuscation_toolkit.des3getkey(0, strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;)); INSERT INTO des3key1 SELECT generate_series(1, 1000), dbms_obfuscation_toolkit.des3getkey(1, strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;)); CREATE TABLE allcnt (cnt INT); INSERT INTO allcnt SELECT count(*) FROM deskey GROUP BY key; INSERT INTO allcnt SELECT count(*) FROM des3key0 GROUP BY key; INSERT INTO allcnt SELECT count(*) FROM des3key1 GROUP BY key; SELECT cnt,count(*) FROM allcnt GROUP BY cnt; -- test (need to spend too much time) -- CREATE TABLE moretime(id INT, key RAW); -- INSERT INTO moretime SELECT generate_series(1, 100000), -- dbms_obfuscation_toolkit.desgetkey(strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;)); -- -- 预期 key列重复的字符不多 -- SELECT * FROM moretime ORDER BY key ASC LIMIT 10; -- SELECT * FROM moretime ORDER BY key DESC LIMIT 10; -- DROP TABLE moretime; DROP TABLE deskey, des3key0, des3key1, allcnt; DROP EXTENSION pgcrypto; RESET search_path; DROP SCHEMA pgcrypto_2_text CASCADE; </p>
   </div>
-  <footer class="entry-footer"><span title='2026-02-25 10:15:33 +0800 CST'>February 25, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>16 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
-  <a class="entry-link" aria-label="post link to 避免用户错误使用到pg插件" href="http://localhost:1313/posts/database/forbid-extension/"></a>
+  <footer class="entry-footer"><span title='2025-02-25 15:31:00 +0800 CST'>February 25, 2025</span>&nbsp;·&nbsp;<span>10 min</span>&nbsp;·&nbsp;<span>2026 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 1 用例 oracle加密函数" href="http://localhost:1313/posts/projectdocs/1-testcase-oracle-crypto-func/"></a>
 </article>
 
 <article class="post-entry"> 
   <header class="entry-header">
-    <h2 class="entry-hint-parent">深度优先遍历
+    <h2 class="entry-hint-parent">海量 1 设计 oracle加密函数
     </h2>
   </header>
   <div class="entry-content">
-    <p>今天的每日一题：1202. 从根到叶的二进制数之和。
-简单来说，就是给定一颗层序遍历的数组，表示一颗树，例如：
-输入：root = [1,0,1,0,1,0,1] 输出：22 解释：(100) &#43; (101) &#43; (110) &#43; (111) = 4 &#43; 5 &#43; 6 &#43; 7 = 22 可以表示为：
-1 / \ 0 1 / \ / \ 0 1 0 1 思路就是使用dfs来遍历这个树，代码为：
-/** * Definition for a binary tree node. * struct TreeNode { * int val; * TreeNode *left; * TreeNode *right; * TreeNode() : val(0), left(nullptr), right(nullptr) {} * TreeNode(int x) : val(x), left(nullptr), right(nullptr) {} * TreeNode(int x, TreeNode *left, TreeNode *right) : val(x), left(left), right(right) {} * }; */ class Solution { public: int dfs(TreeNode *root, int val) { if (root == nullptr) return 0; val = val &lt;&lt; 1 | root-&gt;val; if (root-&gt;left == nullptr &amp;&amp; root-&gt;right == nullptr) return val; return dfs(root-&gt;left, val) &#43; dfs(root-&gt;right, val); } int sumRootToLeaf(TreeNode* root) { return dfs(root, 0); } }; 拿到这个题就知道用dfs，但是这个计算的方式确实没想到，二进制移位操作，并且使用局部变量保存临时结果，就不需要复杂的字符串拼接然后转换10进制了，例如上例：
+    <p>1 设置默认版本
+contrib/pgcrypto/pgcrypto.control defaultl_version = &#39;2.0&#39; dbcompatibilities = &#39;A, B, PG&#39; 生成同名的sql文件
+touch contrib/pgcrypto/pgcrypto-2.0.sql 安装sql文件
+# pgcrypto.control与pgcrypt.*.sql文件 ll $GAUSSHOME/share/postgresql/extension | grep pgcrypto 加载插件
+# 执行：CREATE EXTENSION pgcrypto .. CreateExtension check_valild_extension_name # 检查插件名：要求不含 &#39;-&#39;、不含&#39;..&#39;等路径字符 get_extension_oid heap_open(&#39;pg_extension&#39;) systable_beginscan # 遍历系统表 pg_extension：确保插件存在 read_extension_control_file parse_extension_control_file get_extension_control_filename sprintf(&#34;{share}/extension/{extension_name}.control&#34;) ParreConfigFp # 获取 directory, default_version, module_pathname, dbcompatibilities 等参数 get_extension_script_filename get_extension_script_direcotry if name is &#39;pgcrypto&#39;: sprintf(&#34;{script_dir}/crypto-a.sql&#34;) read_extension_script_file InsertExtensionTuple # 插入系统表 pg_extension execute_extension_script ApplyExtensionUpdates </p>
+  </div>
+  <footer class="entry-footer"><span title='2025-02-25 09:49:00 +0800 CST'>February 25, 2025</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>65 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 1 设计 oracle加密函数" href="http://localhost:1313/posts/projectdocs/1-design-oracle-crypto-func/"></a>
+</article>
+
+<article class="post-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 1 需求 oracle加密函数
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 简介 1.1 目的 早期版本的oracle提供一个包含多个加密函数的包，用户可通过SQL语法调用加密函数，实现数据加密功能。本文主要介绍以下几点：
+oracle加密包的功能与使用方法 vastbase实现oracle加密包 vastbase加密包的功能与使用方法 本文档可指导开发者、测试者熟悉vastbase加密包特性的功能场景。
+本文档的内容已被上传至tapd，tapd上，排版更好看，测试用例更方便复制。建议直接从tapd上查看本文档原文： https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007194
+1.2 适用范围 vastbase 3.0.8及之后版本。
+1.3 术语定义、首字母缩写词和缩略语 DES：Data Encryption Standard，数据加密标准，一种早期通用的加密算法 3DES：Triple DES，基于DES演进的一种早期通用的加密算法 MD5：Message-Digest Algorithm，一种早期通用的数据摘要算法 1.3 参考资料 oracle dbms_obfuscation_toolkit 函数介绍：https://docs.oracle.com/cd/A97630_01/appdev.920/a96590/adgsec04.htm oracle dbms_obfuscation_toolkit 函数参数：https://docs.oracle.com/cd/B10500_01/appdev.920/a96612/d_obtoo2.htm tapd上，本需求文档： https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007194 tapd上，本需求的测试用例： https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007197 2 支持oracle加密插件dbms_obfuscation_toolkit 2.1 功能简述 早期版本oracle提供7个内置加密函数。早在4年或更早之前的旧版本vastbase中，也提供7个与oracle一致的加密函数，这7个函数，函数名、函数入参与oracle一致，但是，6个函数输出、15个函数参数约束与oracle不一致，本特性将重构这些加密函数，确保函数的输出、约束等与oracle一致。
+一、基础知识 加密的原理
+加密算法有很多种，不同场景中，适合的加密算法类型不同。对存储数据加密，通常采用对称密码算法，此处主要介绍对称密码算法：
+加密原理：输入1个明文，输入1个密钥，对明文和密钥进行一些可逆的运算（比如异或，代换），可得到1个密文。密钥通常是随机生成的 加密算法：DES算法，发布于1977年，已确定为不安全加密算法。3DES算法，调用3次DES算法，生成3个密钥，安全性与DES差别不大，也属于不安全的加密算法。AES算法，发布于2001年，通用的国际标准，替代不安全的DES算法 数据库加密函数
+几乎所有数据库，都提供内置加密函数，让用户通过SQL语句调用。最典型的场景如下：
+-- 假设，数据库提供函数encrypt(明文，密钥，加密算法)，输出为密文 -- 用户想表&#39;t1&#39;中存储数据&#39;shenkun&#39;，则存储的语法如下：（用户自己保管密钥） INSERT INTO t1 VALUES (encrypt(&#39;shenkun&#39;, &#39;一串随机的密钥&#39;, &#39;aes&#39;)); 二、Oracle加密包 早期版本的oracle中，包含1个名为dbms_obfuscation_toolkit的包，提供7个函数，主要实现加密、解密等功能：
+版本信息：oracle 8i版本开始提供，oracle 10g版本开始不被推荐使用，由dbms_crypto代替，oracle 21c版本正式移除 函数列表： 生成随机数：desgetkey(seed) -&gt; key 加密：desencrypt(input, key) -&gt; encrypted_data 解密：descdecrypt(input, key) -&gt; decrypted_data 生成随机数：des3getkey(which=&gt;0, seed) -&gt; key 加密：des3encrypt(input, key, which=&gt;0, iv=&gt;012345678abcdef) -&gt; encrypted_data 解密：des3decrypt(input, key, which=&gt;0, iv=&gt;012345678abcdef) -&gt; decrypted_data 哈希：md5(input) -&gt; checksum 函数参数：函数参数有2种数据类型：varchar2, raw。与raw类型相比，如果是varchar2类型，参数名需加上_string后缀。比如，raw类型的入参名为input，则varcha2类型入参名为input_string 函数限制： desgetkey：seed长度最短为80字节 desencrypt：input长度是8字节的整数倍；key最短为8字节，超过8字节的部分被丢弃 descdecrypt：input长度是8字节的整数倍；key最短为8字节，超过8字节的部分被丢弃 des3getkey: seed长度最短为80字节 des3encrypt：input长度是8字节的整数倍；which为0时，key最短为16字节，超过16字节的部分被丢弃；which为1时，key最短为24字节，超过24字节的部分被丢弃 des3dencrypt：input长度是8字节的整数倍；which为0时，key最短为16字节，超过16字节的部分被丢弃；which为1时，key最短为24字节，超过24字节的部分被丢弃 md5：无 参考文档 函数介绍：函数背景、注意事项等：https://docs.oracle.com/cd/A97630_01/appdev.920/a96590/adgsec04.htm 函数参数：参数类型、调用示例等：https://docs.oracle.com/cd/B10500_01/appdev.920/a96612/d_obtoo2.htm 以下是上述函数的调用示例：
 ...</p>
   </div>
-  <footer class="entry-footer"><span title='2026-02-24 12:02:52 +0800 CST'>February 24, 2026</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>275 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
-  <a class="entry-link" aria-label="post link to 深度优先遍历" href="http://localhost:1313/posts/algorithm/dfs/"></a>
+  <footer class="entry-footer"><span title='2025-02-19 16:20:00 +0800 CST'>February 19, 2025</span>&nbsp;·&nbsp;<span>10 min</span>&nbsp;·&nbsp;<span>1956 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 1 需求 oracle加密函数" href="http://localhost:1313/posts/projectdocs/1-requirement-oracle-crypto-func/"></a>
 </article>
 
 <article class="post-entry"> 
   <header class="entry-header">
-    <h2 class="entry-hint-parent">逻辑复制
+    <h2 class="entry-hint-parent">数据结构与算法 1 总结
     </h2>
   </header>
   <div class="entry-content">
-    <p>基本概念 逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。
-逻辑数据格式 逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：
-[MsgType：Insert，Relation：test，New Tuple：[a, int, 100]] 从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步。
-接上例，通过一定的解析步骤，我们总能够得到：
-Insert into test(a) values 100::int; 对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。
-与物理复制的区别 逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。
-几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：
--------------- Page Header -------------- Tuple 1 for r1 -------------- Tuple 2 for r1 -------------- Tuple 1 for r2 -------------- Tuple 1 for r3 -------------- Tuple 2 for r2 -------------- 如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。
-逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。
-Reader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。
-逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：
-应用场景
-某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换； 某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异； 某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递； … 架构 如图所示，逻辑复制功能，是两个实例（或生产者与消费者）之间完成的数据同步，通常我们把作为数据源端的实例，称为发布端（Publisher），而准备接收数据并进行回放的实例称为订阅端（Subscriber）。
-发布端 发布端的组成部分，共分为以下几个部分：WALReader、Decoder、Sender，通常是由三个独立的线程，按照其角色完成不同的工作：
-WALReader：主要完成对Xlog日志的读取，即从磁盘上将当前已罗盘的Xlog record读取到内存，并发送给Decoder； Decoder：解码线程，由于WALReader发送来的数据，是物理层面的记录，Decoder会按照特定的规则，将物理信息转换为逻辑信息，从内存上看，使用一个结构体，保存Xlog record中的xid、LSN、DMLType等信息。同时，Decoder还需要将这些信息，按照约定好的协议（Protocol）将数据进行打包，其中应用最广泛的端到端协议是pgoutput（后面会介绍他的协议格式以及细节实现）。Decoder会将这些按照协议进行拼接的逻辑数据存储到私有内存中，当达到一定条件时，将数据发送给Sender线程执行发送。 Sender：将Decoder发送来的数据通过网络发送给订阅端。 发布端如何保证事务一致性 对于数据同步来说，最重要的是事务一致性，如果不能保证一致性，那么逻辑复制将是毫无意义的。而要保证事务一致性，通常主要责任在于发布端，发布端需要确保自己发送逻辑信息的顺序，是严格的，即使不能保证发送顺序一定与WAL日志写入顺序完全一致，但必须保证事务的最终一致性。为了保证事务一致性，在发布端，通常会有以下几个部分保证：
-严格按照commit顺序进行事务发送：事务的提交顺序非常重要，Decoder解码到一条逻辑数据时，并不会立刻发送给Sender，而是将条变更存储起来，直到解码到该事务对应的commit，才将整个事务完发送； 错误重发：当订阅端接收到一个事务的commit时，即代表这个事务经传输完毕，订阅端会发送一个确认LSN给发布端，发布端需要确认LSN是在当前处理LSN的前面，如果此时LSN发生错乱，发布端会立即这条返回的LSN开始，重新发送这些变更； commit时间确认：在Decoder将Xlog信息解码为逻辑协议信息时对于某些类型的消息，会携带commit timestampz，这是该事务提时的瞬时时间戳； 发布端对于内存的管理 在业务系统中，有时不可避免的会出现大事务，通常包含几M甚至百M的事务变更数据，在逻辑复制模块中，上文提到，通常是将所有事务存储于内存，当遇到该事务的commit时，才进行发送。对于这种大事务来说，如果多几条，可能很容易造成内存压力，引起CPU抖动，有影响系统整体性能的可能性。
-为了保证系统整体性能，当遇到这种大事务的时候，通常会设计一个内存阈值，当在内存中已经存储了多条事务变更时，一旦当前内存占用达到阈值，发布端会选择当前内存中一个最大的事务（不一定是完整的，只是transaction size最大）spill to disk；诚然，这会带来一定的IO开销，因为当我们读到被spill的事务的commit时，需要把它从磁盘上读出来，但相比于其带来的内存负荷，这是合理的取舍。
+    <p> 1 概述 1.1 数据结构 数组 链表 二叉树 树 栈 队列 图 1.2 算法 问题 1.2 解法 2 数组 2.1 所有0移动到数组的末尾 2.2 移除数组指定元素 2.3 移除数组重复元素 2.4 移除数组数量大于2的元素 2.5 数组重复元素排序 2.6 第K个最大数 2.7 最大的K个数 2.8 两数之和 参考 1 概述 1.1 数据结构 数组 排序 滑动窗口 去重 碰撞指针：回文串 链表 反转链表 二叉树 递归 树 b树：一个节点存多个值 降低树高度，结和IO机制，降低IO次数 b&#43;树：只有叶子节点存数据 高效：中间节点不存数据，可存更多节点 稳定：查找次数一致 有序：叶子节点组成链表，方便批量查询 b-link树：节点指向右兄弟；每个节点存储High-key 并发：根据High-key，并发场景下，可判断节点是否发生分裂，无需加锁 栈 队列 图 1.2 算法 动态规划
+功能：用表记录所有结果，避免重复计算（斐波那契、最长公共子序列） 问题 回溯：枚举 &#43; 剪枝
+分治
+贪心
 ...</p>
   </div>
-  <footer class="entry-footer"><span title='2026-02-10 16:15:52 +0800 CST'>February 10, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>100 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
-  <a class="entry-link" aria-label="post link to 逻辑复制" href="http://localhost:1313/posts/database/logical_replication/"></a>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>4 min</span>&nbsp;·&nbsp;<span>812 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 数据结构与算法 1 总结" href="http://localhost:1313/posts/algorithm/1-summary/"></a>
 </article>
 
 <article class="post-entry"> 
   <header class="entry-header">
-    <h2 class="entry-hint-parent">0.Readme
+    <h2 class="entry-hint-parent">PostgreSQL 1-1 源码安装 (linux / macos)
     </h2>
   </header>
   <div class="entry-content">
-    <p>关于 把这里当成第一步，开始积累自己的东西，当有一天面对外部变化，能够从从容容、游刃有余。
-我是贾旭辉，我希望能够养成良好的习惯，开始随手记录一些工作中、生活中积累到的东西。
-种下一棵树最好的时间是十年前，其次就是现在了。
--- 2026.02.10 </p>
+    <p>摘要
+本文介绍介绍如何在2种个人PC中，使用源码安装PostgreSQL，包括：
+在Windows操作系统中，如何基于VwWare虚拟机，搭建Linux环境。并在Linux中，通过postgreSQL源码进行编译安装。 在MacOS操作系统中，如何使用云服务器中的Linux操作系统，搭建postgreSQL源码编译与学习环境。 目录
+1 在Windows中安装PostgreSQL 1.1 目的 1.2 准备 1.3 编译源码 1.4 配置快捷命令 2 在MacOS中安装PostgreSQL 2.1 问题 2.2 调研云服务商 2.3 选择云服务器 2.4 配置云服务器 2.5 下载postgreSQL源码 1 在Windows中安装PostgreSQL 1.1 目的 通过postgreSQL源码进行编译安装，主要目的是：
+方便通过源码调试跟踪 直接修改以增加调试信息或新功能 1.2 准备 首先，介绍如何准备centOS虚拟机，并安装git、VSCode、gdb等工具
+已有windows 10/11 x86物理机
+window 10中，安装vmware
+vmware中，安装centOS虚拟机
+http://mirrors.huaweicloud.com/centos/8.4.2105/isos/x86_64/
+centOS中，安装git，以及中文输入法
+centOS中，安装VSCode
+https://code.visualstudio.com/docs/setup/linux#_rhel-fedora-and-centos-based-distributions
+centOS中，安装PostgresSQL依赖的第三方开源软件
+sudo yum install -y readline readline-devel openssl openssl-devel zlib zlib-devel # 但是，部分linux可能会裁剪应用，因此可能需要安装如下软件 sudo yum install -y bison bison-devel flex flex-devel #[参考](https://blog.csdn.net/Linjingke32/article/details/80393576) 安装调试工具
+...</p>
   </div>
-  <footer class="entry-footer"><span title='2026-02-10 16:05:44 +0800 CST'>February 10, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>6 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
-  <a class="entry-link" aria-label="post link to 0.Readme" href="http://localhost:1313/posts/readme/"></a>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>3 min</span>&nbsp;·&nbsp;<span>465 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 1-1 源码安装 (linux / macos)" href="http://localhost:1313/posts/postgresql/1-1-install-postgresql/"></a>
 </article>
+
+<article class="post-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">传统安全 1 密码学
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 密码学综述 本文主要总结常见的密码算法与协议，并不详细介绍原理
+密码算法 对称密码算法 非对称密码算法 哈希算法 完整性校验算法 其他算法 随机数生成算法 密钥派生算法 2 密码算法 2.1 对称加密算法 对称加密算法的基本原理是，输入明文、密钥，对明文进行分组，对每组明文进行多轮线性、非线性运算，比如异或、代换等，得到密文。
+常见的对称加密算法如下：
+算法 发布时间 分组长度 密钥长度 算法 DES 1977 64 64 16 x 置换（E扩展、异或、代换、P置换） 3DES - - - - IDEA 1990 - - - AES 2001 128 128/192/256 10/12/14 x 矩阵运算(字节代换、行移位、列混合、异或) SM4 2012 128 128 32 x 分组运算（异或、代换、移位） SM1 - 128 128 未公开 SM7 - 128 128 未公开 在实现加密的过程中，还有几个基础知识：
+密钥扩展：加密时，会迭代很多轮，每一轮都用1个轮密钥。1个原始密钥，扩展为多个的轮密钥。 加密模式：一个原始明文，分为多个明文组，组与组之间的组合方式如下： 模式 中文 描述 ECB 电子密码本 不同的明文块，用相同的密钥 CBC 密码分组链接 上1密文块，与下一明文块异或 CTR 计数器模式 密钥加密计数器生成密钥流，密文块与密钥流异或 CFB 密码反馈模式 - OFB 输出反馈模式 与CFB类似 常见算法的具体实现原理如下：
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>4 min</span>&nbsp;·&nbsp;<span>711 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 传统安全 1 密码学" href="http://localhost:1313/posts/security/1-1-cryptography/"></a>
+</article>
+
+<article class="post-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 1-2 进程架构
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p> 1 进程架构 1.1 进程架构 1.2 进程启动 1.3 进程通信 2 进程功能 2.1 postgres线程 1.2.1 postmaster进程 1.2.2 postgres进程 1.2.3 wal writer进程 1.2.4 background writer进程 1.2.5 checkpointer进程 1.2.6 autovacuum进程 1.2.7 statistics collector进程 1.2.8 archiver进程 1.2.9 logging collertor进程 1.3 进程通信 3 进程控制 1 进程架构 1.1 进程架构 postgresql 采用1&#43;n&#43;7的进程架构，包括：
+1个postmaster进程 n个postgres进程 7个辅助进程：包括： bg writer进程： checkpointer进程： walwriter进程： autovacuum进程： archiver进程： statistics collector进程： log collectoer进程： 进程架构图如下图所示：
+1.2 进程启动 先启动postmaster进程，再由poastermaster启动n&#43;7进程。
+在postmaster主函数中，进程启动顺序如下：
+main() # [主进程] 启动postmaster进程 PostmasterMain() pqsignal(SIGUSR1, sigusr1_handler); # 注册信号 SysLogger_Start() # [进程7] 启动log collector进程 StartupDataBase() -&gt; StartupProcessMain() # 进行故障恢复 ServerLoop() BackendStartup() SysLogger_Start() # [进程n] 启动posters进程 StartCheckpointer() -&gt; CheckpointerMain() # [进程2] 启动heckpointer进程 StartBackgroundWriter() -&gt; BackgroundWriterMain() # [进程1] 启动bg writer进程 StartWalWriter() -&gt; InitXLOGAccess() WalWriterMain() # [进程3] 启动walwriter进程 StartAutoVacLauncher() # [进程4] 启动autovacuum进程 pgstat_start() # [进程6] 启动 statistics collector进程 pgarch_start() # [进程5] 启动归档进程 maybe_start_bgworker() 1.3 进程通信 2 进程功能 本章介绍各进程的主要功能。
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>5 min</span>&nbsp;·&nbsp;<span>1025 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 1-2 进程架构" href="http://localhost:1313/posts/postgresql/1-2-postgresql-struct/"></a>
+</article>
+
+<article class="post-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 1-3 执行模块
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 整体流程 1.1 执行流程 应用-&gt;驱动：通过驱动的api建立连接，并执行SQL语句 驱动-&gt;服务端：通过libpq协议封装SQL语句，发送至服务端 服务端 postgres线程：接收SQL语句，调用exec_siple_query()开始处理SQL语句 SQL引擎 解析器：通过flex进行词法解析，通过yacc进行语法分析，生成解析树 分析器：对解析树进行语义分析：包括检查表是否存在等，生成查询树 重写器： 计划期：根据查询树生成执行计划 执行器：自顶向下执行各个算子，执行过程中会调用存储引擎统一接口 INSERT / UPDATE / DELETE
+ExecModifyTable 算子：EexecInsert / ExecUpdate / ExecDelete EexecInsert ExecMaterializeSlot ExecBRInsertTriggers /* ROW INSERT 触发器 */ ExecWithCheckOptions /* 检查约束 */ heap_insert /* 存储引擎统一接口 */ ExecInsertIndexTuples ExecARInsertTriggers /* AFTER ROW 触发器 */ ExecProcessReturning SELECT
+ExecIndexScan IndexNext() index_getnext() tid = index_getnext_tid(scan) index_fetch_heap(scan) heap_hot_search_buffer() PageGetItem() </p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>59 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 1-3 执行模块" href="http://localhost:1313/posts/postgresql/1-3-execute/"></a>
+</article>
+<footer class="page-footer">
+  <nav class="pagination">
+    <a class="next" href="http://localhost:1313/posts/page/2/">Next&nbsp;&nbsp;»
+    </a>
+  </nav>
+</footer>
     </main>
     
 <footer class="footer">
@@ -638,20 +756,56 @@ function switchWeChatTab(tabName) {
 <script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
 
 <script>
+
+
 const MY_LEETCODE_USERNAME = "hashmpa"; 
 let lcDataGlobal = null;
 let flaskEditor = null;
 const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
 const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
 
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
 document.addEventListener("DOMContentLoaded", function() {
     initLeetCodeWidget();
 });
 
-
 document.addEventListener("visibilitychange", function() {
     if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
-        console.log("Checking submission status...");
         checkSubmissionStatus(true); 
     }
 });
@@ -667,80 +821,115 @@ function initLeetCodeWidget() {
         linkBtn.style.opacity = "0.5";        
         linkBtn.href = "javascript:void(0);"; 
     }
-
     updateStreakDisplay();
 
     
-    const PROXY_URL = 'https://corsproxy.io/?'; 
-    const TARGET_URL = 'https://leetcode.cn/graphql';
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
     
     const query = `
-    query questionOfToday {
-        todayRecord {
-            date
-            question {
-                questionFrontendId
-                titleSlug
-                translatedTitle 
-                difficulty
-                translatedContent
-                topicTags { translatedName }
-                codeSnippets { langSlug code }
-            }
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
         }
     }`;
 
-    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: query })
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
     })
-    .then(response => response.json())
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
     .then(result => {
-        const record = result.data.todayRecord[0];
-        if (!record) throw new Error("Empty data");
         
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
         lcDataGlobal = {
-            date: record.date,
-            titleSlug: record.question.titleSlug, 
-            link: `/problems/${record.question.titleSlug}/description/`,
-            title: record.question.translatedTitle,
-            difficulty: record.question.difficulty,
-            content: record.question.translatedContent,
-            snippets: record.question.codeSnippets
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
         };
 
-        
         document.querySelector('.leetcode-loading').style.display = 'none';
         document.querySelector('.leetcode-content').style.display = 'block';
 
-        
         if (linkBtn) {
-            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link; 
-            linkBtn.target = "_blank";            
-            linkBtn.style.pointerEvents = "auto"; 
-            linkBtn.style.opacity = "1";          
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
         }
 
-        
         const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
-        if (lastSolved === record.date) {
+        if (lastSolved === todayStr) {
             showSolvedState();
         } else {
-            
             document.getElementById('lc-state-todo').style.display = 'block';
-            document.getElementById('lc-date').innerText = record.date;
-            document.getElementById('lc-title').innerText = `${record.question.questionFrontendId}. ${record.question.translatedTitle}`;
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
             
             const diffEl = document.getElementById('lc-difficulty');
             const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
-            diffEl.innerText = diffMap[record.question.difficulty] || record.question.difficulty;
-            diffEl.className = `lc-difficulty diff-${record.question.difficulty.toLowerCase()}`;
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
         }
     })
     .catch(err => {
-        console.error("LeetCode Init Error:", err);
-        document.querySelector('.leetcode-loading').innerHTML = "加载失败 (请检查网络)";
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
     });
 }
 
@@ -815,30 +1004,26 @@ function checkIfGapIsOnlyWeekends(startDate, endDate) {
 function checkSubmissionStatus(isSilent = false) {
     if (!lcDataGlobal) return;
     
-    const PROXY_URL = 'https://corsproxy.io/?'; 
-    const TARGET_URL = 'https://leetcode.cn/graphql';
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
 
     const query = `
     query recentSubmissions($userSlug: String!) {
         recentSubmissions(userSlug: $userSlug) {
             status
-            question {
-                titleSlug
-            }
+            question { titleSlug }
             submitTime
         }
     }`;
 
     const checkBtn = document.getElementById('btn-check-status');
-    if(checkBtn) {
-        checkBtn.innerText = "⏳ Verifying...";
-        checkBtn.disabled = true;
-    }
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
 
-    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+    fetch(LEETCODE_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
+            operationName: "recentSubmissions",
             query: query,
             variables: { userSlug: MY_LEETCODE_USERNAME }
         })

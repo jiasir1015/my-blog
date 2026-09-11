@@ -1,0 +1,1899 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>海量 2 设计 profile | Kernel Notes</title>
+<meta name="keywords" content="身份认证, 设计文档">
+<meta name="description" content="1 Oracle兼容性-支持profile功能
+1.1 功能简述
+本特性实现与oracle profile相同的功能，支持为不同用户设置7个不同的配置参数：
+
+failed_login_attempts
+password_lock_time
+password_life_time
+password_grace_time
+password_reuse_time
+password_reuse_max
+idle_time
+
+简单使用示例如下：
+CREATE PROFILE pro1 LIMIT failed_login_attempts 10;
+CREATE USER u1 PASSWORD &#39;u1.pass1&#39;;
+ALTER USER u1 PROFILE u1;
+1.2 实现方案
+一、元数据
+本特性的关键实现为：对用户提供DDL接口，在内核中存储配置数据。因此，在介绍代码流程前，先介绍接口与元数据。
+
+
+新增GUC参数resource_limit (与oracle参数名一致)
+控制是否启用oracle profile功能。
+如果该参数为on，以下5个guc参数则不再生效：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max]。另外，对于已经过身份认证的连接，session_timeout也不再生效，相关功能均由profile中的用户级参数控制。
+对于新安装的集群、旧版本升级的集群，该参数的值存在差异：
+
+
+新安装：新安装的数据库，即3.0.8版本及之后，该guc参数值默认为on（初始值为off，由initdb自动设置为on）
+
+
+升级：从3.0.8之前版本，升级到3.0.8版本时，在升级的过程中，该参数的值仍然是off，即升级上来默认不可用profile功能
+SELECT * FROM pg_settings WHERE name = &#39;resource_limit&#39;;
+
+    -[ RECORD 1 ]-------------------------------------------
+    name       | resource_limit
+    setting    | on         -- 默认为on （由initdb设置为on，从旧版本升级到新版本时，升级脚本会将该参数设置为off）
+    unit       |
+    category   | Ungrouped
+    short_desc | Used to enable profile feature
+    extra_desc | default on
+    context    | postmaster -- 需重启生效
+    vartype    | bool
+    source     | default
+    min_val    |
+    max_val    |
+    enumvals   |
+    boot_val   | off
+    reset_val  | off
+    sourcefile |
+    sourceline |
+
+
+
+
+修改6个GUC参数的生效条件
+当GUC参数resource_limit取值为on时，以下6个GUC参数不再生效：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max, session_timeout]">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/projectdocs/2-design-profile/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/projectdocs/2-design-profile/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/projectdocs/2-design-profile/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="海量 2 设计 profile">
+  <meta property="og:description" content="1 Oracle兼容性-支持profile功能 1.1 功能简述 本特性实现与oracle profile相同的功能，支持为不同用户设置7个不同的配置参数：
+failed_login_attempts password_lock_time password_life_time password_grace_time password_reuse_time password_reuse_max idle_time 简单使用示例如下：
+CREATE PROFILE pro1 LIMIT failed_login_attempts 10; CREATE USER u1 PASSWORD &#39;u1.pass1&#39;; ALTER USER u1 PROFILE u1; 1.2 实现方案 一、元数据 本特性的关键实现为：对用户提供DDL接口，在内核中存储配置数据。因此，在介绍代码流程前，先介绍接口与元数据。
+新增GUC参数resource_limit (与oracle参数名一致)
+控制是否启用oracle profile功能。
+如果该参数为on，以下5个guc参数则不再生效：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max]。另外，对于已经过身份认证的连接，session_timeout也不再生效，相关功能均由profile中的用户级参数控制。
+对于新安装的集群、旧版本升级的集群，该参数的值存在差异：
+新安装：新安装的数据库，即3.0.8版本及之后，该guc参数值默认为on（初始值为off，由initdb自动设置为on）
+升级：从3.0.8之前版本，升级到3.0.8版本时，在升级的过程中，该参数的值仍然是off，即升级上来默认不可用profile功能
+SELECT * FROM pg_settings WHERE name = &#39;resource_limit&#39;; -[ RECORD 1 ]------------------------------------------- name | resource_limit setting | on -- 默认为on （由initdb设置为on，从旧版本升级到新版本时，升级脚本会将该参数设置为off） unit | category | Ungrouped short_desc | Used to enable profile feature extra_desc | default on context | postmaster -- 需重启生效 vartype | bool source | default min_val | max_val | enumvals | boot_val | off reset_val | off sourcefile | sourceline | 修改6个GUC参数的生效条件
+当GUC参数resource_limit取值为on时，以下6个GUC参数不再生效：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max, session_timeout]">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-03-06T11:32:00+08:00">
+    <meta property="article:modified_time" content="2026-08-14T17:47:31+08:00">
+    <meta property="article:tag" content="身份认证">
+    <meta property="article:tag" content="设计文档">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="海量 2 设计 profile">
+<meta name="twitter:description" content="1 Oracle兼容性-支持profile功能
+1.1 功能简述
+本特性实现与oracle profile相同的功能，支持为不同用户设置7个不同的配置参数：
+
+failed_login_attempts
+password_lock_time
+password_life_time
+password_grace_time
+password_reuse_time
+password_reuse_max
+idle_time
+
+简单使用示例如下：
+CREATE PROFILE pro1 LIMIT failed_login_attempts 10;
+CREATE USER u1 PASSWORD &#39;u1.pass1&#39;;
+ALTER USER u1 PROFILE u1;
+1.2 实现方案
+一、元数据
+本特性的关键实现为：对用户提供DDL接口，在内核中存储配置数据。因此，在介绍代码流程前，先介绍接口与元数据。
+
+
+新增GUC参数resource_limit (与oracle参数名一致)
+控制是否启用oracle profile功能。
+如果该参数为on，以下5个guc参数则不再生效：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max]。另外，对于已经过身份认证的连接，session_timeout也不再生效，相关功能均由profile中的用户级参数控制。
+对于新安装的集群、旧版本升级的集群，该参数的值存在差异：
+
+
+新安装：新安装的数据库，即3.0.8版本及之后，该guc参数值默认为on（初始值为off，由initdb自动设置为on）
+
+
+升级：从3.0.8之前版本，升级到3.0.8版本时，在升级的过程中，该参数的值仍然是off，即升级上来默认不可用profile功能
+SELECT * FROM pg_settings WHERE name = &#39;resource_limit&#39;;
+
+    -[ RECORD 1 ]-------------------------------------------
+    name       | resource_limit
+    setting    | on         -- 默认为on （由initdb设置为on，从旧版本升级到新版本时，升级脚本会将该参数设置为off）
+    unit       |
+    category   | Ungrouped
+    short_desc | Used to enable profile feature
+    extra_desc | default on
+    context    | postmaster -- 需重启生效
+    vartype    | bool
+    source     | default
+    min_val    |
+    max_val    |
+    enumvals   |
+    boot_val   | off
+    reset_val  | off
+    sourcefile |
+    sourceline |
+
+
+
+
+修改6个GUC参数的生效条件
+当GUC参数resource_limit取值为on时，以下6个GUC参数不再生效：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max, session_timeout]">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "海量 2 设计 profile",
+      "item": "http://localhost:1313/posts/projectdocs/2-design-profile/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "海量 2 设计 profile",
+  "name": "海量 2 设计 profile",
+  "description": "1 Oracle兼容性-支持profile功能 1.1 功能简述 本特性实现与oracle profile相同的功能，支持为不同用户设置7个不同的配置参数：\nfailed_login_attempts password_lock_time password_life_time password_grace_time password_reuse_time password_reuse_max idle_time 简单使用示例如下：\nCREATE PROFILE pro1 LIMIT failed_login_attempts 10; CREATE USER u1 PASSWORD \u0026#39;u1.pass1\u0026#39;; ALTER USER u1 PROFILE u1; 1.2 实现方案 一、元数据 本特性的关键实现为：对用户提供DDL接口，在内核中存储配置数据。因此，在介绍代码流程前，先介绍接口与元数据。\n新增GUC参数resource_limit (与oracle参数名一致)\n控制是否启用oracle profile功能。\n如果该参数为on，以下5个guc参数则不再生效：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max]。另外，对于已经过身份认证的连接，session_timeout也不再生效，相关功能均由profile中的用户级参数控制。\n对于新安装的集群、旧版本升级的集群，该参数的值存在差异：\n新安装：新安装的数据库，即3.0.8版本及之后，该guc参数值默认为on（初始值为off，由initdb自动设置为on）\n升级：从3.0.8之前版本，升级到3.0.8版本时，在升级的过程中，该参数的值仍然是off，即升级上来默认不可用profile功能\nSELECT * FROM pg_settings WHERE name = \u0026#39;resource_limit\u0026#39;; -[ RECORD 1 ]------------------------------------------- name | resource_limit setting | on -- 默认为on （由initdb设置为on，从旧版本升级到新版本时，升级脚本会将该参数设置为off） unit | category | Ungrouped short_desc | Used to enable profile feature extra_desc | default on context | postmaster -- 需重启生效 vartype | bool source | default min_val | max_val | enumvals | boot_val | off reset_val | off sourcefile | sourceline | 修改6个GUC参数的生效条件\n当GUC参数resource_limit取值为on时，以下6个GUC参数不再生效：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max, session_timeout]\n",
+  "keywords": [
+    "身份认证", "设计文档"
+  ],
+  "articleBody": "1 Oracle兼容性-支持profile功能 1.1 功能简述 本特性实现与oracle profile相同的功能，支持为不同用户设置7个不同的配置参数：\nfailed_login_attempts password_lock_time password_life_time password_grace_time password_reuse_time password_reuse_max idle_time 简单使用示例如下：\nCREATE PROFILE pro1 LIMIT failed_login_attempts 10; CREATE USER u1 PASSWORD 'u1.pass1'; ALTER USER u1 PROFILE u1; 1.2 实现方案 一、元数据 本特性的关键实现为：对用户提供DDL接口，在内核中存储配置数据。因此，在介绍代码流程前，先介绍接口与元数据。\n新增GUC参数resource_limit (与oracle参数名一致)\n控制是否启用oracle profile功能。\n如果该参数为on，以下5个guc参数则不再生效：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max]。另外，对于已经过身份认证的连接，session_timeout也不再生效，相关功能均由profile中的用户级参数控制。\n对于新安装的集群、旧版本升级的集群，该参数的值存在差异：\n新安装：新安装的数据库，即3.0.8版本及之后，该guc参数值默认为on（初始值为off，由initdb自动设置为on）\n升级：从3.0.8之前版本，升级到3.0.8版本时，在升级的过程中，该参数的值仍然是off，即升级上来默认不可用profile功能\nSELECT * FROM pg_settings WHERE name = 'resource_limit'; -[ RECORD 1 ]------------------------------------------- name | resource_limit setting | on -- 默认为on （由initdb设置为on，从旧版本升级到新版本时，升级脚本会将该参数设置为off） unit | category | Ungrouped short_desc | Used to enable profile feature extra_desc | default on context | postmaster -- 需重启生效 vartype | bool source | default min_val | max_val | enumvals | boot_val | off reset_val | off sourcefile | sourceline | 修改6个GUC参数的生效条件\n当GUC参数resource_limit取值为on时，以下6个GUC参数不再生效：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max, session_timeout]\n新增3个PROFILE的SQL语法 (与oracle语法格式一致)\nCREATE PROFILE profilename LIMIT {setting_name {setting_value | UNLIMITED} ...} ALTER PROFILE profilename LIMIT {setting_name {setting_value | UNLIMITED} ...} DROP PROFILE [IF EXISTS] profilename [, profilename, ...] 扩展2个SQL语法（与oracle语法格式一致）\nCREATE USER ... [PROFILE profilename] ... ALTER USER ... [PROFILE profilename] ... 新增系统表 vb_user_profiles\n存储用户与profile的对应关系\n新增系统表索引 btree(roloid)\n-- 示例语法 ALTER USER user1 PROFILE profile1; roloid | rolname | profile -------+---------+--------- 16384 | user1 | profile1 -- 示例行 新增系统表 vb_profiles\n该系统表存储profile中各个配置项的值，以及值的约束。\n新增系统表索引 btree(profile, setname)。\n备注：oracle对应的系统表为dba_profiles，本需求还会新增一个名为dba_profiles的系统视图，本质就是查询该表中的4列\n-- 示例语法 CREATE PROFILE profile1 LIMIT failed_login_attempts 10; profile | setname | setval | valunit | valtype | valmin | valmax | valdefault | settype ------------+---------------------------+--------------------+---------+----------+---------+------------+------------+---------- profile1 | failed_login_attempts | 10 | times | int | 1 | 2147483646 | 10 | password -- 示例行 该系统表中，有7行初始数据，即7个profile配置项，以及默认参数，默认参数的取值与oracle一致，都为unlimited。\nprofile | setname | setval | valunit | valtype | valmin | valmax | valdefault | settype -- unlimit含义 ------------+---------------------------+--------------------+---------+--------------------+------------+------------+---------- default | failed_login_attempts | unlimited | times | int | 1 | 2147483646 | 10 | password -- 等价INT_MAX，允许无限次登录失败 default | password_lock_time | unlimited | days | double | 0.00001 | 24855 | 1 | password -- 等价0，账号永远不锁 default | password_life_time | unlimited | days | double | 0.00001 | 24855 | 180 | password -- 等价DBL_MAX，密码永远有效 default | password_grace_time | unlimited | days | double | 0.00001 | 24855 | 7 | password -- 等价DBL_MAX，密码过期也永远可用 default | password_reuse_time | unlimited | days | double | 0.00001 | 24855 | 1 | password -- 等价0，密码可无限复用 default | password_reuse_max | unlimited | times | int | 1 | 2147483646 | 1 | password -- 等价INT_MAX，密码可无限复用 default | idle_time | unlimited | minutes | double | 0.00001 | 2147483646 | 10 | kernel -- 等价0，会话永远不过期 (与guc session_timeout 一致) -- 0.00001 day = 约0.8 second -- 24855 day = 约70 year 参考：以下是原guc参数的取值范围\nSELECT name,setting, unit, vartype, short_desc, extra_desc, min_val, max_val, boot_val, reset_val FROM pg_settings WHERE name in ('failed_login_attempts', 'password_lock_time', 'password_effect_time', 'password_reuse_time', 'password_reuse_max', 'session_timeout'); name | setting | short_desc | extra_desc | min_val | max_val | boot_val | reset_val ----------------------+---------+---------------------------------------------------------+-------------------------------------+---------+---------+----------+----------- int failed_login_attempts | 10 | max number of login attempts. | | 1 | 1000 | 5 | 5 reeal password_effect_time | 90 day | password effective time. | | 30 | 36500 | 36500 | 30 -- 天 int password_lock_time | 1 min | password lock time | | 1 | 525600 | 1440 | 1440 -- 分钟 int password_reuse_max | 0 | max times password can reuse. | | 1 | 100 | 3 | 3 real password_reuse_time | 60 | max days password can reuse. | | 30 | 90 | 90 | 90 -- 天 int session_timeout | 600 | Set the maximum allowed duration of any unused session. | A value of 0 turns off the timeout. | 0 | 86400 | 600 | 600 -- 秒 新增系统视图 dba_profiles (与oracle视图名与视图结构一致)\noracle只有dba_profiles，无user_profiles和all_profiles\nCREATE OR REPLACE VIEW SYS.DBA_PROFILES AS SELECT profile setname resource_name settype resource_type setval limit FROM vb_profiles; 默认查询结果如下：\nSELECT * FROM dba_profiles; profile | resource_name | resource_type | limit ---------+-----------------------+---------------+----------- default | failed_login_attempts | password | unlimited default | password_lock_time | password | unlimited default | password_life_time | password | unlimited default | password_grace_time | password | unlimited default | password_reuse_time | password | unlimited default | password_reuse_max | password | unlimited default | idle_time | kernel | unlimited 修改系统视图 DBA_USERS\n旧视图\nCREATE OR REPLACE VIEW SYS.DBA_USERS AS SELECT CAST(quote_ident_redwood(pga.rolname) AS VARCHAR2(64)) AS username, pga.oid AS user_id, ..., NULL::character varying(30) AS profle, -- 修改点 ... FROM pg_authid pga, pg_database pgd, pg_tablespace pgt, pg_user_status pgus -- 修改点 WHERE ((pgd.datname = current_database()) AND (pgd.dattablespace = pgt.oid) AND (pgus.roloid = pga.oid)); -- 修改点 新视图\nCREATE OR REPLACE VIEW SYS.DBA_USERS AS SELECT CAST(quote_ident_redwood(pga.rolname) AS VARCHAR2(64)) AS username, pga.oid AS user_id, ..., pgp.profile varying(64) AS profle, ----------------------- 修改 ... FROM pg_authid pga, vb_user_profiles pgp, pg_database pgd, pg_tablespace pgt, pg_user_status pgus -------------------- 新增 WHERE ((pgd.datname = current_database()) AND (pgd.dattablespace = pgt.oid) AND (pgus.roloid = pga.oid)) AND (pgp.roloid = pga.oid); -------------------------- 新增 影响系统视图 USER_USERS 与 ALL_USERS：这两个视图本质是从DBA_USERS，DBA_USERS中profile列内容变化，查询结果也会发生变化。\n二、数据库启动流程 在启动数据库时，需检查是否需要初始化pg_profiles系统表。一个集群中，该初始化操作永远只会触发一次。\n此处初始化的意义是，用户查询DBA_USERS视图时，profile列的表现与oralce一致，即所有用户都有profile，未主动设置profile的用户，其profile为default。对于已存在的旧用户，pg_profiles系统表中还未记录其profile信息，需要在pg_profiles中记录其profile为default。\n同步流程如下：\n1. 启动数据库 2. 读取GUC参数resource_limit 3. 如果resource_limit为on，且pg_profiles系统表为空，则表示首次使用profile功能，此时需初始化pg_profiles： 1. 遍历pg_authdid系统表，读取所有的[roloid, rolname] 2. 依次构造pg_profiles系统表tuple [roloid=roloid, rolname=rolname, profile=default] 3. 以此将tuple插入至pg_profiles系统表中 之后，每次CREATE USER时，即使用户未为用户指定profile，也会默认向pg_profiles中插入一行，表示用户默认使用default profile。\n三、定义PROFILE参数流程 CREATE PROFILE\n1. 用户执行SQL: CREATE PROFILE profilename LIMIT {setting_name {setting_value | UNLIMITED} ...} 2. 内核解析SQL：生成CreateProfileStmt语法树 3. 内核执行SQL：在DDL处理主函数中，处理CreateProfileStmt语法树 1. 检查resource_limit参数是否开启 2. 检查用户是否有CreateRole权限 3. 检查profilename是否已存在 4. 检查setting_name是否在7个配置项白名单中 5. 检查setting_value的值是否符合约束 6. 构造pg_profile_settings系统表tuple：[profile=profilename, setname=setting_name, setval=setting_value]，剩下的值[valunit,valtype,valmin,valmax,valdefault,settype]来自默认值 7. 将tuple插入到pg_profile_settings中 ALTER PROFILE\n1. 用户执行SQL: ALTER PROFILE profilename LIMIT [setting_name {setting_value | UNLIMITED} ...] 2. 内核解析SQL：生成AlterProfileStmt语法树 3. 内核执行SQL：在DDL处理主函数中，处理AlterProfileStmt语法树 1. 检查resource_limit参数是否开启 2. 检查用户是否有CreateRole权限 3. 检查profilename是否已存在 4. 检查setting_name是否在7个配置项白名单中 5. 检查setting_value的值是否符合约束 6. 如果系统表pg_profile_settings中未存在对应的setting_name 构造系统表tuple：[profile=profilename, setname=setting_name, setval=setting_value],剩下的值[valunit,valtype,valmin,valmax,valdefault,settype]来自默认值 将tuple插入至系统表 7. 如果系统表中已存在对应的setting_name 则更新tuple中的setting_value ALTER USER .. PROFILE\n1. 用户执行SQL：ALTER USER username ... [PROFILE profilename] ... 2. 内核解析SQL：生成AlterRoleStmt语法树 3. 内核执行SQL：在DDL处理主函数中，处理AlterRoleStmt语法树，首先检查用户是否有CreateRole权限，然后处理profile参数： 1. 检查resource_limit参数是否开启 2. 检查profilename是否已存在 3. 获取用户对应的roleid 4. 如果系统表pg_profiles中未存在对应的role与profile关系 构造系统表tuple，[roloid=roloid, rolname=username, profile=profilename] 将tuple插入至系统表 5. 如果系统表pg_profiles中已存在对应的role与profile关系 则更新tuple中的profile 四、使用PROFILE参数流程 首先，需要统计哪些场景中会使用到相关GUC\n场景一：用户建立连接\n在该场景中，可能使用到4个GUC参数\n# 此处以未开启线程池为例 PostgresMain # 第一阶段：接受用户的密码，并进行一系列检查 InitBackendWorker InitSession CheckAuthentication PerformAuthentication port-\u003eprotocol_config-\u003efn_authenticate ClientAuthentication # 1. 从pg_hba.conf中，读取password校验方式 hba_getauthmethod sendAuthRequest # 2. 接收客户端的password，检查password是否正确 recv_and_check_password_packet crypt_verify # 3. 从系统表pg_user_status中，获取rolstatus字段，判断用户是否被锁 GetAccountLockedStatus SearchSysCache1('pg_user_status') # 4. 无论密码正确与否，更新与锁定账号相关的参数 if role is lock or unlock: TryUnlockAccount GetPasswordTimeOfTuple transform 'password_lock_time' UpdateUnlockAccountTuples # 5. 如果密码失败次数较多，锁定账户 if passwrong: if master: TryLockAccount if \u003e 'failed_login_attempts' tableam_tops_modify_tuple('pg_user_status') elif standby: UpdateFailCountToHashTable if \u003e 'failed_login_attempts' lock # 6. 如果密码正确，检查密码有效期（仅vastbase有此函数） checkPasswordEffect getLeftEffectSpan transform 'password_effect_time' if leftday \u003c 0: 'ERROR: password expired' # 第二阶段：循环接收用户的其他数据，比如SQL语句 for (;;) ReadCommand # 此处，每接收一条客户端的消息，都会检查一次 session_timeout # 如果开启profile，此处需要缓存该用户的profile idle_time参数，否则，每次都从profile系统表中读取，对性能影响较大 # 理论上，如果无用户更新profile idle_time参数，一个连接缓存一次即可，即一个连接仅需读取一次系统表 if \u003e 'session_timeout': 'ERROR: timeout' exec_simple_query('SQL') 场景二、用户执行DDL\n在该场景中，可能使用到2个GUC参数\nexec_simple_query('CREATE USER ..') ... CreateRole AddAuthHistory transform 'password_reuse_time' systable_beginscan('pg_auth_history') if password \u003e 'password_reuse_time' or 'password_reuse_max': ok exec_simple_query('ALTER USER ..') AlterRole AddAuthHistory 在所有使用guc参数的地方，均能获取到当前登录用户的oid。接下来，只需在代码中，所有使用guc参数的地方，判断使用guc的值，还是profile中配置的值即可。\n以’Failed_login_attempts’参数为例，使用guc参数的代码将修改为：\n旧代码\nvoid TryLockAccount() { ... if (u_sess-\u003eattr.attr_security.Failed_login_attempts \u003e 0 \u0026\u0026 failedcount \u003e= u_sess-\u003eattr.attr_security.Failed_login_attempts) { .. } .. } 新代码\nvoid TryLockAccount() { ... ProfileVal setting = get_setting_from_guc_or_profile(PT_FAILED_LOGIN_ATTEMPTS); if (setting.intval \u003e 0 \u0026\u0026 failedcount \u003e= setting.intval) { .. } .. } ProfileVal get_setting_from_guc_or_profile(ProfileType type) { ProfileVal setting = {0}; if (!resource_limit) { /* 如果未开启profile功能，则使用guc参数 */ setting.intval = u_sess-\u003eattr.attr_security.Failed_login_attempts; } else { /* 如果未开启profile功能 */ roloid = GetCurrentUser(); /* 首先，从系统表pg_profiles中，查找用户使用的profile */ profile = catalog_find_user_profile(roloid); /* 然后，从系统表pg_profile_settings中，查找profile中具体的配置项的值 */ tuple = catalog_find_profile_setting(profile, type); setting.intval = tuple.setval; } return setting; } typedef union { int intval; double realval; char *strval; } ProfileVal; typedef enum { PT_FAILED_LOGIN_ATTEMPTS, PT_PASSWORD_LIFE_TIME, PT_PASSWORD_GRACE_TIME, PT_PASSWORD_REUSE_TIME, PT_PASSWORD_REUSE_MAX, PT_PASSWORD_REUSE_TIME, PT_IDLE_TIME } ProfileType; 1.3 接口说明 本特性变更的参数如下，参数的具体说明请看上一章：\n新增GUC参数：resource_limit\n修改6个GUC参数的生效条件：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max, session_timeout]\n新增3个PROFILE的SQL语法：\nCREATE PROFILE profilename LIMIT {setting_name {setting_value | UNLIMITED} ...} ALTER PROFILE profilename LIMIT [setting_name {setting_value | UNLIMITED} ...] DROP PROFILE [IF EXISTS] profilename [, profilename, ...] 扩展2个SQL语法\nCREATE USER ... [PROFILE profilename] ... ALTER USER ... [PROFILE profilename] ... 新增系统表 vb_user_profiles\n新增系统表 vb_profiles\n修改系统表 pg_dependcy\n新增系统视图 dba_profiles\n修改系统视图 DBA_USERS：原来profile列的值都为空，现在不为空\n影响系统视图 USER_USERS 与 ALL_USERS的查询结果：原来profile列的值都为空，现在不为空\n1.4 内存管理 本特性主要占用的内存如下：\nLocalBuffer：如果开启profile功能，需要缓存pg_profiles与pg_profile_settings系统表中的数据。大部分场景中，缓存大小数据量级为几十k。 其他内存占用几乎可忽略。\n1.5 安全 访问控制：在处理CREATE PROFILE, ALTER PROFILE, DROP PROFILE语法时，需判断用户是否具有CreateRole权限。 备注：CreateRole是一个控制范围较大的权限，CREATE USER, ALTER USER, DROP USER等均由CreateRole这一个权限控制。 安全审计：在处理CREATE PROFILE, ALTER PROFILE, DROP PROFILE语法时，适配统一审计特性。 1.6 性能 本特性仅影响建立连接的过程，不影响数据库处理SQL的性能。\n1.7 专利 不涉及\n1.8 升级管理 部署类型 行为说明 新安装 新增1个guc resource_limit=on, 无效6个guc [failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max, session_timeout]，新增5个PROFILE语法，新增2个系统表[pg_profiles，pg_profile_settings]，新增1行系统表行pg_dependcy，新增1个视图dba_profiles，修改3个视图[dba_users, user_users, all_users] 升级前 无变化 升级时 设置resource_limit=off 升级后 新增1个guc resource_limit=on, 无效6个guc [failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max, session_timeout]，新增5个PROFILE语法，新增2个系统表[pg_profiles，pg_profile_settings]，新增1行系统表行pg_dependcy，新增1个视图dba_profiles，修改3个视图[dba_users, user_users, all_users] 升级失败 删除新增guc，SQL语法，系统表，视图，还原变更的视图 1.9 其他说明 无\n用户与数据库建立连接 查询profile系统表，将用户的profile配置，缓存在u_sess中 检查用户密码有效期、检查session_timoue等时 ",
+  "wordCount" : "1256",
+  "inLanguage": "en",
+  "datePublished": "2025-03-06T11:32:00+08:00",
+  "dateModified": "2026-08-14T17:47:31+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/projectdocs/2-design-profile/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      海量 2 设计 profile
+    </h1>
+    <div class="post-meta">
+      <span title='2025-03-06 11:32:00 +0800 CST'>March 6, 2025</span>&nbsp;·&nbsp;<span>6 min</span>&nbsp;·&nbsp;<span>1256 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#1-oracle%e5%85%bc%e5%ae%b9%e6%80%a7-%e6%94%af%e6%8c%81profile%e5%8a%9f%e8%83%bd" aria-label="1 Oracle兼容性-支持profile功能">1 Oracle兼容性-支持profile功能</a><ul>
+                        
+                <li>
+                    <a href="#11-%e5%8a%9f%e8%83%bd%e7%ae%80%e8%bf%b0" aria-label="1.1 功能简述">1.1 功能简述</a></li>
+                <li>
+                    <a href="#12-%e5%ae%9e%e7%8e%b0%e6%96%b9%e6%a1%88" aria-label="1.2 实现方案">1.2 实现方案</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e5%85%83%e6%95%b0%e6%8d%ae" aria-label="一、元数据">一、元数据</a></li>
+                <li>
+                    <a href="#%e4%ba%8c%e6%95%b0%e6%8d%ae%e5%ba%93%e5%90%af%e5%8a%a8%e6%b5%81%e7%a8%8b" aria-label="二、数据库启动流程">二、数据库启动流程</a></li>
+                <li>
+                    <a href="#%e4%b8%89%e5%ae%9a%e4%b9%89profile%e5%8f%82%e6%95%b0%e6%b5%81%e7%a8%8b" aria-label="三、定义PROFILE参数流程">三、定义PROFILE参数流程</a></li>
+                <li>
+                    <a href="#%e5%9b%9b%e4%bd%bf%e7%94%a8profile%e5%8f%82%e6%95%b0%e6%b5%81%e7%a8%8b" aria-label="四、使用PROFILE参数流程">四、使用PROFILE参数流程</a></li></ul>
+                </li>
+                <li>
+                    <a href="#13-%e6%8e%a5%e5%8f%a3%e8%af%b4%e6%98%8e" aria-label="1.3 接口说明">1.3 接口说明</a></li>
+                <li>
+                    <a href="#14-%e5%86%85%e5%ad%98%e7%ae%a1%e7%90%86" aria-label="1.4 内存管理">1.4 内存管理</a></li>
+                <li>
+                    <a href="#15-%e5%ae%89%e5%85%a8" aria-label="1.5 安全">1.5 安全</a></li>
+                <li>
+                    <a href="#16-%e6%80%a7%e8%83%bd" aria-label="1.6 性能">1.6 性能</a></li>
+                <li>
+                    <a href="#17-%e4%b8%93%e5%88%a9" aria-label="1.7 专利">1.7 专利</a></li>
+                <li>
+                    <a href="#18-%e5%8d%87%e7%ba%a7%e7%ae%a1%e7%90%86" aria-label="1.8 升级管理">1.8 升级管理</a></li>
+                <li>
+                    <a href="#19-%e5%85%b6%e4%bb%96%e8%af%b4%e6%98%8e" aria-label="1.9 其他说明">1.9 其他说明</a>
+                </li>
+            </ul>
+            </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h1 id="1-oracle兼容性-支持profile功能">1 Oracle兼容性-支持profile功能<a hidden class="anchor" aria-hidden="true" href="#1-oracle兼容性-支持profile功能">#</a></h1>
+<h2 id="11-功能简述">1.1 功能简述<a hidden class="anchor" aria-hidden="true" href="#11-功能简述">#</a></h2>
+<p>本特性实现与oracle profile相同的功能，支持为不同用户设置7个不同的配置参数：</p>
+<ol>
+<li>failed_login_attempts</li>
+<li>password_lock_time</li>
+<li>password_life_time</li>
+<li>password_grace_time</li>
+<li>password_reuse_time</li>
+<li>password_reuse_max</li>
+<li>idle_time</li>
+</ol>
+<p>简单使用示例如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">pro1</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="n">failed_login_attempts</span><span class="w"> </span><span class="mi">10</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">&#39;u1.pass1&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">u1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h2 id="12-实现方案">1.2 实现方案<a hidden class="anchor" aria-hidden="true" href="#12-实现方案">#</a></h2>
+<h3 id="一元数据">一、元数据<a hidden class="anchor" aria-hidden="true" href="#一元数据">#</a></h3>
+<p>本特性的关键实现为：对用户提供DDL接口，在内核中存储配置数据。因此，在介绍代码流程前，先介绍接口与元数据。</p>
+<ol>
+<li>
+<p>新增GUC参数resource_limit (与oracle参数名一致)<br>
+控制是否启用oracle profile功能。<br>
+如果该参数为on，以下5个guc参数则不再生效：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max]。另外，对于已经过身份认证的连接，session_timeout也不再生效，相关功能均由profile中的用户级参数控制。<br>
+对于新安装的集群、旧版本升级的集群，该参数的值存在差异：</p>
+<ul>
+<li>
+<p>新安装：新安装的数据库，即3.0.8版本及之后，该guc参数值默认为on（初始值为off，由initdb自动设置为on）</p>
+</li>
+<li>
+<p>升级：从3.0.8之前版本，升级到3.0.8版本时，在升级的过程中，该参数的值仍然是off，即升级上来默认不可用profile功能</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_settings</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;resource_limit&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="o">-</span><span class="p">[</span><span class="w"> </span><span class="n">RECORD</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="p">]</span><span class="c1">-------------------------------------------
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">name</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="n">resource_limit</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">setting</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="k">on</span><span class="w">         </span><span class="c1">-- 默认为on （由initdb设置为on，从旧版本升级到新版本时，升级脚本会将该参数设置为off）
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">unit</span><span class="w">       </span><span class="o">|</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">category</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="n">Ungrouped</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">short_desc</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">Used</span><span class="w"> </span><span class="k">to</span><span class="w"> </span><span class="n">enable</span><span class="w"> </span><span class="n">profile</span><span class="w"> </span><span class="n">feature</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">extra_desc</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="k">default</span><span class="w"> </span><span class="k">on</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">context</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">postmaster</span><span class="w"> </span><span class="c1">-- 需重启生效
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">vartype</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">bool</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">source</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="k">default</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">min_val</span><span class="w">    </span><span class="o">|</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">max_val</span><span class="w">    </span><span class="o">|</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">enumvals</span><span class="w">   </span><span class="o">|</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">boot_val</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="k">off</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">reset_val</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="k">off</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">sourcefile</span><span class="w"> </span><span class="o">|</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">sourceline</span><span class="w"> </span><span class="o">|</span><span class="w">
+</span></span></span></code></pre></div></li>
+</ul>
+</li>
+<li>
+<p>修改6个GUC参数的生效条件<br>
+当GUC参数resource_limit取值为on时，以下6个GUC参数不再生效：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max, session_timeout]</p>
+</li>
+<li>
+<p>新增3个PROFILE的SQL语法 (与oracle语法格式一致)</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">profilename</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="err">{</span><span class="n">setting_name</span><span class="w"> </span><span class="err">{</span><span class="n">setting_value</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">UNLIMITED</span><span class="err">}</span><span class="w"> </span><span class="p">...</span><span class="err">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">profilename</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="err">{</span><span class="n">setting_name</span><span class="w"> </span><span class="err">{</span><span class="n">setting_value</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">UNLIMITED</span><span class="err">}</span><span class="w"> </span><span class="p">...</span><span class="err">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="p">[</span><span class="k">IF</span><span class="w"> </span><span class="k">EXISTS</span><span class="p">]</span><span class="w"> </span><span class="n">profilename</span><span class="w"> </span><span class="p">[,</span><span class="w"> </span><span class="n">profilename</span><span class="p">,</span><span class="w"> </span><span class="p">...]</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>扩展2个SQL语法（与oracle语法格式一致）</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">[</span><span class="n">PROFILE</span><span class="w"> </span><span class="n">profilename</span><span class="p">]</span><span class="w"> </span><span class="p">...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">[</span><span class="n">PROFILE</span><span class="w"> </span><span class="n">profilename</span><span class="p">]</span><span class="w"> </span><span class="p">...</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>新增系统表 vb_user_profiles<br>
+存储用户与profile的对应关系<br>
+新增系统表索引 btree(roloid)</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 示例语法 ALTER USER user1 PROFILE profile1;
+</span></span></span><span class="line"><span class="cl"><span class="n">roloid</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">rolname</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">profile</span><span class="w">  
+</span></span></span><span class="line"><span class="cl"><span class="c1">-------+---------+---------
+</span></span></span><span class="line"><span class="cl"><span class="mi">16384</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">user1</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="n">profile1</span><span class="w">  </span><span class="c1">-- 示例行
+</span></span></span></code></pre></div></li>
+<li>
+<p>新增系统表 vb_profiles<br>
+该系统表存储profile中各个配置项的值，以及值的约束。<br>
+新增系统表索引 btree(profile, setname)。<br>
+备注：oracle对应的系统表为dba_profiles，本需求还会新增一个名为dba_profiles的系统视图，本质就是查询该表中的4列</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 示例语法 CREATE PROFILE profile1 LIMIT failed_login_attempts 10;
+</span></span></span><span class="line"><span class="cl"><span class="n">profile</span><span class="w">     </span><span class="o">|</span><span class="w">   </span><span class="n">setname</span><span class="w">                 </span><span class="o">|</span><span class="w">      </span><span class="n">setval</span><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="n">valunit</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">valtype</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">valmin</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">valmax</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">valdefault</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">settype</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">------------+---------------------------+--------------------+---------+----------+---------+------------+------------+----------
+</span></span></span><span class="line"><span class="cl"><span class="n">profile1</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">failed_login_attempts</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="mi">10</span><span class="w">                 </span><span class="o">|</span><span class="w"> </span><span class="n">times</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="nb">int</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="mi">2147483646</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">10</span><span class="w">         </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">  </span><span class="c1">-- 示例行
+</span></span></span></code></pre></div><p>该系统表中，有7行初始数据，即7个profile配置项，以及默认参数，默认参数的取值与oracle一致，都为unlimited。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="n">profile</span><span class="w">     </span><span class="o">|</span><span class="w">   </span><span class="n">setname</span><span class="w">                 </span><span class="o">|</span><span class="w">      </span><span class="n">setval</span><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="n">valunit</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">valtype</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">valmin</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">valmax</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">valdefault</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">settype</span><span class="w">     </span><span class="c1">-- unlimit含义
+</span></span></span><span class="line"><span class="cl"><span class="c1">------------+---------------------------+--------------------+---------+--------------------+------------+------------+----------
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">failed_login_attempts</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">times</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="nb">int</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="mi">2147483646</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">10</span><span class="w">         </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">    </span><span class="c1">-- 等价INT_MAX，允许无限次登录失败
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">password_lock_time</span><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">days</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">double</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">00001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">24855</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">    </span><span class="c1">-- 等价0，账号永远不锁
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">password_life_time</span><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">days</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">double</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">00001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">24855</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">180</span><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">    </span><span class="c1">-- 等价DBL_MAX，密码永远有效
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">password_grace_time</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">days</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">double</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">00001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">24855</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">7</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">    </span><span class="c1">-- 等价DBL_MAX，密码过期也永远可用
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">password_reuse_time</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">days</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">double</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">00001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">24855</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">    </span><span class="c1">-- 等价0，密码可无限复用
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">password_reuse_max</span><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">times</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="nb">int</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="mi">2147483646</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">    </span><span class="c1">-- 等价INT_MAX，密码可无限复用
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">idle_time</span><span class="w">                 </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">minutes</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">double</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">00001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">2147483646</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">10</span><span class="w">         </span><span class="o">|</span><span class="w"> </span><span class="n">kernel</span><span class="w">      </span><span class="c1">-- 等价0，会话永远不过期 (与guc session_timeout 一致)
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 0.00001 day = 约0.8 second
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 24855 day = 约70 year
+</span></span></span></code></pre></div><p>参考：以下是原guc参数的取值范围</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="n">setting</span><span class="p">,</span><span class="w"> </span><span class="n">unit</span><span class="p">,</span><span class="w"> </span><span class="n">vartype</span><span class="p">,</span><span class="w"> </span><span class="n">short_desc</span><span class="p">,</span><span class="w"> </span><span class="n">extra_desc</span><span class="p">,</span><span class="w"> </span><span class="n">min_val</span><span class="p">,</span><span class="w"> </span><span class="n">max_val</span><span class="p">,</span><span class="w"> </span><span class="n">boot_val</span><span class="p">,</span><span class="w"> </span><span class="n">reset_val</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_settings</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">WHERE</span><span class="w"> </span><span class="n">name</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="p">(</span><span class="s1">&#39;failed_login_attempts&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;password_lock_time&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;password_effect_time&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;password_reuse_time&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;password_reuse_max&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;session_timeout&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">         </span><span class="n">name</span><span class="w">         </span><span class="o">|</span><span class="w"> </span><span class="n">setting</span><span class="w"> </span><span class="o">|</span><span class="w">                       </span><span class="n">short_desc</span><span class="w">                        </span><span class="o">|</span><span class="w">             </span><span class="n">extra_desc</span><span class="w">              </span><span class="o">|</span><span class="w"> </span><span class="n">min_val</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">max_val</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">boot_val</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">reset_val</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">----------------------+---------+---------------------------------------------------------+-------------------------------------+---------+---------+----------+-----------
+</span></span></span><span class="line"><span class="cl"><span class="nb">int</span><span class="w">     </span><span class="n">failed_login_attempts</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">10</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="k">max</span><span class="w"> </span><span class="nb">number</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="n">login</span><span class="w"> </span><span class="n">attempts</span><span class="p">.</span><span class="w">                           </span><span class="o">|</span><span class="w">                                     </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="mi">1000</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="mi">5</span><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="mi">5</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="n">reeal</span><span class="w">   </span><span class="n">password_effect_time</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="mi">90</span><span class="w"> </span><span class="k">day</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w"> </span><span class="n">effective</span><span class="w"> </span><span class="n">time</span><span class="p">.</span><span class="w">                                </span><span class="o">|</span><span class="w">                                     </span><span class="o">|</span><span class="w"> </span><span class="mi">30</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">36500</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="mi">36500</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="mi">30</span><span class="w"> </span><span class="c1">-- 天
+</span></span></span><span class="line"><span class="cl"><span class="nb">int</span><span class="w">     </span><span class="n">password_lock_time</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="k">min</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w"> </span><span class="k">lock</span><span class="w"> </span><span class="n">time</span><span class="w">                                      </span><span class="o">|</span><span class="w">                                     </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="mi">525600</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="mi">1440</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="mi">1440</span><span class="w"> </span><span class="c1">-- 分钟
+</span></span></span><span class="line"><span class="cl"><span class="nb">int</span><span class="w">     </span><span class="n">password_reuse_max</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="k">max</span><span class="w"> </span><span class="n">times</span><span class="w"> </span><span class="n">password</span><span class="w"> </span><span class="n">can</span><span class="w"> </span><span class="n">reuse</span><span class="p">.</span><span class="w">                           </span><span class="o">|</span><span class="w">                                     </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="mi">100</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="mi">3</span><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="mi">3</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nb">real</span><span class="w">    </span><span class="n">password_reuse_time</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="mi">60</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="k">max</span><span class="w"> </span><span class="n">days</span><span class="w"> </span><span class="n">password</span><span class="w"> </span><span class="n">can</span><span class="w"> </span><span class="n">reuse</span><span class="p">.</span><span class="w">                            </span><span class="o">|</span><span class="w">                                     </span><span class="o">|</span><span class="w"> </span><span class="mi">30</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">90</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">90</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="mi">90</span><span class="w"> </span><span class="c1">-- 天
+</span></span></span><span class="line"><span class="cl"><span class="nb">int</span><span class="w">     </span><span class="n">session_timeout</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="mi">600</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="k">Set</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">maximum</span><span class="w"> </span><span class="n">allowed</span><span class="w"> </span><span class="n">duration</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="k">any</span><span class="w"> </span><span class="n">unused</span><span class="w"> </span><span class="k">session</span><span class="p">.</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">A</span><span class="w"> </span><span class="n">value</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="n">turns</span><span class="w"> </span><span class="k">off</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">timeout</span><span class="p">.</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="mi">86400</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="mi">600</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">600</span><span class="w"> </span><span class="c1">-- 秒
+</span></span></span></code></pre></div></li>
+<li>
+<p>新增系统视图 dba_profiles (与oracle视图名与视图结构一致)<br>
+oracle只有dba_profiles，无user_profiles和all_profiles</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">OR</span><span class="w"> </span><span class="k">REPLACE</span><span class="w"> </span><span class="k">VIEW</span><span class="w"> </span><span class="n">SYS</span><span class="p">.</span><span class="n">DBA_PROFILES</span><span class="w"> </span><span class="k">AS</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">SELECT</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="n">profile</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="n">setname</span><span class="w"> </span><span class="n">resource_name</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="n">settype</span><span class="w"> </span><span class="n">resource_type</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="n">setval</span><span class="w">  </span><span class="k">limit</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">FROM</span><span class="w"> </span><span class="n">vb_profiles</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><p>默认查询结果如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">dba_profiles</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">profile</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">resource_name</span><span class="w">         </span><span class="o">|</span><span class="w"> </span><span class="n">resource_type</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="k">limit</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">---------+-----------------------+---------------+-----------
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">failed_login_attempts</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">password_lock_time</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">password_life_time</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">password_grace_time</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">password_reuse_time</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">password_reuse_max</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">idle_time</span><span class="w">             </span><span class="o">|</span><span class="w"> </span><span class="n">kernel</span><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>修改系统视图 DBA_USERS</p>
+<ul>
+<li>
+<p>旧视图</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">OR</span><span class="w"> </span><span class="k">REPLACE</span><span class="w"> </span><span class="k">VIEW</span><span class="w"> </span><span class="n">SYS</span><span class="p">.</span><span class="n">DBA_USERS</span><span class="w"> </span><span class="k">AS</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">SELECT</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">CAST</span><span class="p">(</span><span class="n">quote_ident_redwood</span><span class="p">(</span><span class="n">pga</span><span class="p">.</span><span class="n">rolname</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">VARCHAR2</span><span class="p">(</span><span class="mi">64</span><span class="p">))</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">username</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="n">pga</span><span class="p">.</span><span class="n">oid</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">user_id</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">...,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">NULL</span><span class="p">::</span><span class="nb">character</span><span class="w"> </span><span class="nb">varying</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">profle</span><span class="p">,</span><span class="w"> </span><span class="c1">-- 修改点
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_authid</span><span class="w"> </span><span class="n">pga</span><span class="p">,</span><span class="w"> </span><span class="n">pg_database</span><span class="w"> </span><span class="n">pgd</span><span class="p">,</span><span class="w"> </span><span class="n">pg_tablespace</span><span class="w"> </span><span class="n">pgt</span><span class="p">,</span><span class="w"> </span><span class="n">pg_user_status</span><span class="w"> </span><span class="n">pgus</span><span class="w"> </span><span class="c1">-- 修改点
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">WHERE</span><span class="w"> </span><span class="p">((</span><span class="n">pgd</span><span class="p">.</span><span class="n">datname</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">current_database</span><span class="p">())</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="p">(</span><span class="n">pgd</span><span class="p">.</span><span class="n">dattablespace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pgt</span><span class="p">.</span><span class="n">oid</span><span class="p">)</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="p">(</span><span class="n">pgus</span><span class="p">.</span><span class="n">roloid</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pga</span><span class="p">.</span><span class="n">oid</span><span class="p">));</span><span class="w"> </span><span class="c1">-- 修改点
+</span></span></span></code></pre></div></li>
+<li>
+<p>新视图</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">OR</span><span class="w"> </span><span class="k">REPLACE</span><span class="w"> </span><span class="k">VIEW</span><span class="w"> </span><span class="n">SYS</span><span class="p">.</span><span class="n">DBA_USERS</span><span class="w"> </span><span class="k">AS</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">SELECT</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">CAST</span><span class="p">(</span><span class="n">quote_ident_redwood</span><span class="p">(</span><span class="n">pga</span><span class="p">.</span><span class="n">rolname</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">VARCHAR2</span><span class="p">(</span><span class="mi">64</span><span class="p">))</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">username</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="n">pga</span><span class="p">.</span><span class="n">oid</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">user_id</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">...,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="n">pgp</span><span class="p">.</span><span class="n">profile</span><span class="w"> </span><span class="nb">varying</span><span class="p">(</span><span class="mi">64</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">profle</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="c1">----------------------- 修改
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="p">...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_authid</span><span class="w"> </span><span class="n">pga</span><span class="p">,</span><span class="w"> </span><span class="n">vb_user_profiles</span><span class="w"> </span><span class="n">pgp</span><span class="p">,</span><span class="w"> </span><span class="n">pg_database</span><span class="w"> </span><span class="n">pgd</span><span class="p">,</span><span class="w"> </span><span class="n">pg_tablespace</span><span class="w"> </span><span class="n">pgt</span><span class="p">,</span><span class="w"> </span><span class="n">pg_user_status</span><span class="w"> </span><span class="n">pgus</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">                        </span><span class="c1">-------------------- 新增
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">WHERE</span><span class="w"> </span><span class="p">((</span><span class="n">pgd</span><span class="p">.</span><span class="n">datname</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">current_database</span><span class="p">())</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="p">(</span><span class="n">pgd</span><span class="p">.</span><span class="n">dattablespace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pgt</span><span class="p">.</span><span class="n">oid</span><span class="p">)</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="p">(</span><span class="n">pgus</span><span class="p">.</span><span class="n">roloid</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pga</span><span class="p">.</span><span class="n">oid</span><span class="p">))</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="p">(</span><span class="n">pgp</span><span class="p">.</span><span class="n">roloid</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pga</span><span class="p">.</span><span class="n">oid</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">                                                                                                             </span><span class="c1">-------------------------- 新增
+</span></span></span></code></pre></div></li>
+</ul>
+</li>
+<li>
+<p>影响系统视图 USER_USERS 与 ALL_USERS：这两个视图本质是从DBA_USERS，DBA_USERS中profile列内容变化，查询结果也会发生变化。</p>
+</li>
+</ol>
+<h3 id="二数据库启动流程">二、数据库启动流程<a hidden class="anchor" aria-hidden="true" href="#二数据库启动流程">#</a></h3>
+<p>在启动数据库时，需检查是否需要初始化pg_profiles系统表。一个集群中，该初始化操作永远只会触发一次。</p>
+<p>此处初始化的意义是，用户查询DBA_USERS视图时，profile列的表现与oralce一致，即所有用户都有profile，未主动设置profile的用户，其profile为default。对于已存在的旧用户，pg_profiles系统表中还未记录其profile信息，需要在pg_profiles中记录其profile为default。</p>
+<p>同步流程如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">1. 启动数据库
+</span></span><span class="line"><span class="cl">2. 读取GUC参数resource_limit
+</span></span><span class="line"><span class="cl">3. 如果resource_limit为on，且pg_profiles系统表为空，则表示首次使用profile功能，此时需初始化pg_profiles：
+</span></span><span class="line"><span class="cl">    1. 遍历pg_authdid系统表，读取所有的<span class="o">[</span>roloid, rolname<span class="o">]</span>
+</span></span><span class="line"><span class="cl">    2. 依次构造pg_profiles系统表tuple <span class="o">[</span><span class="nv">roloid</span><span class="o">=</span>roloid, <span class="nv">rolname</span><span class="o">=</span>rolname, <span class="nv">profile</span><span class="o">=</span>default<span class="o">]</span>
+</span></span><span class="line"><span class="cl">    3. 以此将tuple插入至pg_profiles系统表中
+</span></span></code></pre></div><p>之后，每次CREATE USER时，即使用户未为用户指定profile，也会默认向pg_profiles中插入一行，表示用户默认使用default profile。</p>
+<h3 id="三定义profile参数流程">三、定义PROFILE参数流程<a hidden class="anchor" aria-hidden="true" href="#三定义profile参数流程">#</a></h3>
+<ol>
+<li>
+<p>CREATE PROFILE</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">1. 用户执行SQL: CREATE PROFILE profilename LIMIT <span class="o">{</span>setting_name <span class="o">{</span>setting_value <span class="p">|</span> UNLIMITED<span class="o">}</span> ...<span class="o">}</span>
+</span></span><span class="line"><span class="cl">2. 内核解析SQL：生成CreateProfileStmt语法树
+</span></span><span class="line"><span class="cl">3. 内核执行SQL：在DDL处理主函数中，处理CreateProfileStmt语法树
+</span></span><span class="line"><span class="cl">    1. 检查resource_limit参数是否开启
+</span></span><span class="line"><span class="cl">    2. 检查用户是否有CreateRole权限
+</span></span><span class="line"><span class="cl">    3. 检查profilename是否已存在
+</span></span><span class="line"><span class="cl">    4. 检查setting_name是否在7个配置项白名单中
+</span></span><span class="line"><span class="cl">    5. 检查setting_value的值是否符合约束
+</span></span><span class="line"><span class="cl">    6. 构造pg_profile_settings系统表tuple：<span class="o">[</span><span class="nv">profile</span><span class="o">=</span>profilename, <span class="nv">setname</span><span class="o">=</span>setting_name, <span class="nv">setval</span><span class="o">=</span>setting_value<span class="o">]</span>，剩下的值<span class="o">[</span>valunit,valtype,valmin,valmax,valdefault,settype<span class="o">]</span>来自默认值
+</span></span><span class="line"><span class="cl">    7. 将tuple插入到pg_profile_settings中
+</span></span></code></pre></div></li>
+<li>
+<p>ALTER PROFILE</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">1. 用户执行SQL: ALTER PROFILE profilename  LIMIT <span class="o">[</span>setting_name <span class="o">{</span>setting_value <span class="p">|</span> UNLIMITED<span class="o">}</span> ...<span class="o">]</span>
+</span></span><span class="line"><span class="cl">2. 内核解析SQL：生成AlterProfileStmt语法树
+</span></span><span class="line"><span class="cl">3. 内核执行SQL：在DDL处理主函数中，处理AlterProfileStmt语法树
+</span></span><span class="line"><span class="cl">    1. 检查resource_limit参数是否开启
+</span></span><span class="line"><span class="cl">    2. 检查用户是否有CreateRole权限
+</span></span><span class="line"><span class="cl">    3. 检查profilename是否已存在
+</span></span><span class="line"><span class="cl">    4. 检查setting_name是否在7个配置项白名单中
+</span></span><span class="line"><span class="cl">    5. 检查setting_value的值是否符合约束
+</span></span><span class="line"><span class="cl">    6. 如果系统表pg_profile_settings中未存在对应的setting_name
+</span></span><span class="line"><span class="cl">        构造系统表tuple：<span class="o">[</span><span class="nv">profile</span><span class="o">=</span>profilename, <span class="nv">setname</span><span class="o">=</span>setting_name, <span class="nv">setval</span><span class="o">=</span>setting_value<span class="o">]</span>,剩下的值<span class="o">[</span>valunit,valtype,valmin,valmax,valdefault,settype<span class="o">]</span>来自默认值
+</span></span><span class="line"><span class="cl">        将tuple插入至系统表
+</span></span><span class="line"><span class="cl">    7. 如果系统表中已存在对应的setting_name
+</span></span><span class="line"><span class="cl">        则更新tuple中的setting_value
+</span></span></code></pre></div></li>
+<li>
+<p>ALTER USER .. PROFILE</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">1. 用户执行SQL：ALTER USER username ... <span class="o">[</span>PROFILE profilename<span class="o">]</span> ...
+</span></span><span class="line"><span class="cl">2. 内核解析SQL：生成AlterRoleStmt语法树
+</span></span><span class="line"><span class="cl">3. 内核执行SQL：在DDL处理主函数中，处理AlterRoleStmt语法树，首先检查用户是否有CreateRole权限，然后处理profile参数：
+</span></span><span class="line"><span class="cl">    1. 检查resource_limit参数是否开启
+</span></span><span class="line"><span class="cl">    2. 检查profilename是否已存在
+</span></span><span class="line"><span class="cl">    3. 获取用户对应的roleid
+</span></span><span class="line"><span class="cl">    4. 如果系统表pg_profiles中未存在对应的role与profile关系
+</span></span><span class="line"><span class="cl">        构造系统表tuple，<span class="o">[</span><span class="nv">roloid</span><span class="o">=</span>roloid, <span class="nv">rolname</span><span class="o">=</span>username, <span class="nv">profile</span><span class="o">=</span>profilename<span class="o">]</span>
+</span></span><span class="line"><span class="cl">        将tuple插入至系统表
+</span></span><span class="line"><span class="cl">    5. 如果系统表pg_profiles中已存在对应的role与profile关系
+</span></span><span class="line"><span class="cl">        则更新tuple中的profile
+</span></span></code></pre></div></li>
+</ol>
+<h3 id="四使用profile参数流程">四、使用PROFILE参数流程<a hidden class="anchor" aria-hidden="true" href="#四使用profile参数流程">#</a></h3>
+<p>首先，需要统计哪些场景中会使用到相关GUC</p>
+<ul>
+<li>
+<p>场景一：用户建立连接<br>
+在该场景中，可能使用到4个GUC参数</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="c1"># 此处以未开启线程池为例</span>
+</span></span><span class="line"><span class="cl"><span class="n">PostgresMain</span>
+</span></span><span class="line"><span class="cl">    <span class="c1"># 第一阶段：接受用户的密码，并进行一系列检查</span>
+</span></span><span class="line"><span class="cl">    <span class="n">InitBackendWorker</span>
+</span></span><span class="line"><span class="cl">        <span class="n">InitSession</span>
+</span></span><span class="line"><span class="cl">            <span class="n">CheckAuthentication</span>
+</span></span><span class="line"><span class="cl">                <span class="n">PerformAuthentication</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">port</span><span class="o">-&gt;</span><span class="n">protocol_config</span><span class="o">-&gt;</span><span class="n">fn_authenticate</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">ClientAuthentication</span>
+</span></span><span class="line"><span class="cl">                            <span class="c1"># 1. 从pg_hba.conf中，读取password校验方式</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">hba_getauthmethod</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">sendAuthRequest</span>
+</span></span><span class="line"><span class="cl">                            <span class="c1"># 2. 接收客户端的password，检查password是否正确</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">recv_and_check_password_packet</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">crypt_verify</span>
+</span></span><span class="line"><span class="cl">                            <span class="c1"># 3. 从系统表pg_user_status中，获取rolstatus字段，判断用户是否被锁</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">GetAccountLockedStatus</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">SearchSysCache1</span><span class="p">(</span><span class="s1">&#39;pg_user_status&#39;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                            <span class="c1"># 4. 无论密码正确与否，更新与锁定账号相关的参数</span>
+</span></span><span class="line"><span class="cl">                            <span class="k">if</span> <span class="n">role</span> <span class="ow">is</span> <span class="n">lock</span> <span class="ow">or</span> <span class="n">unlock</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">TryUnlockAccount</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">GetPasswordTimeOfTuple</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">transform</span> <span class="s1">&#39;password_lock_time&#39;</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">UpdateUnlockAccountTuples</span>
+</span></span><span class="line"><span class="cl">                            <span class="c1"># 5. 如果密码失败次数较多，锁定账户</span>
+</span></span><span class="line"><span class="cl">                            <span class="k">if</span> <span class="n">passwrong</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                <span class="k">if</span> <span class="n">master</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">TryLockAccount</span>
+</span></span><span class="line"><span class="cl">                                        <span class="k">if</span> <span class="o">&gt;</span> <span class="s1">&#39;failed_login_attempts&#39;</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">tableam_tops_modify_tuple</span><span class="p">(</span><span class="s1">&#39;pg_user_status&#39;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                                <span class="k">elif</span> <span class="n">standby</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">UpdateFailCountToHashTable</span>
+</span></span><span class="line"><span class="cl">                                    <span class="k">if</span> <span class="o">&gt;</span> <span class="s1">&#39;failed_login_attempts&#39;</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">lock</span>
+</span></span><span class="line"><span class="cl">    <span class="c1"># 6. 如果密码正确，检查密码有效期（仅vastbase有此函数）</span>
+</span></span><span class="line"><span class="cl">    <span class="n">checkPasswordEffect</span>
+</span></span><span class="line"><span class="cl">        <span class="n">getLeftEffectSpan</span>
+</span></span><span class="line"><span class="cl">            <span class="n">transform</span> <span class="s1">&#39;password_effect_time&#39;</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">leftday</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="s1">&#39;ERROR: password expired&#39;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="c1"># 第二阶段：循环接收用户的其他数据，比如SQL语句</span>
+</span></span><span class="line"><span class="cl">    <span class="k">for</span> <span class="p">(;;)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">ReadCommand</span>
+</span></span><span class="line"><span class="cl">            <span class="c1"># 此处，每接收一条客户端的消息，都会检查一次 session_timeout</span>
+</span></span><span class="line"><span class="cl">            <span class="c1"># 如果开启profile，此处需要缓存该用户的profile idle_time参数，否则，每次都从profile系统表中读取，对性能影响较大</span>
+</span></span><span class="line"><span class="cl">            <span class="c1"># 理论上，如果无用户更新profile idle_time参数，一个连接缓存一次即可，即一个连接仅需读取一次系统表</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="o">&gt;</span> <span class="s1">&#39;session_timeout&#39;</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="s1">&#39;ERROR: timeout&#39;</span>
+</span></span><span class="line"><span class="cl">        <span class="n">exec_simple_query</span><span class="p">(</span><span class="s1">&#39;SQL&#39;</span><span class="p">)</span>
+</span></span></code></pre></div></li>
+<li>
+<p>场景二、用户执行DDL<br>
+在该场景中，可能使用到2个GUC参数</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">exec_simple_query</span><span class="p">(</span><span class="s1">&#39;CREATE USER ..&#39;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="o">...</span>
+</span></span><span class="line"><span class="cl">        <span class="n">CreateRole</span>
+</span></span><span class="line"><span class="cl">            <span class="n">AddAuthHistory</span>
+</span></span><span class="line"><span class="cl">                <span class="n">transform</span> <span class="s1">&#39;password_reuse_time&#39;</span>
+</span></span><span class="line"><span class="cl">                <span class="n">systable_beginscan</span><span class="p">(</span><span class="s1">&#39;pg_auth_history&#39;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                <span class="k">if</span> <span class="n">password</span> <span class="o">&gt;</span> <span class="s1">&#39;password_reuse_time&#39;</span> <span class="ow">or</span> <span class="s1">&#39;password_reuse_max&#39;</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">ok</span>
+</span></span><span class="line"><span class="cl"><span class="n">exec_simple_query</span><span class="p">(</span><span class="s1">&#39;ALTER USER ..&#39;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">AlterRole</span>
+</span></span><span class="line"><span class="cl">        <span class="n">AddAuthHistory</span>
+</span></span></code></pre></div></li>
+</ul>
+<p>在所有使用guc参数的地方，均能获取到当前登录用户的oid。接下来，只需在代码中，所有使用guc参数的地方，判断使用guc的值，还是profile中配置的值即可。<br>
+以’Failed_login_attempts’参数为例，使用guc参数的代码将修改为：</p>
+<ul>
+<li>
+<p>旧代码</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">TryLockAccount</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="p">...</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="p">(</span><span class="n">u_sess</span><span class="o">-&gt;</span><span class="n">attr</span><span class="p">.</span><span class="n">attr_security</span><span class="p">.</span><span class="n">Failed_login_attempts</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span>
+</span></span><span class="line"><span class="cl">        <span class="n">failedcount</span> <span class="o">&gt;=</span> <span class="n">u_sess</span><span class="o">-&gt;</span><span class="n">attr</span><span class="p">.</span><span class="n">attr_security</span><span class="p">.</span><span class="n">Failed_login_attempts</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">        <span class="p">..</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl">    <span class="p">..</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div></li>
+<li>
+<p>新代码</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">TryLockAccount</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="p">...</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">ProfileVal</span> <span class="n">setting</span> <span class="o">=</span> <span class="nf">get_setting_from_guc_or_profile</span><span class="p">(</span><span class="n">PT_FAILED_LOGIN_ATTEMPTS</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="p">(</span><span class="n">setting</span><span class="p">.</span><span class="n">intval</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span>
+</span></span><span class="line"><span class="cl">        <span class="n">failedcount</span> <span class="o">&gt;=</span> <span class="n">setting</span><span class="p">.</span><span class="n">intval</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">        <span class="p">..</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl">    <span class="p">..</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">ProfileVal</span> <span class="nf">get_setting_from_guc_or_profile</span><span class="p">(</span><span class="n">ProfileType</span> <span class="n">type</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ProfileVal</span> <span class="n">setting</span> <span class="o">=</span> <span class="p">{</span><span class="mi">0</span><span class="p">};</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">resource_limit</span><span class="p">)</span> <span class="p">{</span> <span class="cm">/* 如果未开启profile功能，则使用guc参数 */</span>
+</span></span><span class="line"><span class="cl">        <span class="n">setting</span><span class="p">.</span><span class="n">intval</span> <span class="o">=</span> <span class="n">u_sess</span><span class="o">-&gt;</span><span class="n">attr</span><span class="p">.</span><span class="n">attr_security</span><span class="p">.</span><span class="n">Failed_login_attempts</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span> <span class="cm">/* 如果未开启profile功能 */</span>
+</span></span><span class="line"><span class="cl">        <span class="n">roloid</span> <span class="o">=</span> <span class="nf">GetCurrentUser</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl">        <span class="cm">/* 首先，从系统表pg_profiles中，查找用户使用的profile */</span>
+</span></span><span class="line"><span class="cl">        <span class="n">profile</span> <span class="o">=</span> <span class="nf">catalog_find_user_profile</span><span class="p">(</span><span class="n">roloid</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">        <span class="cm">/* 然后，从系统表pg_profile_settings中，查找profile中具体的配置项的值 */</span>
+</span></span><span class="line"><span class="cl">        <span class="n">tuple</span> <span class="o">=</span> <span class="nf">catalog_find_profile_setting</span><span class="p">(</span><span class="n">profile</span><span class="p">,</span> <span class="n">type</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="n">setting</span><span class="p">.</span><span class="n">intval</span> <span class="o">=</span> <span class="n">tuple</span><span class="p">.</span><span class="n">setval</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="n">setting</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">union</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">intval</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">double</span> <span class="n">realval</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">char</span> <span class="o">*</span><span class="n">strval</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">ProfileVal</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">enum</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PT_FAILED_LOGIN_ATTEMPTS</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PT_PASSWORD_LIFE_TIME</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PT_PASSWORD_GRACE_TIME</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PT_PASSWORD_REUSE_TIME</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PT_PASSWORD_REUSE_MAX</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PT_PASSWORD_REUSE_TIME</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PT_IDLE_TIME</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">ProfileType</span><span class="p">;</span>
+</span></span></code></pre></div></li>
+</ul>
+<h2 id="13-接口说明">1.3 接口说明<a hidden class="anchor" aria-hidden="true" href="#13-接口说明">#</a></h2>
+<p>本特性变更的参数如下，参数的具体说明请看上一章：</p>
+<ol>
+<li>
+<p>新增GUC参数：resource_limit</p>
+</li>
+<li>
+<p>修改6个GUC参数的生效条件：[failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max, session_timeout]</p>
+</li>
+<li>
+<p>新增3个PROFILE的SQL语法：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">profilename</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="err">{</span><span class="n">setting_name</span><span class="w"> </span><span class="err">{</span><span class="n">setting_value</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">UNLIMITED</span><span class="err">}</span><span class="w"> </span><span class="p">...</span><span class="err">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">profilename</span><span class="w">  </span><span class="k">LIMIT</span><span class="w"> </span><span class="p">[</span><span class="n">setting_name</span><span class="w"> </span><span class="err">{</span><span class="n">setting_value</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">UNLIMITED</span><span class="err">}</span><span class="w"> </span><span class="p">...]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="p">[</span><span class="k">IF</span><span class="w"> </span><span class="k">EXISTS</span><span class="p">]</span><span class="w"> </span><span class="n">profilename</span><span class="w"> </span><span class="p">[,</span><span class="w"> </span><span class="n">profilename</span><span class="p">,</span><span class="w"> </span><span class="p">...]</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>扩展2个SQL语法</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">[</span><span class="n">PROFILE</span><span class="w"> </span><span class="n">profilename</span><span class="p">]</span><span class="w"> </span><span class="p">...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">[</span><span class="n">PROFILE</span><span class="w"> </span><span class="n">profilename</span><span class="p">]</span><span class="w"> </span><span class="p">...</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>新增系统表 vb_user_profiles</p>
+</li>
+<li>
+<p>新增系统表 vb_profiles</p>
+</li>
+<li>
+<p>修改系统表 pg_dependcy</p>
+</li>
+<li>
+<p>新增系统视图 dba_profiles</p>
+</li>
+<li>
+<p>修改系统视图 DBA_USERS：原来profile列的值都为空，现在不为空</p>
+</li>
+<li>
+<p>影响系统视图 USER_USERS 与 ALL_USERS的查询结果：原来profile列的值都为空，现在不为空</p>
+</li>
+</ol>
+<h2 id="14-内存管理">1.4 内存管理<a hidden class="anchor" aria-hidden="true" href="#14-内存管理">#</a></h2>
+<p>本特性主要占用的内存如下：</p>
+<ul>
+<li>LocalBuffer：如果开启profile功能，需要缓存pg_profiles与pg_profile_settings系统表中的数据。大部分场景中，缓存大小数据量级为几十k。</li>
+</ul>
+<p>其他内存占用几乎可忽略。</p>
+<h2 id="15-安全">1.5 安全<a hidden class="anchor" aria-hidden="true" href="#15-安全">#</a></h2>
+<ul>
+<li>访问控制：在处理CREATE PROFILE, ALTER PROFILE, DROP PROFILE语法时，需判断用户是否具有CreateRole权限。
+<ul>
+<li>备注：CreateRole是一个控制范围较大的权限，CREATE USER, ALTER USER, DROP USER等均由CreateRole这一个权限控制。</li>
+</ul>
+</li>
+<li>安全审计：在处理CREATE PROFILE, ALTER PROFILE, DROP PROFILE语法时，适配统一审计特性。</li>
+</ul>
+<h2 id="16-性能">1.6 性能<a hidden class="anchor" aria-hidden="true" href="#16-性能">#</a></h2>
+<p>本特性仅影响建立连接的过程，不影响数据库处理SQL的性能。</p>
+<h2 id="17-专利">1.7 专利<a hidden class="anchor" aria-hidden="true" href="#17-专利">#</a></h2>
+<p>不涉及</p>
+<h2 id="18-升级管理">1.8 升级管理<a hidden class="anchor" aria-hidden="true" href="#18-升级管理">#</a></h2>
+<table>
+  <thead>
+      <tr>
+          <th>部署类型</th>
+          <th>行为说明</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>新安装</td>
+          <td>新增1个guc resource_limit=on, 无效6个guc [failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max, session_timeout]，新增5个PROFILE语法，新增2个系统表[pg_profiles，pg_profile_settings]，新增1行系统表行pg_dependcy，新增1个视图dba_profiles，修改3个视图[dba_users, user_users, all_users]</td>
+      </tr>
+      <tr>
+          <td>升级前</td>
+          <td>无变化</td>
+      </tr>
+      <tr>
+          <td>升级时</td>
+          <td>设置resource_limit=off</td>
+      </tr>
+      <tr>
+          <td>升级后</td>
+          <td>新增1个guc resource_limit=on, 无效6个guc [failed_login_attempts, password_lock_time, password_effect_time, password_reuse_time, password_reuse_max, session_timeout]，新增5个PROFILE语法，新增2个系统表[pg_profiles，pg_profile_settings]，新增1行系统表行pg_dependcy，新增1个视图dba_profiles，修改3个视图[dba_users, user_users, all_users]</td>
+      </tr>
+      <tr>
+          <td>升级失败</td>
+          <td>删除新增guc，SQL语法，系统表，视图，还原变更的视图</td>
+      </tr>
+  </tbody>
+</table>
+<h2 id="19-其他说明">1.9 其他说明<a hidden class="anchor" aria-hidden="true" href="#19-其他说明">#</a></h2>
+<p>无</p>
+<ol>
+<li>用户与数据库建立连接</li>
+<li>查询profile系统表，将用户的profile配置，缓存在u_sess中</li>
+<li>检查用户密码有效期、检查session_timoue等时</li>
+</ol>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/%E8%BA%AB%E4%BB%BD%E8%AE%A4%E8%AF%81/">身份认证</a></li><li><a href="http://localhost:1313/tags/%E8%AE%BE%E8%AE%A1%E6%96%87%E6%A1%A3/">设计文档</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/projectdocs/2-design-profile-oracle/">海量 2 设计 oracle profile</a></li><li><a href="/posts/projectdocs/15-design-logical-replication/">海量 15 设计 逻辑复制性能优化</a></li><li><a href="/posts/projectdocs/14-design-mac/">海量 mac 设计</a></li><li><a href="/posts/projectdocs/13-design-tde/">海量 透明加密 设计</a></li><li><a href="/posts/projectdocs/10-design-ssl/">海量 10 设计 SSL协议</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./项目文档</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

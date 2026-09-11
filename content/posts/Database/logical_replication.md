@@ -2,7 +2,7 @@
 date = '2026-02-10T16:15:52+08:00'
 draft = false
 title = '逻辑复制'
-categories = ["Database"]
+categories = ["数据库"]
 
 tags = ["MVCC", "PostgreSQL", "Transaction", "Logical Replication"]
 ShowToc = true

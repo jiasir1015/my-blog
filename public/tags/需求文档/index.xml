@@ -1,0 +1,1006 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>需求文档 on Kernel Notes</title>
+    <link>http://localhost:1313/tags/%E9%9C%80%E6%B1%82%E6%96%87%E6%A1%A3/</link>
+    <description>Recent content in 需求文档 on Kernel Notes</description>
+    <generator>Hugo -- 0.155.3</generator>
+    <language>zh-cn</language>
+    <lastBuildDate>Fri, 14 Aug 2026 17:47:31 +0800</lastBuildDate>
+    <atom:link href="http://localhost:1313/tags/%E9%9C%80%E6%B1%82%E6%96%87%E6%A1%A3/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>海量 1 需求 oracle加密函数</title>
+      <link>http://localhost:1313/posts/projectdocs/1-requirement-oracle-crypto-func/</link>
+      <pubDate>Wed, 19 Feb 2025 16:20:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/1-requirement-oracle-crypto-func/</guid>
+      <description>&lt;h1 id=&#34;1-简介&#34;&gt;1 简介&lt;/h1&gt;
+&lt;h2 id=&#34;11-目的&#34;&gt;1.1 目的&lt;/h2&gt;
+&lt;p&gt;早期版本的oracle提供一个包含多个加密函数的包，用户可通过SQL语法调用加密函数，实现数据加密功能。本文主要介绍以下几点：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;oracle加密包的功能与使用方法&lt;/li&gt;
+&lt;li&gt;vastbase实现oracle加密包&lt;/li&gt;
+&lt;li&gt;vastbase加密包的功能与使用方法&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;本文档可指导开发者、测试者熟悉vastbase加密包特性的功能场景。&lt;/p&gt;
+&lt;p&gt;本文档的内容已被上传至tapd，tapd上，排版更好看，测试用例更方便复制。建议直接从tapd上查看本文档原文： &lt;a href=&#34;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007194&#34;&gt;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007194&lt;/a&gt;&lt;/p&gt;
+&lt;h2 id=&#34;12-适用范围&#34;&gt;1.2 适用范围&lt;/h2&gt;
+&lt;p&gt;vastbase 3.0.8及之后版本。&lt;/p&gt;
+&lt;h2 id=&#34;13-术语定义首字母缩写词和缩略语&#34;&gt;1.3 术语定义、首字母缩写词和缩略语&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;DES：Data Encryption Standard，数据加密标准，一种早期通用的加密算法&lt;/li&gt;
+&lt;li&gt;3DES：Triple DES，基于DES演进的一种早期通用的加密算法&lt;/li&gt;
+&lt;li&gt;MD5：Message-Digest Algorithm，一种早期通用的数据摘要算法&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;13-参考资料&#34;&gt;1.3 参考资料&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;oracle dbms_obfuscation_toolkit 函数介绍：&lt;a href=&#34;https://docs.oracle.com/cd/A97630_01/appdev.920/a96590/adgsec04.htm&#34;&gt;https://docs.oracle.com/cd/A97630_01/appdev.920/a96590/adgsec04.htm&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;oracle dbms_obfuscation_toolkit 函数参数：&lt;a href=&#34;https://docs.oracle.com/cd/B10500_01/appdev.920/a96612/d_obtoo2.htm&#34;&gt;https://docs.oracle.com/cd/B10500_01/appdev.920/a96612/d_obtoo2.htm&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;tapd上，本需求文档： &lt;a href=&#34;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007194&#34;&gt;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007194&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;tapd上，本需求的测试用例： &lt;a href=&#34;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007197&#34;&gt;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007197&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;2-支持oracle加密插件dbms_obfuscation_toolkit&#34;&gt;2 支持oracle加密插件dbms_obfuscation_toolkit&lt;/h1&gt;
+&lt;h2 id=&#34;21-功能简述&#34;&gt;2.1 功能简述&lt;/h2&gt;
+&lt;p&gt;早期版本oracle提供7个内置加密函数。早在4年或更早之前的旧版本vastbase中，也提供7个与oracle一致的加密函数，这7个函数，函数名、函数入参与oracle一致，但是，6个函数输出、15个函数参数约束与oracle不一致，本特性将重构这些加密函数，确保函数的输出、约束等与oracle一致。&lt;/p&gt;
+&lt;h3 id=&#34;一基础知识&#34;&gt;一、基础知识&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;加密的原理&lt;br&gt;
+加密算法有很多种，不同场景中，适合的加密算法类型不同。对存储数据加密，通常采用对称密码算法，此处主要介绍对称密码算法：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;加密原理：输入1个明文，输入1个密钥，对明文和密钥进行一些可逆的运算（比如异或，代换），可得到1个密文。密钥通常是随机生成的&lt;/li&gt;
+&lt;li&gt;加密算法：DES算法，发布于1977年，已确定为不安全加密算法。3DES算法，调用3次DES算法，生成3个密钥，安全性与DES差别不大，也属于不安全的加密算法。AES算法，发布于2001年，通用的国际标准，替代不安全的DES算法&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;数据库加密函数&lt;br&gt;
+几乎所有数据库，都提供内置加密函数，让用户通过SQL语句调用。最典型的场景如下：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 假设，数据库提供函数encrypt(明文，密钥，加密算法)，输出为密文
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 用户想表&amp;#39;t1&amp;#39;中存储数据&amp;#39;shenkun&amp;#39;，则存储的语法如下：（用户自己保管密钥）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;INSERT&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;INTO&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;t1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;VALUES&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;encrypt&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;shenkun&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;一串随机的密钥&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;aes&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;));&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;二oracle加密包&#34;&gt;二、Oracle加密包&lt;/h3&gt;
+&lt;p&gt;早期版本的oracle中，包含1个名为dbms_obfuscation_toolkit的包，提供7个函数，主要实现加密、解密等功能：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;版本信息：oracle 8i版本开始提供，oracle 10g版本开始不被推荐使用，由dbms_crypto代替，oracle 21c版本正式移除&lt;/li&gt;
+&lt;li&gt;函数列表：
+&lt;ul&gt;
+&lt;li&gt;生成随机数：desgetkey(seed) -&amp;gt; key&lt;/li&gt;
+&lt;li&gt;加密：desencrypt(input, key) -&amp;gt; encrypted_data&lt;/li&gt;
+&lt;li&gt;解密：descdecrypt(input, key) -&amp;gt; decrypted_data&lt;/li&gt;
+&lt;li&gt;生成随机数：des3getkey(which=&amp;gt;0, seed) -&amp;gt; key&lt;/li&gt;
+&lt;li&gt;加密：des3encrypt(input, key, which=&amp;gt;0, iv=&amp;gt;012345678abcdef) -&amp;gt; encrypted_data&lt;/li&gt;
+&lt;li&gt;解密：des3decrypt(input, key, which=&amp;gt;0, iv=&amp;gt;012345678abcdef) -&amp;gt; decrypted_data&lt;/li&gt;
+&lt;li&gt;哈希：md5(input) -&amp;gt; checksum&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;函数参数：函数参数有2种数据类型：varchar2, raw。与raw类型相比，如果是varchar2类型，参数名需加上_string后缀。比如，raw类型的入参名为input，则varcha2类型入参名为input_string&lt;/li&gt;
+&lt;li&gt;函数限制：
+&lt;ul&gt;
+&lt;li&gt;desgetkey：seed长度最短为80字节&lt;/li&gt;
+&lt;li&gt;desencrypt：input长度是8字节的整数倍；key最短为8字节，超过8字节的部分被丢弃&lt;/li&gt;
+&lt;li&gt;descdecrypt：input长度是8字节的整数倍；key最短为8字节，超过8字节的部分被丢弃&lt;/li&gt;
+&lt;li&gt;des3getkey: seed长度最短为80字节&lt;/li&gt;
+&lt;li&gt;des3encrypt：input长度是8字节的整数倍；which为0时，key最短为16字节，超过16字节的部分被丢弃；which为1时，key最短为24字节，超过24字节的部分被丢弃&lt;/li&gt;
+&lt;li&gt;des3dencrypt：input长度是8字节的整数倍；which为0时，key最短为16字节，超过16字节的部分被丢弃；which为1时，key最短为24字节，超过24字节的部分被丢弃&lt;/li&gt;
+&lt;li&gt;md5：无&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;参考文档
+&lt;ul&gt;
+&lt;li&gt;函数介绍：函数背景、注意事项等：&lt;a href=&#34;https://docs.oracle.com/cd/A97630_01/appdev.920/a96590/adgsec04.htm&#34;&gt;https://docs.oracle.com/cd/A97630_01/appdev.920/a96590/adgsec04.htm&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;函数参数：参数类型、调用示例等：&lt;a href=&#34;https://docs.oracle.com/cd/B10500_01/appdev.920/a96612/d_obtoo2.htm&#34;&gt;https://docs.oracle.com/cd/B10500_01/appdev.920/a96612/d_obtoo2.htm&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;以下是上述函数的调用示例：&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 2 需求 profile</title>
+      <link>http://localhost:1313/posts/projectdocs/2-requirement-profile/</link>
+      <pubDate>Wed, 19 Feb 2025 17:43:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/2-requirement-profile/</guid>
+      <description>&lt;h1 id=&#34;1-简介&#34;&gt;1 简介&lt;/h1&gt;
+&lt;h2 id=&#34;11-目的&#34;&gt;1.1 目的&lt;/h2&gt;
+&lt;p&gt;vastbase与oracle都支持设置运行参数：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;vastbase：支持设置集群级guc参数，例如，guc参数failed_login_attempts用于设置’用户密码错误多少次后锁定账户’，该参数对集群中所有用户（非初始用户）都有效。&lt;/li&gt;
+&lt;li&gt;oracle：也支持failed_login_attempts参数，但是oracle支持为不同用户设置不同的failed_login_attempts值。我们且将此类参数称为用户级参数。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;与oracle相比，vastbase的guc参数功能存在2个差异：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;作用范围：oracle支持设置用户级参数，vastbase大部分参数都是集群级guc参数&lt;/li&gt;
+&lt;li&gt;参数个数：23版本的oracle支持18个用户级参数，其中6个可在vastbase找到对应的guc参数&lt;/li&gt;
+&lt;li&gt;参数取值：vastbase中，6个guc参数的取值范围与oracle profile不同&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;本文主要介绍以下几点：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;oracle用户级参数的个数、设置方法&lt;/li&gt;
+&lt;li&gt;vastbase中对应集群级guc参数的个数、设置方法&lt;/li&gt;
+&lt;li&gt;vastbase新需求：尽量实现与oracle一致的用户级guc参数&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;本文档可指导开发者、测试者熟悉vastbase用户级guc配置参数特性&lt;/p&gt;
+&lt;p&gt;本文档的内容已被上传至tapd，tapd上，排版更好看，测试用例更方便复制。建议直接从tapd上查看本文档原文: &lt;a href=&#34;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007196&#34;&gt;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007196&lt;/a&gt;&lt;/p&gt;
+&lt;h2 id=&#34;12-适用范围&#34;&gt;1.2 适用范围&lt;/h2&gt;
+&lt;p&gt;vastbase 3.0.8及之后版本，vastbase用户级参数profile特性接口设计、使用指导等。&lt;/p&gt;
+&lt;h2 id=&#34;13-术语定义首字母缩写词和缩略语&#34;&gt;1.3 术语定义、首字母缩写词和缩略语&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;GUC：Grand Unifed Configuralion，postgresql和vastbase的配置参数&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;13-参考资料&#34;&gt;1.3 参考资料&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;原始需求： &lt;a href=&#34;https://www.tapd.cn/60475194/prong/stories/view/1160475194001074627&#34;&gt;https://www.tapd.cn/60475194/prong/stories/view/1160475194001074627&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;tapd上本需求文档链接： &lt;a href=&#34;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007196&#34;&gt;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007196&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;tapd上6个与密码相关的guc参数的使用参考： &lt;a href=&#34;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007200&#34;&gt;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007200&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;oracle 23 profile语法以及相关参数： &lt;a href=&#34;https://docs.oracle.com/en/database/oracle/oracle-database/23/sqlrf/CREATE-PROFILE.html&#34;&gt;https://docs.oracle.com/en/database/oracle/oracle-database/23/sqlrf/CREATE-PROFILE.html&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;mysql 8.0 create user语法以及相关参数： &lt;a href=&#34;https://mysql.net.cn/doc/refman/8.0/en/create-user.html&#34;&gt;https://mysql.net.cn/doc/refman/8.0/en/create-user.html&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;mysql 配置参数列表：&lt;a href=&#34;https://mysql.net.cn/doc/refman/8.0/en/server-system-variable-reference.html&#34;&gt;https://mysql.net.cn/doc/refman/8.0/en/server-system-variable-reference.html&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;vastbase g100 create user语法以及相关参数： &lt;a href=&#34;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/6a4766151e29496b9f88cd2d9dd3db2e&#34;&gt;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/6a4766151e29496b9f88cd2d9dd3db2e&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;2-支持oracle用户级配置profile&#34;&gt;2 支持oracle用户级配置profile&lt;/h1&gt;
+&lt;h2 id=&#34;21-功能简述&#34;&gt;2.1 功能简述&lt;/h2&gt;
+&lt;h3 id=&#34;需求来源桂林银行&#34;&gt;【需求来源】桂林银行&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;需求链接：&lt;a href=&#34;https://www.tapd.cn/60475194/prong/stories/view/1160475194001074627&#34;&gt;https://www.tapd.cn/60475194/prong/stories/view/1160475194001074627&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;需求描述：桂林银行客户指出，目前对于数据库用户的管理方式不够便捷，无法像oracle profile方式为用户赋予一组安全策略。一些属性如密码有效期、密码过期天数、密码尝试次数等也只能全局设定，无法指定用户配置。- 需求范围：桂林银行使用的数据库兼容模式包括oracle和mysql两种兼容模式。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;需求背景oracle-23的profile功能&#34;&gt;【需求背景】oracle 23的profile功能&lt;/h3&gt;
+&lt;p&gt;通俗来讲，oracle的profle可理解为细粒度的配置参数。1个profile包含1组配置参数，不同用户可使用不同的profile。按上述例子，要单独控制某个用户的密码有效期，操作步骤如下：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;创建用户&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;USER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;u1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;IDENTIFIED&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;BY&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;&amp;#34;u1.1234&amp;#34;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;创建profile，同时设置用户级参数&lt;br&gt;
+此处，以设置密码有效期参数为例：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;PROFILE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pro1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;LIMIT&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;FAILED_LOGIN_ATTEMPTS&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;10&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;设置用户u1使用profile pro1&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 3 需求 pg_hba.conf加密</title>
+      <link>http://localhost:1313/posts/projectdocs/3-requirement-pg-hba-encrypt/</link>
+      <pubDate>Tue, 01 Apr 2025 15:42:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/3-requirement-pg-hba-encrypt/</guid>
+      <description>&lt;h1 id=&#34;1-需求背景&#34;&gt;1 需求背景&lt;/h1&gt;
+&lt;ol&gt;
+&lt;li&gt;客户使用vb什么版本？ 2215&lt;/li&gt;
+&lt;li&gt;客户的要求：&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h1 id=&#34;2-需求分析&#34;&gt;2 需求分析&lt;/h1&gt;
+&lt;h2 id=&#34;21-适配点&#34;&gt;2.1 适配点&lt;/h2&gt;
+&lt;p&gt;在使用vastbase的多个阶段，都可能涉及pg_hba.conf&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;编译安装&lt;/li&gt;
+&lt;li&gt;初始化&lt;/li&gt;
+&lt;li&gt;升级&lt;/li&gt;
+&lt;li&gt;配置
+&lt;ul&gt;
+&lt;li&gt;gs_guc修改pg_hba&lt;/li&gt;
+&lt;li&gt;手动编辑pg_hba&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;启动&lt;/li&gt;
+&lt;li&gt;运维
+&lt;ul&gt;
+&lt;li&gt;pg_backup&lt;/li&gt;
+&lt;li&gt;pg_rewind&lt;/li&gt;
+&lt;li&gt;vb_ctl restart&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;22-代码流程&#34;&gt;2.2 代码流程&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;编译&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;初始化&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;main&lt;/span&gt; &lt;span class=&#34;c1&#34;&gt;# initdb.cpp&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;canonicalize_path&lt;/span&gt; &lt;span class=&#34;c1&#34;&gt;# PGDATA&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;find_other_exec&lt;/span&gt; &lt;span class=&#34;c1&#34;&gt;# 在gs_initdb bin目录下，查找gaussdb bin&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;c1&#34;&gt;# 在$GAUSSHOME/share/postgrsql目录下，检查以下文件是否存在&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;check_input&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;postgres.bki, postgres.description, pg_hba.conf.sample, postgresql.conf.sample, ..., system_views.sql, ...&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;check_locale_encoding&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;init_log&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        &lt;span class=&#34;n&#34;&gt;gs_getenv_r&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;GAUSSLOG&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        &lt;span class=&#34;n&#34;&gt;canonicalize_path&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;$PGDATA/PG_VERSION&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        &lt;span class=&#34;n&#34;&gt;fprintf&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;PG_MAJORVERSION&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;s1&#34;&gt;&amp;#39;9.2&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;setup_config&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        &lt;span class=&#34;n&#34;&gt;readfile&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;&amp;#34;postgresql.conf.sample&amp;#34;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        &lt;span class=&#34;n&#34;&gt;readfile&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;&amp;#34;pg_hba.sample&amp;#34;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        &lt;span class=&#34;n&#34;&gt;writefile&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;&amp;#34;pg_hba.conf&amp;#34;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;bootstrap_template1&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;write_version_file&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;setup_auth&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;get_set_pwd&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;setup_depend&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;load_plpgsql&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;setup_sysviews&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;升级&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;配置&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;启动&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;pg_ctl&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;运行&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;PostmasterMain&lt;/span&gt; &lt;span class=&#34;c1&#34;&gt;# postmaster 线程&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;InitializeGUCOptions&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;getopt_r&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;load_hba&lt;/span&gt; &lt;span class=&#34;c1&#34;&gt;# 加载hba&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;ServerLoop&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        &lt;span class=&#34;n&#34;&gt;ConnCreate&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;            &lt;span class=&#34;n&#34;&gt;StreamConnection&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        &lt;span class=&#34;n&#34;&gt;BackendStartup&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;            &lt;span class=&#34;n&#34;&gt;PostgresMain&lt;/span&gt; &lt;span class=&#34;c1&#34;&gt;# postgres 线程&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                &lt;span class=&#34;n&#34;&gt;InitBackendWorker&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                    &lt;span class=&#34;n&#34;&gt;InitSession&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;n&#34;&gt;CheckAuthentication&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                            &lt;span class=&#34;n&#34;&gt;PerformAuthentication&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                &lt;span class=&#34;n&#34;&gt;port&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;protocol_config&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;fn_authenticate&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                    &lt;span class=&#34;n&#34;&gt;ClientAuthentication&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                        &lt;span class=&#34;n&#34;&gt;hba_getauthmethod&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;n&#34;&gt;check_hba&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                                &lt;span class=&#34;n&#34;&gt;g_instance&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;.&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;libpq_cxt_comm_parsed_hba_lines&lt;/span&gt; &lt;span class=&#34;c1&#34;&gt;# 读取缓存的hba&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                                &lt;span class=&#34;k&#34;&gt;if&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;init_user&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                                    &lt;span class=&#34;n&#34;&gt;get_default_auth_method&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                                &lt;span class=&#34;k&#34;&gt;else&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                                    &lt;span class=&#34;n&#34;&gt;check_hostname&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                        &lt;span class=&#34;n&#34;&gt;sendAuthRequest&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                        &lt;span class=&#34;n&#34;&gt;recv_and_check_password_packet&lt;/span&gt; &lt;span class=&#34;c1&#34;&gt;# 接收客户端的password&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;n&#34;&gt;crypt_verify&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                &lt;span class=&#34;k&#34;&gt;for&lt;/span&gt; &lt;span class=&#34;p&#34;&gt;(;;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                    &lt;span class=&#34;n&#34;&gt;ReadCommand&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                    &lt;span class=&#34;n&#34;&gt;exec_simple_query&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;SQL&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;SIGHUB_handler&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;n&#34;&gt;load_hba&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;运维&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 3 需求 oracle resource</title>
+      <link>http://localhost:1313/posts/projectdocs/3-requirement-oracle-resource/</link>
+      <pubDate>Mon, 24 Mar 2025 10:42:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/3-requirement-oracle-resource/</guid>
+      <description>&lt;p&gt;| -| -| -| -| -| -| -|&lt;br&gt;
+| 1 | FAILED_LOGIN_ATTEMPTS | [1, max] unlimited | failed_login_attempts | [1,1000] | 认证类 | 登录数据库时，如果密码错误次数超过&amp;lt;本参数&amp;gt;，则账号会被锁定，短期内无法再登录 |&lt;br&gt;
+| 2 | PASSWORD_LOCK_TIME | [1, max] unlimited | password_lock_time | [1,525600]min | 认证类 | 如果因密码错误次数过多，导致账号被锁，将锁定&amp;lt;本参数&amp;gt;的时间 |&lt;br&gt;
+| 3 | PASSWORD_LIFE_TIME | [1, max] unlimited | password_effect_time | [30,36500]day | 认证类 | 设置或更新用户密码时，超过&amp;lt;本参数&amp;gt;的时间，密码会过期（oracle与vastase表现不同） |&lt;br&gt;
+| 4 | PASSWORD_GRACE_TIME | - | - | - | 认证类 | 如果密码过期，在&amp;lt;本参数&amp;gt;的时间内，密码仍可使用 |&lt;br&gt;
+| 5 | PASSWORD_REUSE_TIME | [1, max] unlimited | password_reuse_time | [30, 90]day | 认证类 | 用户设置密码时，如果密码在过去的&amp;lt;本参数&amp;gt;的时间内别用过，则密码不能复用，opengauss [0,3650] |&lt;br&gt;
+| 6 | PASSWORD_REUSE_MAX | - | password_reuse_max | [1,100] | 认证类 | 用户设置密码时，如果密码已被重复使用过&amp;lt;本参数&amp;gt;的次数，则密码不能复用 |&lt;br&gt;
+| 7 | INACTIVE_ACCONT_TIME | - | - | - | 认证类 | 如果一个账号在&amp;lt;本参数&amp;gt;的时间内，未登录过，则锁定账号 |&lt;br&gt;
+| 8 | PASSWORD_VERIFY_FUNCTION | - | - | - | 认证类 | 用户设置密码时，调用&amp;lt;本参数&amp;gt;指定的函数，检查密码是否符合要求 |&lt;br&gt;
+| 9 | PASSWORD_ROLLOVER_TIME | - | - | - | 认证类 | 新旧密码滚动更新天数 |&lt;br&gt;
+| 10 | SESSIONS_PER_USER | - | - | - | 资源类 | 1个用户可建立的最大连接数 |&lt;br&gt;
+| 11 | CPU_PER_SESSION | - | - | - | 资源类 | 1个连接可使用CPU时间数 |&lt;br&gt;
+| 12 | CPU_PER_CALL | - | - | - | 资源类 | 1个调用（比如1个SQL）可使用CPU时间数 |&lt;br&gt;
+| 13 | CONNECT_TIME | - | - | - | 资源类 | 1个连接可持续的时间 |&lt;br&gt;
+| 14 | IDLE_TIME | [1, max] unlimited | session_timeout | [0,86400] | 资源类 | 1个连接空闲时间限制 |&lt;br&gt;
+| 15 | LOGICAL_READS_PER_CALL | - | - | - | 资源类 | 1次调用（比如1个SQL）允许读写的page数量 |&lt;br&gt;
+| 16 | LOGICAL_READS_PER_SESSION | - | - | - | 资源类 | 1个连接允许读取的page数量 |&lt;br&gt;
+| 17 | PRIVATE_SGA | - | - | - | 资源类 | 1个连接可使用的共享内存空间大小 |&lt;br&gt;
+| 18 | CONPOSITE_LIMIT | - | - | - | 资源类 | 1个连接可可使用的总资源：按cpu时间、连接时间、page读写数等加权求和 |&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 4 需求 scram-sha256</title>
+      <link>http://localhost:1313/posts/projectdocs/4-requirement-scram-sha256/</link>
+      <pubDate>Thu, 03 Apr 2025 17:41:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/4-requirement-scram-sha256/</guid>
+      <description>&lt;h1 id=&#34;深信服支持pg-scram-sha256需求&#34;&gt;深信服支持pg scram-sha256需求&lt;/h1&gt;
+&lt;h2 id=&#34;需求目标&#34;&gt;需求目标&lt;/h2&gt;
+&lt;p&gt;本需求的根本目标时，当vastbase server要求使用sha256算法进行身份认证时，postgresql client能与vastbase server建立连接。&lt;br&gt;
+该需求目前仅合入深信服分支&lt;/p&gt;
+&lt;h2 id=&#34;需求分析&#34;&gt;需求分析&lt;/h2&gt;
+&lt;p&gt;身份认证的详细流程有点复杂，此处简要概述为2个阶段：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;标识：新建用户时，server计算并存储密码哈希值&lt;/li&gt;
+&lt;li&gt;鉴别：用户登录时，server向client发送计算密码哈希值的关键信息，client计算并向server发送密码哈希值，server校验其是否符合存储的值&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;vastbase和postgresql对比，server计算密码哈希值的算法不同，server向client发送关键信息也不同。为解决pg-client能够连接vb-server的问题，需解决问题如下：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;vb-server计算并存储与pg-server一致的密码哈希值&lt;/li&gt;
+&lt;li&gt;vb-server向pg-client发送密码哈希值关键信息时，需要pg-server一致&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;postgreql的标识与鉴别机制，符合标准RFC-5802，涉及的算法与协议，本文统一称为scram-sha256。vastbase涉及的算法与协议，本文统一称为sha256。&lt;/p&gt;
+&lt;h2 id=&#34;需求实现&#34;&gt;需求实现&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;密码存储：新建用户时，修改存储用户密码的值&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;修改前：guc参数password_encrypt_type，取值1时，vb-server存储密码的[sha256, md5]值；取值为2时，存储密码的[sha256]值&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;SELECT&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;rolpassword&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;FORM&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pgauthid&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 示例：长度为209
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;rolpassword&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;sha256af99537f242c661a88acea99ac626a2cf8fe196ac5671db6f02ed6818b420cf84e7ada61d66602c6eb5bf4ced40911d3f51865959784ebc3b0d385ca4c08f3398f05e16268fe9acc95a2d662bf5033b15d53abd1f835c1a3f1e96343a5cbf800ecdfecefade&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;修改后：guc参数password_encrypt_type，取值1时，vb-server存储密码的[sha256, md5, scram-sha256]值；取值为2时，存储密码的[sha256, scram-sha256]值&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;SELECT&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;rolpassword&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;FORM&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pgauthid&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 示例：长度342 (新增长度：133)
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;rolpassword&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;sha256af99537f242c661a88acea99ac626a2cf8fe196ac5671db6f02ed6818b420cf84e7ada61d66602c6eb5bf4ced40911d3f51865959784ebc3b0d385ca4c08f3398f05e16268fe9acc95a2d662bf5033b15d53abd1f835c1a3f1e963SCRAM&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;SHA&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;256&lt;/span&gt;&lt;span class=&#34;err&#34;&gt;$&lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;4096&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;:&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;sp5V1hrLKzLsS4HtQgqTuA&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;==&lt;/span&gt;&lt;span class=&#34;err&#34;&gt;$&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;QO&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;/&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;UVdrXxIypzBEGqEuIWe96A80elghFQs25ZbdPsLg&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;:&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;J4lPXmXPANtTMOkaHokMjmM19K1Di7fU6WRWuZ5VmS0&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;认证协议：用户登录时，修改向客户端发送的密码哈希值关键信息&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;修改前：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 身份认证协议&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;1. client &amp;lt;-&amp;gt; server : tcp connect
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;2. client --&amp;gt; server : send &lt;span class=&#34;o&#34;&gt;[&lt;/span&gt;消息类型:0, 协议版本:3.51，连接参数:user_name, databse, ...&lt;span class=&#34;o&#34;&gt;]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;3. server --&amp;gt; client : send &lt;span class=&#34;o&#34;&gt;[&lt;/span&gt;消息类型:R, 哈希算法:10, 系统表存储的密码的算法:2, 计算密码哈希关键信息：salt,token,iteration&lt;span class=&#34;o&#34;&gt;]&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;4. client &amp;lt;-&amp;gt; server : &lt;span class=&#34;c1&#34;&gt;# 省略3次交互&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;修改后：&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 5 需求 G100审计</title>
+      <link>http://localhost:1313/posts/projectdocs/5-requirement-g100-audit-refactor/</link>
+      <pubDate>Wed, 27 Aug 2025 15:13:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/5-requirement-g100-audit-refactor/</guid>
+      <description>&lt;h1 id=&#34;1-简介&#34;&gt;1 简介&lt;/h1&gt;
+&lt;h2 id=&#34;11-目的&#34;&gt;1.1 目的&lt;/h2&gt;
+&lt;p&gt;审计特性：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;功能：收集数据库内的关键事件，例如启动集群、创建对象、查询数据等，根据事件生成与存储审计日志，向用户提供审计日志查询接口。&lt;/li&gt;
+&lt;li&gt;必要：从客户角度，使用审计特性，主要目的包括：合法合规、安全监控、事故调查等。从内核角度，为满足信创要求，数据库需达到CC标准，在CC标准中，对审计功能提出多项要求。&lt;/li&gt;
+&lt;li&gt;问题：G100审计特性存在多处设计缺陷，导致功能问题多、性能低、易用性差、可维护性差、可扩展性差等。到目前为止，其中累计识别50+缺陷，仍具有30+未识别缺陷。&lt;/li&gt;
+&lt;li&gt;历史：openGauss早期版本，华为以色列团队开发审计特性，交付标准为基本功能可用，与商用标准差距大。G100早期版本，由openGauss引入审计特性。在之后版本，G100进行多轮迭代。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;本需求的目标是重构审计特性，解决功能、性能、易用性、可维护性、可扩展性等问题，使审计特性达到大规模商用的标准。&lt;/p&gt;
+&lt;h2 id=&#34;12-适用范围&#34;&gt;1.2 适用范围&lt;/h2&gt;
+&lt;p&gt;G100 3.0.8 psu5以及之后版本&lt;/p&gt;
+&lt;h2 id=&#34;13-术语定义首字母缩写词和缩略语&#34;&gt;1.3 术语定义、首字母缩写词和缩略语&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;暂无&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;13-参考资料&#34;&gt;1.3 参考资料&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;原始需求：&lt;a href=&#34;https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001083526&#34;&gt;https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001083526&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;国标查询下载网站： &lt;a href=&#34;https://openstd.samr.gov.cn/bzgk/gb/index&#34;&gt;https://openstd.samr.gov.cn/bzgk/gb/index&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;CC标准
+&lt;ul&gt;
+&lt;li&gt;《GB/T 20009-2019 信息安全技术 数据库管理系统安全评估准则》&lt;/li&gt;
+&lt;li&gt;《GB/T 20273-2019 信息安全技术 数据库管理系统安全技术要求》&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;信创标准
+&lt;ul&gt;
+&lt;li&gt;《SJ/T 11939-2024 安全可靠 集中式事务型数据库技术要求》&lt;/li&gt;
+&lt;li&gt;《T/AIA 016—2023信创产品测评 通用要求》&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;等保标准
+&lt;ul&gt;
+&lt;li&gt;《GB/T 25070-2019》信息安全技术 网络安全等级保护安全设计技术要求》&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;数据库政府采购标准：&lt;a href=&#34;https://jx.mof.gov.cn/xxgk/zhengcefagui/202401/t20240105_3925117.htm&#34;&gt;https://jx.mof.gov.cn/xxgk/zhengcefagui/202401/t20240105_3925117.htm&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;标准原文：微盘：&lt;a href=&#34;https://drive.weixin.qq.com/s?k=AHUAfwdSAA87Z01xB&#34;&gt;https://drive.weixin.qq.com/s?k=AHUAfwdSAA87Z01xB&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;G100审计特性：&lt;a href=&#34;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/2f4fb0e4adcc49f8b19dd4710f2a6549&#34;&gt;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/2f4fb0e4adcc49f8b19dd4710f2a6549&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;G100审计历史客户需求：&lt;a href=&#34;https://www.tapd.cn/tapd_fe/60475194/story/list?sort_name=created&amp;amp;order=&amp;amp;useScene=storyList&amp;amp;groupType=&amp;amp;conf_id=1160475194001046742&amp;amp;queryToken=fe85cdfc29d23bba423905c15d72d127&amp;amp;page=1&#34;&gt;https://www.tapd.cn/tapd_fe/60475194/story/list?sort_name=created&amp;amp;order=&amp;amp;useScene=storyList&amp;amp;groupType=&amp;amp;conf_id=1160475194001046742&amp;amp;queryToken=fe85cdfc29d23bba423905c15d72d127&amp;amp;page=1&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Oracle审计特性：&lt;a href=&#34;https://docs.oracle.com/en/database/oracle/oracle-database/23/dbseg/part_6.html&#34;&gt;https://docs.oracle.com/en/database/oracle/oracle-database/23/dbseg/part_6.html&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;开源组件pgaudit：&lt;a href=&#34;https://www.modb.pro/db/105894&#34;&gt;https://www.modb.pro/db/105894&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;需求分析与整理文档：语雀：&lt;a href=&#34;https://www.yuque.com/u57264336/oav5h4/tkhcgdilcbpuqm09&#34;&gt;https://www.yuque.com/u57264336/oav5h4/tkhcgdilcbpuqm09&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;2-g100审计功能重构&#34;&gt;2 G100审计功能重构&lt;/h1&gt;
+&lt;h2 id=&#34;21-功能简述&#34;&gt;2.1 功能简述&lt;/h2&gt;
+&lt;h3 id=&#34;一需求背景审计特性&#34;&gt;一、需求背景：审计特性&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;审计目的：记录数据库内的各种事件，事件包括：
+&lt;ul&gt;
+&lt;li&gt;启动、恢复、切换、停止集群&lt;/li&gt;
+&lt;li&gt;登录、注销账号&lt;/li&gt;
+&lt;li&gt;创建、修改、删除数据库对象，包括：DATABASE、SCHEMA、TABLE等&lt;/li&gt;
+&lt;li&gt;插入、更新、删除、查询关系表&lt;/li&gt;
+&lt;li&gt;…&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;描述事件：每个事件中，有3个关键要素：&amp;lt;主体&amp;gt;&amp;lt;操作&amp;gt;&amp;lt;客体&amp;gt;
+&lt;ul&gt;
+&lt;li&gt;主体：一般是数据库用户&lt;/li&gt;
+&lt;li&gt;客体：集群、账号、DATABASE、SCHEMA、TABLE、FUNCTION等&lt;/li&gt;
+&lt;li&gt;操作：不同的客体，涉及的操作不一样。比如，对于TABLE，操作有：CREATE, INSERT, SELECT等。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;审计日志：针对每个事件，收集与主体、操作、客体有关的信息，封装为1条审计日志。通常，1条审计日志中，包括的信息如下：
+&lt;ul&gt;
+&lt;li&gt;主体相关：用户名、客户端IP、会话ID等&lt;/li&gt;
+&lt;li&gt;操作相关：操作的类型、操作的时间、触发操作的SQL语句等&lt;/li&gt;
+&lt;li&gt;客体相关：客体类型、客体名称、客体属于哪个database、客体属于哪个schema&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;审计特性：为实现审计功能，在数据库内核中，需实现以下功能：
+&lt;ul&gt;
+&lt;li&gt;配置范围：对用户提供接口，配置需审计的事件范围&lt;/li&gt;
+&lt;li&gt;收集事件：在内核关键代码节点，发现事件，例如：登录用户、创建对象、查询数据等，收集主体、操作、客体相关信息&lt;/li&gt;
+&lt;li&gt;生成日志：按统一格式组织事件信息，生成审计日志&lt;/li&gt;
+&lt;li&gt;存储日志：将审计日志存储至磁盘&lt;/li&gt;
+&lt;li&gt;查询日志：对用户提供接口，查询日志&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;二需求背景g100审计特性旧版本&#34;&gt;二、需求背景：G100审计特性（旧版本）&lt;/h3&gt;
+&lt;p&gt;G100早期版本，引入openGauss审计特性，但是，该特性存在较多问题，包括：&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 8 需求 海康身份认证</title>
+      <link>http://localhost:1313/posts/projectdocs/8-requirement-hikvision-auth/</link>
+      <pubDate>Mon, 30 Jun 2025 18:32:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/8-requirement-hikvision-auth/</guid>
+      <description>&lt;p&gt;本需求包含6个小需求：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;身份认证：创建用户：CREATE/SET USER .. PASSWORD ..，密码可以只设置2类字符&lt;/li&gt;
+&lt;li&gt;身份认证：创建用户：CREATE/SET [角色] USER ..，角色支持指定SUPERUSER和NOSUPERUSER&lt;/li&gt;
+&lt;li&gt;身份认证：查看用户：SELECT .. FROM pg_user，普通用户可查询pg_user视图（仅pg兼容性）&lt;/li&gt;
+&lt;li&gt;身份认证：登录用户：SET ROLE new_user [PASSWORD ..]，new_user是会话用户时，可以不指定PASSWORD&lt;/li&gt;
+&lt;li&gt;访问控制：Database权限：普通用户可访问template1数据库（仅pg兼容性）&lt;/li&gt;
+&lt;li&gt;访问控制：Schema权限：普通用户可在public下执行CREATE操作（仅pg兼容性）&lt;/li&gt;
+&lt;/ol&gt;
+&lt;ul&gt;
+&lt;li&gt;描述&lt;/li&gt;
+&lt;/ul&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;身份认证：创建用户&lt;br&gt;
+变更：用户密码可以只包含2类字符&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- password_polcy取值不同，密码需包含的字符种类数不同，为1时需3类，需2时需4类，为3时需2类
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;ALTER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;SYSTEM&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;SET&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;password_policy&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;OT&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;3&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 修改取值范围[0,2]为[0,3]
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;USER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;u1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;PASSWORD&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;password1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 此时，密码可以只含2类字符
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;ALTER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;USER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;old_user&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;PASSWORd&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;password1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;身份认证：创建用户&lt;br&gt;
+变更：可以指定SUPERUSER角色&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;USER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;u1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;SUPERUSER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;PASSWORD&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;..;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 支持设置 SUPERUSER 角色
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;ALTER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;USER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;u1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;NOSUPERUSER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;..;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 支持取消 SUPERUSER 角色
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;ALTER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;USER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;old_user&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;SUPERUSER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;..;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;身份认证：查看用户&lt;br&gt;
+变更：普通用户可查询pg_user视图（仅pg兼容性）&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 9 需求 E100审计</title>
+      <link>http://localhost:1313/posts/projectdocs/9-requirement-e100-audit/</link>
+      <pubDate>Fri, 18 Jul 2025 10:50:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/9-requirement-e100-audit/</guid>
+      <description>&lt;h1 id=&#34;1-简介&#34;&gt;1 简介&lt;/h1&gt;
+&lt;h2 id=&#34;11-目的&#34;&gt;1.1 目的&lt;/h2&gt;
+&lt;p&gt;审计是重要的安全特性，功能是收集数据库内的事件，例如创建对象、查询数据等，根据事件生成与存储审计日志，并向用户提供查询审计日志的接口。&lt;/p&gt;
+&lt;p&gt;在303.7版本，E100首次引入审计特性，本文介绍E100审计特性的对外接口、功能约束、使用方式等信息。&lt;/p&gt;
+&lt;h2 id=&#34;12-适用范围&#34;&gt;1.2 适用范围&lt;/h2&gt;
+&lt;p&gt;E100，303.7及之后的版本&lt;/p&gt;
+&lt;h2 id=&#34;13-术语定义首字母缩写词和缩略语&#34;&gt;1.3 术语定义、首字母缩写词和缩略语&lt;/h2&gt;
+&lt;p&gt;无&lt;/p&gt;
+&lt;h2 id=&#34;13-参考资料&#34;&gt;1.3 参考资料&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;G100审计特性：&lt;a href=&#34;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/2f4fb0e4adcc49f8b19dd4710f2a6549&#34;&gt;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/2f4fb0e4adcc49f8b19dd4710f2a6549&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Oracle审计特性：&lt;a href=&#34;https://docs.oracle.com/en/database/oracle/oracle-database/23/dbseg/part_6.html&#34;&gt;https://docs.oracle.com/en/database/oracle/oracle-database/23/dbseg/part_6.html&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;开源组件pgaudit：&lt;a href=&#34;https://www.modb.pro/db/105894&#34;&gt;https://www.modb.pro/db/105894&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;G100审计重构方案：&lt;a href=&#34;https://doc.weixin.qq.com/doc/w3_AdwAfAa7AFkCNFLkO0AXJSUK7CICd?scode=AHUAfwdSAA8DKRU1G1AdwAfAa7AFk&amp;amp;version=4.1.38.6011&amp;amp;platform=win&#34;&gt;https://doc.weixin.qq.com/doc/w3_AdwAfAa7AFkCNFLkO0AXJSUK7CICd?scode=AHUAfwdSAA8DKRU1G1AdwAfAa7AFk&amp;amp;version=4.1.38.6011&amp;amp;platform=win&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;pg 14完整语法：&lt;a href=&#34;https://www.postgresql.org/docs/14/sql-commands.html&#34;&gt;https://www.postgresql.org/docs/14/sql-commands.html&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;2-e100审计特性&#34;&gt;2 E100审计特性&lt;/h1&gt;
+&lt;h2 id=&#34;21-功能简述&#34;&gt;2.1 功能简述&lt;/h2&gt;
+&lt;p&gt;【审计特性】&lt;br&gt;
+审计特性，主要功能是记录数据库内的各种事件，并向用户提供查询事件的接口。事件包括：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;启动、恢复、切换、停止集群&lt;/li&gt;
+&lt;li&gt;登录、注销账号&lt;/li&gt;
+&lt;li&gt;创建、修改、删除数据库对象，包括：DATABASE、SCHEMA、TABLE等&lt;/li&gt;
+&lt;li&gt;插入、更新、删除、查询关系表&lt;/li&gt;
+&lt;li&gt;…&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;【审计事件】&lt;br&gt;
+数据库内发生的事件，都可描述为&amp;lt;主体&amp;gt;&amp;lt;操作&amp;gt;&amp;lt;客体&amp;gt;&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;主体：一般是数据库用户&lt;/li&gt;
+&lt;li&gt;客体：集群、账号、数据对象等&lt;/li&gt;
+&lt;li&gt;操作：针对不同客体，操作类型不一样。比如，对于TABLE，操作类型有：CREATE, INSERT, SELECT等。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;【审计日志】&lt;br&gt;
+发生事件时，审计特性会收集事件中的信息，将事件封装审计日志，审计日志中的关键内容包括：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;主体信息：用户名&lt;/li&gt;
+&lt;li&gt;操作信息：操作类型、操作时间、操作的SQL语句等&lt;/li&gt;
+&lt;li&gt;客体信息：客体类型、客体名称、客体属于哪个database、客体属于哪个schema&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;【审计流程】&lt;br&gt;
+使用审计特性时，主要包括以下几个流程：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;配置审计功能：用户提前配置审计范围，即配置哪些事件需被审计。&lt;/li&gt;
+&lt;li&gt;生成审计日志：用户操作数据库时，产生审计事件，例如创建表、删除表等。内核收集事件信息，生成审计日志。&lt;/li&gt;
+&lt;li&gt;存储审计日志：内核存储审计日志至磁盘。&lt;/li&gt;
+&lt;li&gt;查询审计日志：用户查询审计日志，内核从磁盘读取审计日志。&lt;/li&gt;
+&lt;li&gt;删除审计日志&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;一个简单示例如下图所示：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 1. 配置审计功能：确定哪些事件需审计
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 2. 生成审计日志：用户执行SQL，产生事件&amp;lt;用户&amp;gt;&amp;lt;创建&amp;gt;&amp;lt;表&amp;gt;，根据事件生成日志
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TABLE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;t1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;INT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c2&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;TEXT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 3. 存储审计日志：内核自动存储日志
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 4. 查询审计日志
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;SELECT&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;*&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;FROM&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pg_audit_log&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;();&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 预期输出（横向输出）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;[&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;RECORD&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;]&lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;---------------------------------
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;scope&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;subject&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;  &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;u1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 主体信息：用户名
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;optype&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;   &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;create&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 操作信息：create操作
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;optime&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;   &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;2025&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;07&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;18&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;18&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;:&lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;15&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;:&lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;17&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;.&lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;400009&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;+&lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;08&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 操作时间
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;opresult&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;object&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;   &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;table&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 客体信息：客体类型
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;objdb&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;postgres&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 客体信息：客体属于哪个database
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;objnsp&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;   &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;public&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 客体信息：客体属于哪个schema
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;objname&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;  &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;t1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 客体信息：客体名称
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;opxid&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;optid&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pid&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;      &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;sql&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;      &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;create&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;table&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;t1&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;int&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- 触发操作的SQL
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;extra&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;【友商对比】&lt;br&gt;
+对比oracle、opengauss/g100、pgaudit&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>分享编写需求/设计文档的个人经验</title>
+      <link>http://localhost:1313/posts/projectdocs/writing-requirement-and-design-docs/</link>
+      <pubDate>Tue, 15 Jul 2025 10:54:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/writing-requirement-and-design-docs/</guid>
+      <description>&lt;h1 id=&#34;1-简介&#34;&gt;1 简介&lt;/h1&gt;
+&lt;h2 id=&#34;11-分享的主题&#34;&gt;1.1 分享的主题&lt;/h2&gt;
+&lt;p&gt;分享一些编写需求、设计文档经验&lt;/p&gt;
+&lt;h2 id=&#34;12-分享的背景&#34;&gt;1.2 分享的背景&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;背景：我写的需求文档，（相对）还算详细，所以有此次分享&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;308.1，profile功能的需求文档：&lt;a href=&#34;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007196&#34;&gt;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007196&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;根因：前公司流程繁重，被迫养成这种习惯。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;分享的内容：可分享的干货不多，我觉得，在写文档的过程中，大部分人想的很详细，只是没有编写到文档中，毕竟每个人都有自己的编写风格。所以，本文的重点，是介绍前公司流程与要求，并以我做过的需求为例，为大家提供一点参考。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;分享人经历：交过10+个不算小的需求，完整写过10+次需求与设计文档，格式与海量的接近。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;分享的局限：交付的需求，主要是安全方向，也涉及SQL、存储等多个模块，所以，本文主要以安全需求的角度写，其他模块的需求不一定适用。&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;img alt=&#34;scope&#34; loading=&#34;lazy&#34; src=&#34;http://localhost:1313/images/ProjectDocs/writing-requirement-and-design-docs/scope.png&#34;&gt;&lt;/p&gt;
+&lt;h2 id=&#34;13-前公司的流程&#34;&gt;1.3 前公司的流程&lt;/h2&gt;
+&lt;p&gt;与海量相比，前公司的交付流程，几乎一样：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;客户：提出需求&lt;/li&gt;
+&lt;li&gt;产品、项目、测试、架构等：审核需求&lt;/li&gt;
+&lt;li&gt;开发：撰写需求/设计文档&lt;/li&gt;
+&lt;li&gt;各角色：评审需求/设计文档&lt;/li&gt;
+&lt;li&gt;开发：编写代码&lt;/li&gt;
+&lt;li&gt;…&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;其中，在&lt;code&gt;4.评审需求/设计文档&lt;/code&gt;环节，前公司区别较大：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;一、评审人员多&lt;/p&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;编号&lt;/th&gt;
+          &lt;th&gt;角色&lt;/th&gt;
+          &lt;th&gt;评审人&lt;/th&gt;
+          &lt;th&gt;目的&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;1&lt;/td&gt;
+          &lt;td&gt;开发&lt;/td&gt;
+          &lt;td&gt;安全组、SQL组、存储组、运维组、..&lt;/td&gt;
+          &lt;td&gt;避免影响其他模块，协助发现风险&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;2&lt;/td&gt;
+          &lt;td&gt;测试&lt;/td&gt;
+          &lt;td&gt;测试人、测试组长&lt;/td&gt;
+          &lt;td&gt;学习新需求，识别测试重点&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;3&lt;/td&gt;
+          &lt;td&gt;架构&lt;/td&gt;
+          &lt;td&gt;架构设计&lt;/td&gt;
+          &lt;td&gt;避免影响其他模块，确保后向兼容&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;4&lt;/td&gt;
+          &lt;td&gt;资料&lt;/td&gt;
+          &lt;td&gt;资料优化、资料审核&lt;/td&gt;
+          &lt;td&gt;学习新需求&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;5&lt;/td&gt;
+          &lt;td&gt;用例&lt;/td&gt;
+          &lt;td&gt;用例审核&lt;/td&gt;
+          &lt;td&gt;确保各种check可看护功能&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;6&lt;/td&gt;
+          &lt;td&gt;其他&lt;/td&gt;
+          &lt;td&gt;流程提升&lt;/td&gt;
+          &lt;td&gt;-&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;二、评审通过难&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;组内评审&lt;/li&gt;
+&lt;li&gt;线上评审：上述所有角色会上评审，不过，一般很多人会议冲突，关键靠线下评审&lt;/li&gt;
+&lt;li&gt;线下评审（关键流程）：各类角色共10+必选评审人，通过在线需求文档、设计文档了解需求，提出疑问，提出意见。开发分析解决后，找提出人确认意见，才算闭环。最后，所有必选评审人评审通过，才算完成流程。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;在这种流程中，需求与设计文档，要满足很多要求：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;普适：考虑到其他组开发、测试、资料等角色，不熟悉本领域的基础知识，所以，需要详细介绍相关原理，很多原理需要从头介绍&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;完整：要充分例举所有可能涉及风险，否则，评审人会认为未考虑到&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;举例：做了1个需求，可以为表设置加密属性，需要考虑：系统表、用户表（atore表、ustore表、分区表、临时表、toast表、unlogged表、segment表、hashbuckent表、物化视图…）&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h1 id=&#34;2-需求文档写作思路&#34;&gt;2 需求文档写作思路&lt;/h1&gt;
+&lt;h2 id=&#34;21-分析过程&#34;&gt;2.1 分析过程&lt;/h2&gt;
+&lt;p&gt;首先，客户提出需求，很多需求不够清晰。&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;示例：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;profile原始需求：
+&lt;ul&gt;
+&lt;li&gt;目前对于数据库用户的管理方式不够便捷，无法像Oracle为用户赋予一组安全策略。一些属性如密码有效期、密码过期天数、密码尝试次数等也只能全局设定，无法指定用户配置。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;然后，以我的个人习惯，分析需求的流程如下：&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 10 需求 SSL协议</title>
+      <link>http://localhost:1313/posts/projectdocs/10-requirement-ssl/</link>
+      <pubDate>Wed, 03 Sep 2025 11:07:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/10-requirement-ssl/</guid>
+      <description>&lt;h1 id=&#34;1-简介&#34;&gt;1 简介&lt;/h1&gt;
+&lt;h2 id=&#34;11-目的&#34;&gt;1.1 目的&lt;/h2&gt;
+&lt;p&gt;在应用与数据库传输数据时，为避免攻击者对数据进行窃听、篡改、伪造、重放等攻击，Vastbase支持采用TLS协议保障数据机密性与完整性。&lt;br&gt;
+通过TLS协议，应用传输数据指至服务端路程如下：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;建立连接：与数据建立TCP连接&lt;/li&gt;
+&lt;li&gt;生成密钥(TLS)：采用TLS协议协商生成密钥(连接级)&lt;/li&gt;
+&lt;li&gt;加密数据(TLS)：使用密钥加密数据(SQL等)&lt;/li&gt;
+&lt;li&gt;发送数据：通过TCP协议，发送数据密文至数据库&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;客户可能采用第三方工具，截取网络流量，获取传输中的SQL等数据，进行流量审计。但是，在使用TLS协议的情况下，网络中的数据是密文形式，无法进行流量审计。为解决该问题，本文介绍如何让第三方工具获取密钥，以解密网络中的数据密文。&lt;/p&gt;
+&lt;h2 id=&#34;12-适用范围&#34;&gt;1.2 适用范围&lt;/h2&gt;
+&lt;p&gt;本文适用于3.0.8 psu4以之后版本。未来本需求将同步至2.2.15版本。&lt;/p&gt;
+&lt;h2 id=&#34;13-术语定义首字母缩写词和缩略语&#34;&gt;1.3 术语定义、首字母缩写词和缩略语&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;SSL: Secure Sockets Layer，于保障网络通信安全的加密协议，早期协议，存在设计缺陷，目前由TLS协议替代。但是，SSL也可不特指SSL协议，可泛指所有通信安全加密协议。同时，由于历史原因，以及前向兼容，数据库中的很多参数与接口采用SSL命令，实际使用的是TLS协议。无需纠结TLS与SSL差异，vastbase中SSL等于TLS。&lt;/li&gt;
+&lt;li&gt;TLS: Transport Layer Security，更安全的传输加密协议。早期版本1.0,1.1已不安全，主流版本为1.2,1.3。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;13-参考资料&#34;&gt;1.3 参考资料&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;原始需求：&lt;a href=&#34;https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001084569&#34;&gt;https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001084569&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;openssl支持的所有cipers： &lt;a href=&#34;https://docs.openssl.org/3.0/man1/openssl-ciphers/&#34;&gt;https://docs.openssl.org/3.0/man1/openssl-ciphers/&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;ssl与tls原理：博客写了一点点，没整理&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;2-tls协议支持第三方流量审计&#34;&gt;2 TLS协议支持第三方流量审计&lt;/h1&gt;
+&lt;h2 id=&#34;21-功能简述&#34;&gt;2.1 功能简述&lt;/h2&gt;
+&lt;p&gt;【需求现状】&lt;br&gt;
+目前，大部分第三方流量审计工具，可在一些特定场景下，解密由TLS协议加密后的数据。以vastbase为例，使用TLS协议分为以下阶段：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;生成证书、私钥文件&lt;/li&gt;
+&lt;li&gt;vastbase端配置证书、私钥文件&lt;/li&gt;
+&lt;li&gt;vsql端配置证书、私钥文件&lt;/li&gt;
+&lt;li&gt;vsql连接vastbase&lt;br&gt;
+4.1 建立tcp连接&lt;br&gt;
+4.2 使用证书校验对方身份&lt;br&gt;
+4.3 双发协商选择算法套件：包括密钥生成协议、加密算法等&lt;br&gt;
+4.4 双方协商生成密钥&lt;/li&gt;
+&lt;li&gt;vsql与vastbase传输数据&lt;br&gt;
+5.1 发送数据前，使用密钥加密数据&lt;br&gt;
+5.2 发送数据密文&lt;br&gt;
+在4.3步骤中，可配置不同的密钥生成协议，对于其中一部分协议，在步骤4.4中，第三方工具可获取密钥，第步骤5.2中，第三方工具截取数据密文后，即可解密数据。&lt;br&gt;
+但是，4.3步骤中，目前vastbase仅支持2种密钥生成协议，这2种协议都无法让第三方工具获取密钥。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;【密钥生成协议】&lt;br&gt;
+此处介绍2类常见的密钥生成协议：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;一、DHE密钥协商协议&lt;br&gt;
+Vastbase目前支持的2种协议，都属于此类协议&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;client                                    server
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;+-------------------------------------------+-----------------------------------
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;  &amp;lt;-------- 0. 双方随机约定一些参数 ------&amp;gt;  &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 1. 生成随机私钥 client_priv
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 2. 基于client_priv，计算公钥 client_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 3. 发送公钥 client_pub ------------&amp;gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 4. 接收公钥 client_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 5. 生成随机私钥 server_priv
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 6. 基于server_priv，计算公钥 server_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                            &amp;lt;------------   &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 7. 发送公钥 server_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 8. 接收公钥 server_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 9. 基于client_priv，server_pub，计算密钥
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 10. 基于server_priv，client_pub，计算密钥
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;（第9步和第10步，可以计算出相同的密钥）
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;简单举个例子
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;client                                    server
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;+-------------------------------------------+-----------------------------------
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;  &amp;lt;----- 0. generate and send &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;2,11&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; ----&amp;gt; &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 1. generate &lt;span class=&#34;m&#34;&gt;8&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 2. caculate &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;8&lt;/span&gt; * 2&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; % &lt;span class=&#34;nv&#34;&gt;11&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;5&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 3. send &lt;span class=&#34;m&#34;&gt;5&lt;/span&gt; ----------&amp;gt;  
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 4. receive &lt;span class=&#34;m&#34;&gt;5&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 5. generate &lt;span class=&#34;m&#34;&gt;10&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 6. caculate &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;10&lt;/span&gt; * 2&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; % &lt;span class=&#34;nv&#34;&gt;11&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;9&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                            &amp;lt;------------   &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 7. send &lt;span class=&#34;m&#34;&gt;9&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 8. receive &lt;span class=&#34;m&#34;&gt;9&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 9. &lt;span class=&#34;nv&#34;&gt;key&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;8&lt;/span&gt; * 9&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; % &lt;span class=&#34;nv&#34;&gt;11&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;6&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 10. &lt;span class=&#34;nv&#34;&gt;key&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;10&lt;/span&gt; * 5&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; % &lt;span class=&#34;nv&#34;&gt;11&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;6&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;攻击者：截获网络流量，获取2,11,5,9，无法计算出密钥为6
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;二、RSA密钥交换协议&lt;br&gt;
+该协议支持第三方工具解密流量，客户选择的工具已适配该协议。TLS还支持其他PSK、SRP等协议，但是，由于这些协议比较少见，且客户选择的工具未适配，本次不适配其他协议。&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 11 需求 逻辑复制性能优化</title>
+      <link>http://localhost:1313/posts/projectdocs/11-requirement-logical-replication/</link>
+      <pubDate>Fri, 06 Feb 2026 14:30:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/11-requirement-logical-replication/</guid>
+      <description>&lt;h1 id=&#34;1-简介&#34;&gt;1 简介&lt;/h1&gt;
+&lt;h2 id=&#34;11-目的&#34;&gt;1.1 目的&lt;/h2&gt;
+&lt;p&gt;&lt;strong&gt;逻辑复制&lt;/strong&gt;是一种在多个数据库实例之间复制数据的功能，通常用于从一个数据库实例中，将针对指定表的insert、delete、update等写操作，复制到其他另一个数据库实例。在数据库术语中，统一称逻辑复制的发送方为&lt;strong&gt;发布端&lt;/strong&gt;，称接收方为&lt;strong&gt;订阅端&lt;/strong&gt;。Oracle、Postgresql、Vastbase等数据库产品，均提供逻辑复制功能。&lt;/p&gt;
+&lt;p&gt;当前版本，逻辑复制性能较低，以tpcc场景为例，发布端40w tmpc时，订阅端的复制速度约10m/s。在滚动升级等场景，通过逻辑复制在不同实例间同步大量数据，要求逻辑复制性能达到70-100m/s。&lt;/p&gt;
+&lt;p&gt;发布端、订阅端均存在性能瓶颈，均需要优化。但是，由于交付时间较短，以及订阅端方案仍有瑕疵等因素，本版本交付发布端性能优化，下版本交付订阅端性能优化。&lt;/p&gt;
+&lt;h2 id=&#34;12-适用范围&#34;&gt;1.2 适用范围&lt;/h2&gt;
+&lt;p&gt;本文主要用于向开发、测试等角色，介绍G100 3.0.9 psu2及之后版本，逻辑复制的性能优化的设计方向与使用方法。&lt;/p&gt;
+&lt;h2 id=&#34;13-术语定义首字母缩写词和缩略语&#34;&gt;1.3 术语定义、首字母缩写词和缩略语&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;发布端：逻辑复制场景，发送数据方。&lt;/li&gt;
+&lt;li&gt;订阅端：逻辑复制场景，接收数据方。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;13-参考资料&#34;&gt;1.3 参考资料&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Vastbase G100产品文档中逻辑复制使用介绍：&lt;a href=&#34;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/f5c2ae8eb9744d429ad39c02438addf6&#34;&gt;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/f5c2ae8eb9744d429ad39c02438addf6&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;2-g100审计功能重构&#34;&gt;2 G100审计功能重构&lt;/h1&gt;
+&lt;h2 id=&#34;21-功能简述&#34;&gt;2.1 功能简述&lt;/h2&gt;
+&lt;h3 id=&#34;需求背景逻辑复制使用&#34;&gt;需求背景：逻辑复制使用&lt;/h3&gt;
+&lt;p&gt;使用逻辑复制的流程如下：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;发布端：配置逻辑复制&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 设置wal日志详细级别，设计身份等参数，重启集群&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$PGDATA&lt;/span&gt; -c &lt;span class=&#34;s1&#34;&gt;&amp;#39;wal_level=logical&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$PGDATA&lt;/span&gt; -h &lt;span class=&#34;s2&#34;&gt;&amp;#34;host all all 0.0.0.0/0 md5&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$PGDATA&lt;/span&gt; -h &lt;span class=&#34;s2&#34;&gt;&amp;#34;host replication all 0.0.0.0/0 md5&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;vb_ctl restart -D &lt;span class=&#34;nv&#34;&gt;$PGDATA&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;发布端：创建表&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TABLE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pt1&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;INT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c2&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;TEXT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TABLE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pt2&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;INT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c2&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;TEXT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;发布端：创建发布，即指定哪些表需复制&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;PUBLICATION&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pub1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;FOR&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TABLE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pt1&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pt2&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;发布端：创建逻辑复制槽，用于存储复制状态等信息&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 透明加密 需求</title>
+      <link>http://localhost:1313/posts/projectdocs/13-requirement-tde/</link>
+      <pubDate>Fri, 20 Mar 2026 10:47:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/13-requirement-tde/</guid>
+      <description>&lt;h1 id=&#34;1-简介&#34;&gt;1 简介&lt;/h1&gt;
+&lt;h2 id=&#34;11-目的&#34;&gt;1.1 目的&lt;/h2&gt;
+&lt;p&gt;透明加密特性提供数据加密功能，核心原理是在数据库将数据存储至磁盘时，先加密再存储。&lt;br&gt;
+本需求将从0设计透明加密特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。&lt;/p&gt;
+&lt;h2 id=&#34;12-适用范围&#34;&gt;1.2 适用范围&lt;/h2&gt;
+&lt;p&gt;Vastbase V5版本。&lt;/p&gt;
+&lt;h2 id=&#34;13-术语定义首字母缩写词和缩略语&#34;&gt;1.3 术语定义、首字母缩写词和缩略语&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;TDE：Transparent Data Encryption，透明数据加密，由数据库提供的数据加密特性&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;14-参考资料&#34;&gt;1.4 参考资料&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;oracle 透明加密特性：&lt;a href=&#34;https://docs.oracle.com/en/database/oracle/oracle-database/26/dbtde/preface.html&#34;&gt;https://docs.oracle.com/en/database/oracle/oracle-database/26/dbtde/preface.html&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;sql server 透明加密特性：&lt;a href=&#34;https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/transparent-data-encryption?view=sql-server-ver17&#34;&gt;https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/transparent-data-encryption?view=sql-server-ver17&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;oceanbase 透明加密特性：&lt;a href=&#34;https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475958&#34;&gt;https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475958&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;kingbase 透明加密特性：&lt;a href=&#34;https://docs.kingbase.com.cn/cn/KES-V9R1C10/safe/transparent-data-Encyption&#34;&gt;https://docs.kingbase.com.cn/cn/KES-V9R1C10/safe/transparent-data-Encyption&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;dm8 透明加密特性：&lt;a href=&#34;https://eco.dameng.com/document/dm/zh-cn/pm/storage-encryption.html#7.1.1%20%E5%85%A8%E5%BA%93%E5%8A%A0%E5%AF%86&#34;&gt;https://eco.dameng.com/document/dm/zh-cn/pm/storage-encryption.html#7.1.1%20%E5%85%A8%E5%BA%93%E5%8A%A0%E5%AF%86&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;gaussdb 透明加密特性：&lt;a href=&#34;https://support.huaweicloud.com/intl/zh-cn/fg-gaussdb-dist-v8/gaussdb-18-0019.html&#34;&gt;https://support.huaweicloud.com/intl/zh-cn/fg-gaussdb-dist-v8/gaussdb-18-0019.html&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;2-透明加密&#34;&gt;2 透明加密&lt;/h1&gt;
+&lt;h2 id=&#34;21-功能简述&#34;&gt;2.1 功能简述&lt;/h2&gt;
+&lt;h3 id=&#34;一基本原理&#34;&gt;一、基本原理&lt;/h3&gt;
+&lt;p&gt;通常，用户将数据传输给数据库后，数据库将数据存储到磁盘。攻击者可能利用多种数据库内部或外部漏洞，例如操作系统漏洞等，绕过数据库安全机制，直接从磁盘读取数文件，窃取用户数据。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;透明加密&lt;/strong&gt;，是一种由数据库提供的加密特性，可有效解决攻击者从磁盘窃取数据的问题。开启透明加密后，数据库将数据存储到磁盘时，先加密数据，再存储数据密文；数据库从磁盘读取数据时，先解密数据密文，再进行其他计算。用户访问透明加密表时，包括存储、读取数据等，与访问普通表无任何区别，加密和解密过程由数据库自动完成，即对用户透明。&lt;/p&gt;
+&lt;h3 id=&#34;二竞品分析&#34;&gt;二、竞品分析&lt;/h3&gt;
+&lt;p&gt;几乎所有商用关系数据库中，都支持透明加密特性，包括oracle, sql server, oceanbase, kingbase, dm8等，postgresql不支持透明加密特性。&lt;br&gt;
+使用透明加密时，通常包括3个阶段：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;定义用于加密的密钥&lt;/li&gt;
+&lt;li&gt;使用SQL语法，定义哪些对象需加密，不同产品，定义加密对象的粒度不同&lt;/li&gt;
+&lt;li&gt;使用SQL语法，访问透明加密表，以及进行其他运维等操作&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;各产品中，定义加密对象的SQL语法如下：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 一、oracle
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TABLE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;t1&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;INT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c2&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;TEXT&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ENCRYPT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;TABLESPACE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ts1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;DATAFILE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;..&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ENCRYPTION&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;USING&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;AES192&amp;#39;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ENCRYPT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 二、sql server
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;DATABASE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ENCRYPTION&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;KEY&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;WITH&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ALGORITHM&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;AES_256&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;..&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;ALTER&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;DATABASE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;db1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;SET&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ENCRYPTION&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;ON&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 三、oceanbase
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;TABLESPACE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ts1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;encryption&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;y&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- mysql cmpt
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;TABLESPACE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ts1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ENCRYPTION&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;USING&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;aes-256&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;c1&#34;&gt;-- oracle cmpt
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 四、kingbase
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;TABLESPACE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ts&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;..&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;WITH&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ENCRYPTION&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TRUE&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TABLE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ts&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;..&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;ENCRYPTED&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;BY&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;this is a key&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 五、dm8
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;intdb&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;..&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ENCRYPT_NAME&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;..&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;TABLESPACE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;..&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ENCRYPT&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;WITH&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;..&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TABLE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;t1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;INT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c2&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;INT&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;ENCRYPT&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;WITH&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;..);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 六、gaussdb
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TABLE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;t1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;..&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;WITH&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;enable_tde&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;k&#34;&gt;on&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;各产品中，按定义加密对象的粒度，区别如下：&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 mac 需求</title>
+      <link>http://localhost:1313/posts/projectdocs/14-requirement-mac/</link>
+      <pubDate>Mon, 23 Mar 2026 21:40:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/14-requirement-mac/</guid>
+      <description>&lt;h1 id=&#34;1-简介&#34;&gt;1 简介&lt;/h1&gt;
+&lt;h2 id=&#34;11-目的&#34;&gt;1.1 目的&lt;/h2&gt;
+&lt;p&gt;本文主要包括以下关键内容：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;介绍访问控制的基本概念&lt;/li&gt;
+&lt;li&gt;调研其他厂商实现强制控制的方式&lt;/li&gt;
+&lt;li&gt;设计Vastbase强制访问控制特性，介绍如何使用强制访问特性&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2 id=&#34;12-适用范围&#34;&gt;1.2 适用范围&lt;/h2&gt;
+&lt;p&gt;Vastbase V5版本。&lt;/p&gt;
+&lt;h2 id=&#34;13-术语定义首字母缩写词和缩略语&#34;&gt;1.3 术语定义、首字母缩写词和缩略语&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;MAC：Mandatory Access Control，强制访问控制，主体访问客体时，基于主体、客体属性，强制控制访问权限。&lt;/li&gt;
+&lt;li&gt;DAC：Discretionary Access Control，自主访问控制，数据拥有者可自行设置访问权限。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;14-参考资料&#34;&gt;1.4 参考资料&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;oracle 强制访问控制（标签访问控制 RLS）：&lt;a href=&#34;https://docs.oracle.com/en/database/oracle/oracle-database/26/olsag/part1.html#GUID-C20C62AE-2A30-45F9-AEEA-52A0D3286FBA&#34;&gt;https://docs.oracle.com/en/database/oracle/oracle-database/26/olsag/part1.html#GUID-C20C62AE-2A30-45F9-AEEA-52A0D3286FBA&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;oceanbase 强制访问控制（兼容oracle）：&lt;a href=&#34;https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475944&#34;&gt;https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475944&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;kingbase 强制访问控制：&lt;a href=&#34;https://bbs.kingbase.com.cn/kingbase-doc/v8.6.7.24/safety/safety-guide/label-and-mac.html&#34;&gt;https://bbs.kingbase.com.cn/kingbase-doc/v8.6.7.24/safety/safety-guide/label-and-mac.html&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;dm 强制访问控制：&lt;a href=&#34;https://eco.dameng.com/document/dm/zh-cn/pm/mandatory-access-control.html&#34;&gt;https://eco.dameng.com/document/dm/zh-cn/pm/mandatory-access-control.html&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;GB/T-20009-数据库管理系统安全评估准则：&lt;a href=&#34;https://drive.weixin.qq.com/s?k=AHUAfwdSAA82aDcvvD&#34;&gt;https://drive.weixin.qq.com/s?k=AHUAfwdSAA82aDcvvD&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;postgresql 行级访问控制 RLS：&lt;a href=&#34;https://www.postgresql.org/docs/current/ddl-rowsecurity.html&#34;&gt;https://www.postgresql.org/docs/current/ddl-rowsecurity.html&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;2-强制访问控制&#34;&gt;2 强制访问控制&lt;/h1&gt;
+&lt;h2 id=&#34;21-功能简述&#34;&gt;2.1 功能简述&lt;/h2&gt;
+&lt;h3 id=&#34;一基本概念&#34;&gt;一、基本概念&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;访问控制&lt;/strong&gt;的定义：对主体访问客体的行为，系统按照安全策略进行限制与管理的安全机制。&lt;br&gt;
+按安全策略分类，可将访问控制分为很多类，其中，常见的策略有：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;自主访问控制DAC：客体的拥有者，可自行向其他主体赋予访问权限。&lt;/li&gt;
+&lt;li&gt;强制访问控制MAC：系统为主体、客体分配安全标签，通过主体、客体的安全标签控制访问权限，很多情况下，即使客体的拥有者也无法向其他主体赋予访问权限。&lt;/li&gt;
+&lt;li&gt;角色访问控制RBAC：不在本文讨论范围。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;在数据库领域，主体通常指数据库用户，客体通常指数据库对象，例如DATABASE、SCHEMA、TABLE、COLUMN、ROW、FUNCTION等。&lt;br&gt;
+自主访问控制比较成熟，几乎所有关系数据库，都提供自主访问控制特性，例如，TABLE（客体）的属主（主体），可通过&lt;code&gt;GRANT .. TO ..&lt;/code&gt;等语法，为其他用户（主体）赋予权限。&lt;br&gt;
+强制访问控制理论比较成熟，但是，除oracle支持强制访问控制，以及oceanbase等几款产品兼容oracle强制访问控制之外，大部分关系数据库不支持强制访问控制。&lt;/p&gt;
+&lt;p&gt;实现强制访问控制时，通常将主体、客体的安全标签，简化为安全等级，当主体访问客体时，比较主体、客体等级高低，以判断访问权限。在机密性场景，遵循不上读、不下写原则。在完整性场景，遵循不下读、不上写原则。&lt;/p&gt;
+&lt;p&gt;本需求将从0设计强制访问控制特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。&lt;/p&gt;
+&lt;h3 id=&#34;二竞品分析&#34;&gt;二、竞品分析&lt;/h3&gt;
+&lt;p&gt;oracle支持强制访问控制，客体是ROW，即行级强制访问控制。oceanbase、kingbase、dm的访问控制，与oracle一致。sql server、postgresql等其他产品不支持强制访问控制。&lt;br&gt;
+oracle强制访问控制使用示例如下：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 1 定义策略
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;SA_SYSDBA&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;.&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;CREATE_POLICY&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;policy_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;p1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;column_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;lab_col1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 2 定义级别
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;SA_COMPONENTS&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;.&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;CREATE_LEVEL&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;policy_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;p1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;level_num&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;1&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;short_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;x1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;long_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;x1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;SA_COMPONENTS&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;.&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;CREATE_LEVEL&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;p1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;20&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;x2&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;x2&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;SA_COMPONENTS&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;.&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;CREATE_LEVEL&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;p1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;30&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;x3&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;x3&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 3 定义组件
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;SA_COMPONENTS&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;.&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;CREATE_LEVEL&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;policy_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;p1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;comp_num&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;100&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;short_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;sec&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;long_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;security&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;SA_COMPONENTS&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;.&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;CREATE_LEVEL&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;p1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;200&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;stg&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;storage&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 4 创建标签
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;SA_SYSDBA&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;.&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;CREATE_LABEL&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;policy_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;p1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;label_tag&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;sec_normal&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;label_value&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;x1:security&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;data_label&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TRUE&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;SA_SYSDBA&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;.&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;CREATE_LABEL&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;p1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;sec_leader&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;x3:security&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;false&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 5 为主体设置属性
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;SA_USER_ADMIN&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;.&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;SET_LEVELS&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;policy_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;p1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;user_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;user1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;max_level&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;x2&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;min_level&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;x1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;default_level&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;x1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;row_level&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;x1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;SA_USER_ADMIN&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;.&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;SET_COMPARTMENTS&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;policy_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;p1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;user_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;user1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;read_comps&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;sec&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;write_comps&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;sec&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;default_comps&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;sec&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;row_comps&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;sec&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 6 为客体设置属性
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TABLE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;t1&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;INT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;SA_USER_ADMIN&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;.&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;APPLY_TABLE_POLICY&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;policy_name&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;p1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;shema_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;s1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;table_name&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;t1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;table_options&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;READ_CONTROL, WRITE_CONTROL, CHECK_CONTROL&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;label_function&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&amp;gt;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;f_create_t1_label(level, comp)&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;-- 7 插入数据（主动定义标签）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;INSERT&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;INTO&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;t1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c1&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;lab_col1&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;VALUES&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;mi&#34;&gt;1&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;CHAR_TO_LABEL&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;p1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;x1:sec&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;));&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h3 id=&#34;三实现思路&#34;&gt;三、实现思路&lt;/h3&gt;
+&lt;p&gt;在数据库领域，除oracle外，没有其他可借鉴的方案。oracle的设计，太复杂，易用性太低。&lt;br&gt;
+本需求将参考oracle的思想，简化oracle设计。&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 15 需求 逻辑复制性能优化</title>
+      <link>http://localhost:1313/posts/projectdocs/15-requirement-logical-replication/</link>
+      <pubDate>Wed, 06 May 2026 10:05:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/15-requirement-logical-replication/</guid>
+      <description>&lt;h1 id=&#34;1-简介&#34;&gt;1 简介&lt;/h1&gt;
+&lt;h2 id=&#34;11-目的&#34;&gt;1.1 目的&lt;/h2&gt;
+&lt;p&gt;&lt;strong&gt;逻辑复制&lt;/strong&gt;是一种在多个数据库实例之间复制数据的功能，通常用于从一个数据库实例中，将针对指定表的insert、delete、update等写操作，复制到其他另一个数据库实例。在数据库术语中，统一称逻辑复制的发送方为&lt;strong&gt;发布端&lt;/strong&gt;，称接收方为&lt;strong&gt;订阅端&lt;/strong&gt;。Oracle、Postgresql、Vastbase等数据库产品，均提供逻辑复制功能。&lt;/p&gt;
+&lt;p&gt;当前版本，逻辑复制性能较低。以tpcc场景为例，发布端40w tmpc时，产生wal日志速度约100+m/s，订阅端的复制速度约10+m/s。在滚动升级场景，主机和备机可能是不同的产品版本，主备复制数据时，不能使用物理复制，只能使用逻辑复制。在长存客户场景中，主机产生wal日志速度在50+m/s左右，备机使用逻辑复制，复制速度约10+m/s，备机将追赶不上主机进度，导致滚动升级失败。&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;主a                     备b                         备c
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;+-----------------------+---------------------------+-----------------------------
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;1&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;==&lt;/span&gt;&amp;gt;执行业务
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;2&lt;/span&gt; 开始滚动升级，暂停流复制 &lt;span class=&#34;nv&#34;&gt;lag&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;400M
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;3&lt;/span&gt; 暂停流复制（物理复制）
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;4&lt;/span&gt; 创建逻辑复制槽 &lt;span class=&#34;nv&#34;&gt;lsn1&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;1G
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;5&lt;/span&gt; 恢复流复制
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;6&lt;/span&gt; 物理复制追赶，到逻辑复制槽
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;6&lt;/span&gt; 开始单节点升级
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;7&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;[&lt;/span&gt;升级&lt;span class=&#34;o&#34;&gt;]&lt;/span&gt; 停止进程
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;8&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;[&lt;/span&gt;升级&lt;span class=&#34;o&#34;&gt;]&lt;/span&gt; 替换二进制等
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;9&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;[&lt;/span&gt;升级&lt;span class=&#34;o&#34;&gt;]&lt;/span&gt; 启动进程
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;10&lt;/span&gt; 单节点升级成功
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;11&lt;/span&gt; 持续执行业务 &lt;span class=&#34;nv&#34;&gt;lsn2&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;2G
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;12&lt;/span&gt; 创建订阅，启动逻辑复制，lsn1&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;1G
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;13&lt;/span&gt; 逻辑复制开始追赶（初始差距：lsn2-lsn1&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;14&lt;/span&gt; 持续执行业务 &lt;span class=&#34;nv&#34;&gt;lsn3&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;2.5G
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;15&lt;/span&gt; 逻辑复制持续追赶 &lt;span class=&#34;nv&#34;&gt;lsn&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;1.6G
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;16&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;可重置lag&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;17&lt;/span&gt; 差距持续缩小（从lsn2-lsn1降低到lag）
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;18&lt;/span&gt; 发送停机命令
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;19&lt;/span&gt; 停止业务
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;20&lt;/span&gt; 差距持续缩小，从lag缩小至0
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;21&lt;/span&gt; 停止进程成功
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;因此，需大幅提高逻辑复制速度，在长存客户场景中，逻辑复制速度至少需达到70+m/s。目前，发布端、订阅端均存在性能瓶颈，均需要优化。&lt;/p&gt;
+&lt;h2 id=&#34;12-适用范围&#34;&gt;1.2 适用范围&lt;/h2&gt;
+&lt;p&gt;G100 3.0.9 psu2及之后版本&lt;/p&gt;
+&lt;h2 id=&#34;13-术语定义首字母缩写词和缩略语&#34;&gt;1.3 术语定义、首字母缩写词和缩略语&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;发布端：逻辑复制场景，发送数据方。&lt;/li&gt;
+&lt;li&gt;订阅端：逻辑复制场景，接收数据方。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;14-参考资料&#34;&gt;1.4 参考资料&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Vastbase G100产品文档中逻辑复制使用介绍：&lt;a href=&#34;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/f5c2ae8eb9744d429ad39c02438addf6&#34;&gt;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/f5c2ae8eb9744d429ad39c02438addf6&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;oracle goldengate并行复制：&lt;a href=&#34;https://oracle.hydrogen.sagittarius.connect.product.adaptavist.com/en/database/goldengate/core/26/coredoc/replicat-parallel-replicat.html#GUID-F1CD8E03-8DA1-4A78-95D3-C0516F1DA09A&#34;&gt;https://oracle.hydrogen.sagittarius.connect.product.adaptavist.com/en/database/goldengate/core/26/coredoc/replicat-parallel-replicat.html#GUID-F1CD8E03-8DA1-4A78-95D3-C0516F1DA09A&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;2-逻辑复制性能优化&#34;&gt;2 逻辑复制性能优化&lt;/h1&gt;
+&lt;h2 id=&#34;21-功能简述&#34;&gt;2.1 功能简述&lt;/h2&gt;
+&lt;h3 id=&#34;一逻辑复制使用示例&#34;&gt;一、逻辑复制使用示例&lt;/h3&gt;
+&lt;p&gt;使用逻辑复制，可概括为3个阶段：&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

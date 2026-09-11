@@ -5,7 +5,7 @@ draft = false
 
 # 核心魔法：自动提取路径中的文件夹名作为分类
 # 逻辑：如果路径是 posts/Database/xxx.md，提取 "Database"# 如果提取到了子目录，就作为分类；否则默认归为 "Tech"
-categories = ["Database"]
+categories = ["数据库"]
 
 tags = ["Extension", "PostgreSQL", "SQLServer", "BubbleFish"]
 

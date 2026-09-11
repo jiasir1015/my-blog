@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>合规认证 on Kernel Notes</title>
+    <link>http://localhost:1313/tags/%E5%90%88%E8%A7%84%E8%AE%A4%E8%AF%81/</link>
+    <description>Recent content in 合规认证 on Kernel Notes</description>
+    <generator>Hugo -- 0.155.3</generator>
+    <language>zh-cn</language>
+    <lastBuildDate>Fri, 14 Aug 2026 17:47:31 +0800</lastBuildDate>
+    <atom:link href="http://localhost:1313/tags/%E5%90%88%E8%A7%84%E8%AE%A4%E8%AF%81/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>VexDB 数据库安全自评价报告</title>
+      <link>http://localhost:1313/posts/compliance/security-self-assessment/</link>
+      <pubDate>Wed, 29 Jul 2026 18:51:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/compliance/security-self-assessment/</guid>
+      <description>&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;版本号&lt;/th&gt;
+          &lt;th&gt;日期&lt;/th&gt;
+          &lt;th&gt;修改说明&lt;/th&gt;
+          &lt;th&gt;编制人&lt;/th&gt;
+          &lt;th&gt;审核人&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;1.0&lt;/td&gt;
+          &lt;td&gt;2026.07.24&lt;/td&gt;
+          &lt;td&gt;完成初稿&lt;/td&gt;
+          &lt;td&gt;沈坤&lt;/td&gt;
+          &lt;td&gt;-&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;1核心资产&#34;&gt;1、核心资产&lt;/h2&gt;
+&lt;p&gt;VexDB 的核心资产分为七类，覆盖数据、结构、访问、运行、审计、内存和密码资源，是数据库安全保护的主要对象。&lt;/p&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;核心资产&lt;/th&gt;
+          &lt;th&gt;资产内容&lt;/th&gt;
+          &lt;th&gt;资产价值&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;数据资产&lt;/td&gt;
+          &lt;td&gt;业务数据、用户数据、交易数据等存储内容&lt;/td&gt;
+          &lt;td&gt;数据库核心资源。泄露、篡改或丢失影响业务安全&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;数据库结构资产&lt;/td&gt;
+          &lt;td&gt;模式、表、字段、索引、视图、存储过程、函数、约束等&lt;/td&gt;
+          &lt;td&gt;描述数据组织和业务逻辑。非法修改影响业务正确性&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;数据库管理资产&lt;/td&gt;
+          &lt;td&gt;用户、角色、权限、配置参数、安全策略等&lt;/td&gt;
+          &lt;td&gt;控制访问范围和运行行为。错误配置影响整体安全&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;数据库运行资产&lt;/td&gt;
+          &lt;td&gt;实例、进程、数据文件、日志文件及计算存储资源&lt;/td&gt;
+          &lt;td&gt;支撑数据库服务运行。破坏导致服务不可用&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;数据库操作记录资产&lt;/td&gt;
+          &lt;td&gt;访问日志、审计记录、运行日志、管理操作记录等&lt;/td&gt;
+          &lt;td&gt;支撑安全分析、事件追踪和责任认定&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;数据库内存资产&lt;/td&gt;
+          &lt;td&gt;内存中的业务数据、缓存、会话信息和认证凭证&lt;/td&gt;
+          &lt;td&gt;运行过程中的敏感信息。泄露可能导致数据或凭证暴露&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;密码与密钥资产&lt;/td&gt;
+          &lt;td&gt;加密密钥、口令摘要、认证凭证等密码资源&lt;/td&gt;
+          &lt;td&gt;支撑身份认证和数据保护。泄露可能导致安全机制失效&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;核心资产的机密性、完整性和可用性，决定数据库安全运行和业务连续性。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;2安全风险和应对措施&#34;&gt;2、安全风险和应对措施&lt;/h2&gt;
+&lt;p&gt;VexDB 面临外部攻击、内部误操作、权限滥用和运行环境异常等风险，可能导致非法访问、数据泄露、数据篡改、身份冒用和服务不可用。主要风险与应对措施如下。&lt;/p&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;安全风险&lt;/th&gt;
+          &lt;th&gt;风险描述&lt;/th&gt;
+          &lt;th&gt;应对措施&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;strong&gt;非法访问风险&lt;/strong&gt;&lt;/td&gt;
+          &lt;td&gt;非授权主机连接数据库，获取非法访问入口&lt;/td&gt;
+          &lt;td&gt;网络防火墙&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;strong&gt;身份认证风险&lt;/strong&gt;&lt;/td&gt;
+          &lt;td&gt;弱口令、凭证泄露或认证缺陷导致身份冒用&lt;/td&gt;
+          &lt;td&gt;身份认证&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;strong&gt;通信安全风险&lt;/strong&gt;&lt;/td&gt;
+          &lt;td&gt;网络传输被窃听、伪造、重放或篡改&lt;/td&gt;
+          &lt;td&gt;安全传输&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;strong&gt;权限控制风险&lt;/strong&gt;&lt;/td&gt;
+          &lt;td&gt;权限配置不当或权限提升导致越权访问&lt;/td&gt;
+          &lt;td&gt;访问控制&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;strong&gt;数据安全风险&lt;/strong&gt;&lt;/td&gt;
+          &lt;td&gt;数据存储、传输、处理过程中发生泄露或篡改&lt;/td&gt;
+          &lt;td&gt;透明加密、驱动加密、机密计算、动态脱敏、数据防篡改&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;strong&gt;密钥安全风险&lt;/strong&gt;&lt;/td&gt;
+          &lt;td&gt;密钥泄露、丢失或生命周期管理不足导致保护失效&lt;/td&gt;
+          &lt;td&gt;密钥管理&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;strong&gt;操作追溯风险&lt;/strong&gt;&lt;/td&gt;
+          &lt;td&gt;数据访问和管理操作缺少记录，无法有效追责&lt;/td&gt;
+          &lt;td&gt;数据库审计、数据防篡改&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;strong&gt;服务可用性风险&lt;/strong&gt;&lt;/td&gt;
+          &lt;td&gt;恶意请求或资源异常消耗导致性能下降或服务中断&lt;/td&gt;
+          &lt;td&gt;资源安全&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;&lt;strong&gt;运行环境风险&lt;/strong&gt;&lt;/td&gt;
+          &lt;td&gt;不可信环境或异常运行环境导致数据暴露风险&lt;/td&gt;
+          &lt;td&gt;驱动加密、机密计算、密钥管理&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h2 id=&#34;vexdb-通过网络防护身份认证访问控制数据保护密码保护安全审计和资源管理等能力降低非法访问数据泄露数据篡改和服务不可用等安全风险&#34;&gt;VexDB 通过网络防护、身份认证、访问控制、数据保护、密码保护、安全审计和资源管理等能力，降低非法访问、数据泄露、数据篡改和服务不可用等安全风险。&lt;/h2&gt;
+&lt;h2 id=&#34;3安全机制&#34;&gt;3、安全机制&lt;/h2&gt;
+&lt;p&gt;VexDB 从接入、传输、访问、存储、计算、合规六个维度构建防御模型，各安全机制相互独立又相互配合。&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>国测 安全架构</title>
+      <link>http://localhost:1313/posts/compliance/security-architecture/</link>
+      <pubDate>Mon, 06 Jul 2026 16:40:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/compliance/security-architecture/</guid>
+      <description>&lt;h1 id=&#34;4-安全架构&#34;&gt;4 安全架构&lt;/h1&gt;
+&lt;h2 id=&#34;41-威胁模型&#34;&gt;4.1 威胁模型&lt;/h2&gt;
+&lt;p&gt;数据库运行在复杂的环境中，在计算、传输、存储数据等阶段，攻击者可利用硬件、软件等漏洞，威胁数据库安全。本文以数据库为核心，缩短攻击链路，排除攻击者身份演变、攻击阶段演进等因素，构造简化的威胁模型：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;一、角色
+&lt;ol&gt;
+&lt;li&gt;黑客&lt;/li&gt;
+&lt;li&gt;内部运维人员&lt;/li&gt;
+&lt;li&gt;内部研发人员&lt;/li&gt;
+&lt;li&gt;系统维护人员&lt;/li&gt;
+&lt;li&gt;供应链&lt;/li&gt;
+&lt;li&gt;网络中间人&lt;/li&gt;
+&lt;li&gt;机房管理人员&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;二、动机
+&lt;ol&gt;
+&lt;li&gt;售卖获利&lt;/li&gt;
+&lt;li&gt;勒索获利&lt;/li&gt;
+&lt;li&gt;情报窃取&lt;/li&gt;
+&lt;li&gt;蓄意报复&lt;/li&gt;
+&lt;li&gt;规避审计&lt;/li&gt;
+&lt;li&gt;炫耀技能&lt;/li&gt;
+&lt;li&gt;人为过失&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;三、目标
+&lt;ol&gt;
+&lt;li&gt;鉴别数据&lt;/li&gt;
+&lt;li&gt;用户表&lt;/li&gt;
+&lt;li&gt;系统表&lt;/li&gt;
+&lt;li&gt;事务日志&lt;/li&gt;
+&lt;li&gt;审计日志&lt;/li&gt;
+&lt;li&gt;内存数据&lt;/li&gt;
+&lt;li&gt;配置文件&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;四、技术
+&lt;ol&gt;
+&lt;li&gt;不可信IP登录&lt;/li&gt;
+&lt;li&gt;默认账户攻击&lt;/li&gt;
+&lt;li&gt;过期账号攻击&lt;/li&gt;
+&lt;li&gt;弱口令攻击&lt;/li&gt;
+&lt;li&gt;密码泄露&lt;/li&gt;
+&lt;li&gt;暴力破解&lt;/li&gt;
+&lt;li&gt;凭证重放&lt;/li&gt;
+&lt;li&gt;内存凭证残留&lt;/li&gt;
+&lt;li&gt;流量伪造&lt;/li&gt;
+&lt;li&gt;流量重放&lt;/li&gt;
+&lt;li&gt;证书伪造&lt;/li&gt;
+&lt;li&gt;未授权访问&lt;/li&gt;
+&lt;li&gt;越权访问&lt;/li&gt;
+&lt;li&gt;权限提升&lt;/li&gt;
+&lt;li&gt;权限滥用&lt;/li&gt;
+&lt;li&gt;磁盘窃取&lt;/li&gt;
+&lt;li&gt;恶意软件&lt;/li&gt;
+&lt;li&gt;操作系统隔离失效&lt;/li&gt;
+&lt;li&gt;数据文件篡改&lt;/li&gt;
+&lt;li&gt;供应链后门&lt;/li&gt;
+&lt;li&gt;侧信道内存嗅探&lt;/li&gt;
+&lt;li&gt;调试工具滥用&lt;/li&gt;
+&lt;li&gt;特权用户窥探&lt;/li&gt;
+&lt;li&gt;审计日志伪造&lt;/li&gt;
+&lt;li&gt;攻击行为隐匿&lt;/li&gt;
+&lt;li&gt;恶意操作抵赖&lt;/li&gt;
+&lt;li&gt;合规审计证据缺失&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;五、分类
+&lt;ol&gt;
+&lt;li&gt;欺骗&lt;/li&gt;
+&lt;li&gt;篡改&lt;/li&gt;
+&lt;li&gt;否认&lt;/li&gt;
+&lt;li&gt;信息泄露&lt;/li&gt;
+&lt;li&gt;拒绝服务&lt;/li&gt;
+&lt;li&gt;权限提升&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;42-防御模型&#34;&gt;4.2 防御模型&lt;/h2&gt;
+&lt;p&gt;针对威胁模型，本文从接入、传输、访问、存储、计算、合规6个维度，提供以下安全功能，构建防御模型：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;接入安全：合法用户，才能接入数据库
+&lt;ul&gt;
+&lt;li&gt;网络防火墙&lt;/li&gt;
+&lt;li&gt;身份认证&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;传输安全：与数据库的通信数据，
+&lt;ul&gt;
+&lt;li&gt;安全传输&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;访问安全
+&lt;ul&gt;
+&lt;li&gt;访问控制&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;计算安全
+&lt;ul&gt;
+&lt;li&gt;驱动加密&lt;/li&gt;
+&lt;li&gt;机密计算&lt;/li&gt;
+&lt;li&gt;密码函数&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;存储安全
+&lt;ul&gt;
+&lt;li&gt;透明加密&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;合法合规
+&lt;ul&gt;
+&lt;li&gt;安全审计&lt;/li&gt;
+&lt;li&gt;动态脱敏&lt;/li&gt;
+&lt;li&gt;密钥管理&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;防御模型如下图所示：&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

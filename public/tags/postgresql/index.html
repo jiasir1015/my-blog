@@ -10,7 +10,7 @@
 <meta name="description" content="">
 <meta name="author" content="Me">
 <link rel="canonical" href="http://localhost:1313/tags/postgresql/">
-<link crossorigin="anonymous" href="/assets/css/stylesheet.c4b1cb4d6ac76f08d6d9adf3f8ae2ef1847c2bc8378bc8d6a67e24a8690b647a.css" integrity="sha256-xLHLTWrHbwjW2a3z&#43;K4u8YR8K8g3i8jWpn4kqGkLZHo=" rel="preload stylesheet" as="style">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
 <link rel="icon" href="http://localhost:1313/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
@@ -130,6 +130,16 @@
                     <span>归档</span>
                 </a>
             </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
         </ul>
     </nav>
 </header>
@@ -142,48 +152,182 @@
 
 <article class="post-entry tag-entry"> 
   <header class="entry-header">
-    <h2 class="entry-hint-parent">避免用户错误使用到pg插件
+    <h2 class="entry-hint-parent">PostgresInternal
     </h2>
   </header>
   <div class="entry-content">
-    <p>基本概念 这里是融合版的一个需求，属于兼容性需求类别，主要实现的是一个黑名单，是要把一个列表中的多个插件不允许在MSSQL兼容安装包中出现，或只能在5432端口（PG模式）中使用，不能在1433端口（MSSQL模式）中使用。
-初步分析 根据需求列表，可以基本将需要修改的插件分为三类：
-禁止在双端口安装使用； 在5432端口允许使用，1433端口禁止安装使用； 双端口都允许使用； 其中，需求描述特别提到，允许在编译阶段进行修改，由此可以对应的提出三类插件的修改方案：
-在编译阶段不安装，也就是在contrib/Makefile中的SUBDIR安装插件，删除这些不允许在双端口安装的插件； 在hooks.c中增加一个名单，名单中包含这些允许在5432不允许在1433安装的插件，首先检测当前dialect是否为tsql，如果为tsql，检查是否是T_CreExtensionStmt，如果是则检查插件名单是否在这个名单之内，如果没有则放行，有则报错； 不做任何处理； 理论上，以上方案实施后，能够达到双端口不可用则直接无法找到插件，用户自行安装则不保证可能出现的任何问题；对于5432可用1433不可用，会进行报错；其他类型不做处理；应该可以达到需求描述的目的实现；
-边界考虑 由于删除了某些插件编译且对某些插件在一定场景进行了屏蔽，考虑数据库升级场景，如果以前使用过此插件，现在进行了屏蔽，可能导致升级失败； 灵活性 现在的屏蔽方式是使用直接修改编译文件与硬编码名单的方式实现，如果在一个版本内，由于某些特殊原因想启用已屏蔽的插件，则在当前版本是无法实现的。如果将名单作成guc参数，则可以提供灵活性，但是一旦被手动篡改，则无法预料可能产生的问题； </p>
+    <p>Postgres Internals 14 阅读笔记 Egor Rogov 的 PostgreSQL 14 Internals 读书笔记入口。中文在线版方便查阅，英文 PDF 方便离线精读。
+资料 中文在线版：PostgreSQL 14 Internals（中文） 英文 PDF（本站电子书库）：postgresql_internals-14_parts1-3_en.pdf PostgreSQL 14 Internals (EN, Parts 1–3) 新窗口打开 下载 数据组织 数据库 当初始化一个 PG 实例之后，PGDATA 会自动创建以下三种基础数据库：
+template0: 用来通过逻辑复制，或创建不同编码数据库的原型/样板； template1: 用户在此实例下创建所有其他数据库的模版，新建库都基于它； postgres: 自带的一个常规库； </p>
   </div>
-  <footer class="entry-footer"><span title='2026-02-25 10:15:33 +0800 CST'>February 25, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>16 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
-  <a class="entry-link" aria-label="post link to 避免用户错误使用到pg插件" href="http://localhost:1313/posts/database/forbid-extension/"></a>
+  <footer class="entry-footer"><span title='2026-09-11 15:06:30 +0800 CST'>September 11, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>39 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgresInternal" href="http://localhost:1313/posts/postgresql/postgresinternal/"></a>
 </article>
 
 <article class="post-entry tag-entry"> 
   <header class="entry-header">
-    <h2 class="entry-hint-parent">逻辑复制
+    <h2 class="entry-hint-parent">PostgreSQL 1-1 源码安装 (linux / macos)
     </h2>
   </header>
   <div class="entry-content">
-    <p>基本概念 逻辑复制是数据同步的一种方式，逻辑二字主要指的是传输数据的格式，与之相对的是物理复制。
-逻辑数据格式 逻辑数据格式是指，能够由一定规则描述的，符合SQL直觉的一种数据格式，例如：
-[MsgType：Insert，Relation：test，New Tuple：[a, int, 100]] 从这种数据格式上，能够通过解析等方式，将数据还原为SQL语句，这也同时表现了逻辑复制的第一个特点：无视物理结构上的差异，可以在异构、跨版本的数据库之间进行数据同步。
-接上例，通过一定的解析步骤，我们总能够得到：
-Insert into test(a) values 100::int; 对于不同内核来说，可能在语法上稍有差异，但只需要修改一些解析方式，也能够得到自身看的懂、可以运行的命令。
-与物理复制的区别 逻辑复制的另外一个特点，是相对于另一种主流的数据同步方式：物理复制，来作为比较的。
-几乎所有的数据库内核，在进行数据存储的时候，都是采用随机写的方式，最大化利用性能优势，将数据存储在磁盘上。那么从物理上看，一个relation的所有数据，可能并不是连续的：他们可能分布在不同的page上，由指针进行连接。那么从磁盘角度看，一个page的分布，可能是这样的：
--------------- Page Header -------------- Tuple 1 for r1 -------------- Tuple 2 for r1 -------------- Tuple 1 for r2 -------------- Tuple 1 for r3 -------------- Tuple 2 for r2 -------------- 如此一来，想要在物理层面进行数据传输时，以page为单位，是无法将不同relation的tuple分开的，也就是细粒度不够。
-逻辑复制的另一个特点，是可以以表为单位，进行数据同步，由一个Reader完成。
-Reader逐行的去读取物理中的tuple，筛选那些符合要求的tuple，进行下一步工作。
-逻辑复制提高的数据同步的细粒度，可以在库、表、甚至行上进行数据过滤，显然是一种更灵活的同步方式，在某些场景下，其效果更好，常见的有：
-应用场景
-某数据库使用厂商需要进行版本升级，但升级前后版本由于迭代问题，在物理存储上存在差异，导致无法进行直接替换； 某数据库使用厂商需要将原有的数据库数据迁移到一款新的数据库产品上，而这两个数据库的内核架构完全不同，物理存储存在本质差异； 某厂商部门之间使用的数据库产品不同，但部门之间存在协作，需要进行数据传递； … 架构 如图所示，逻辑复制功能，是两个实例（或生产者与消费者）之间完成的数据同步，通常我们把作为数据源端的实例，称为发布端（Publisher），而准备接收数据并进行回放的实例称为订阅端（Subscriber）。
-发布端 发布端的组成部分，共分为以下几个部分：WALReader、Decoder、Sender，通常是由三个独立的线程，按照其角色完成不同的工作：
-WALReader：主要完成对Xlog日志的读取，即从磁盘上将当前已罗盘的Xlog record读取到内存，并发送给Decoder； Decoder：解码线程，由于WALReader发送来的数据，是物理层面的记录，Decoder会按照特定的规则，将物理信息转换为逻辑信息，从内存上看，使用一个结构体，保存Xlog record中的xid、LSN、DMLType等信息。同时，Decoder还需要将这些信息，按照约定好的协议（Protocol）将数据进行打包，其中应用最广泛的端到端协议是pgoutput（后面会介绍他的协议格式以及细节实现）。Decoder会将这些按照协议进行拼接的逻辑数据存储到私有内存中，当达到一定条件时，将数据发送给Sender线程执行发送。 Sender：将Decoder发送来的数据通过网络发送给订阅端。 发布端如何保证事务一致性 对于数据同步来说，最重要的是事务一致性，如果不能保证一致性，那么逻辑复制将是毫无意义的。而要保证事务一致性，通常主要责任在于发布端，发布端需要确保自己发送逻辑信息的顺序，是严格的，即使不能保证发送顺序一定与WAL日志写入顺序完全一致，但必须保证事务的最终一致性。为了保证事务一致性，在发布端，通常会有以下几个部分保证：
-严格按照commit顺序进行事务发送：事务的提交顺序非常重要，Decoder解码到一条逻辑数据时，并不会立刻发送给Sender，而是将条变更存储起来，直到解码到该事务对应的commit，才将整个事务完发送； 错误重发：当订阅端接收到一个事务的commit时，即代表这个事务经传输完毕，订阅端会发送一个确认LSN给发布端，发布端需要确认LSN是在当前处理LSN的前面，如果此时LSN发生错乱，发布端会立即这条返回的LSN开始，重新发送这些变更； commit时间确认：在Decoder将Xlog信息解码为逻辑协议信息时对于某些类型的消息，会携带commit timestampz，这是该事务提时的瞬时时间戳； 发布端对于内存的管理 在业务系统中，有时不可避免的会出现大事务，通常包含几M甚至百M的事务变更数据，在逻辑复制模块中，上文提到，通常是将所有事务存储于内存，当遇到该事务的commit时，才进行发送。对于这种大事务来说，如果多几条，可能很容易造成内存压力，引起CPU抖动，有影响系统整体性能的可能性。
-为了保证系统整体性能，当遇到这种大事务的时候，通常会设计一个内存阈值，当在内存中已经存储了多条事务变更时，一旦当前内存占用达到阈值，发布端会选择当前内存中一个最大的事务（不一定是完整的，只是transaction size最大）spill to disk；诚然，这会带来一定的IO开销，因为当我们读到被spill的事务的commit时，需要把它从磁盘上读出来，但相比于其带来的内存负荷，这是合理的取舍。
+    <p>摘要
+本文介绍介绍如何在2种个人PC中，使用源码安装PostgreSQL，包括：
+在Windows操作系统中，如何基于VwWare虚拟机，搭建Linux环境。并在Linux中，通过postgreSQL源码进行编译安装。 在MacOS操作系统中，如何使用云服务器中的Linux操作系统，搭建postgreSQL源码编译与学习环境。 目录
+1 在Windows中安装PostgreSQL 1.1 目的 1.2 准备 1.3 编译源码 1.4 配置快捷命令 2 在MacOS中安装PostgreSQL 2.1 问题 2.2 调研云服务商 2.3 选择云服务器 2.4 配置云服务器 2.5 下载postgreSQL源码 1 在Windows中安装PostgreSQL 1.1 目的 通过postgreSQL源码进行编译安装，主要目的是：
+方便通过源码调试跟踪 直接修改以增加调试信息或新功能 1.2 准备 首先，介绍如何准备centOS虚拟机，并安装git、VSCode、gdb等工具
+已有windows 10/11 x86物理机
+window 10中，安装vmware
+vmware中，安装centOS虚拟机
+http://mirrors.huaweicloud.com/centos/8.4.2105/isos/x86_64/
+centOS中，安装git，以及中文输入法
+centOS中，安装VSCode
+https://code.visualstudio.com/docs/setup/linux#_rhel-fedora-and-centos-based-distributions
+centOS中，安装PostgresSQL依赖的第三方开源软件
+sudo yum install -y readline readline-devel openssl openssl-devel zlib zlib-devel # 但是，部分linux可能会裁剪应用，因此可能需要安装如下软件 sudo yum install -y bison bison-devel flex flex-devel #[参考](https://blog.csdn.net/Linjingke32/article/details/80393576) 安装调试工具
 ...</p>
   </div>
-  <footer class="entry-footer"><span title='2026-02-10 16:15:52 +0800 CST'>February 10, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>100 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
-  <a class="entry-link" aria-label="post link to 逻辑复制" href="http://localhost:1313/posts/database/logical_replication/"></a>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>3 min</span>&nbsp;·&nbsp;<span>465 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 1-1 源码安装 (linux / macos)" href="http://localhost:1313/posts/postgresql/1-1-install-postgresql/"></a>
 </article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 1-2 进程架构
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p> 1 进程架构 1.1 进程架构 1.2 进程启动 1.3 进程通信 2 进程功能 2.1 postgres线程 1.2.1 postmaster进程 1.2.2 postgres进程 1.2.3 wal writer进程 1.2.4 background writer进程 1.2.5 checkpointer进程 1.2.6 autovacuum进程 1.2.7 statistics collector进程 1.2.8 archiver进程 1.2.9 logging collertor进程 1.3 进程通信 3 进程控制 1 进程架构 1.1 进程架构 postgresql 采用1&#43;n&#43;7的进程架构，包括：
+1个postmaster进程 n个postgres进程 7个辅助进程：包括： bg writer进程： checkpointer进程： walwriter进程： autovacuum进程： archiver进程： statistics collector进程： log collectoer进程： 进程架构图如下图所示：
+1.2 进程启动 先启动postmaster进程，再由poastermaster启动n&#43;7进程。
+在postmaster主函数中，进程启动顺序如下：
+main() # [主进程] 启动postmaster进程 PostmasterMain() pqsignal(SIGUSR1, sigusr1_handler); # 注册信号 SysLogger_Start() # [进程7] 启动log collector进程 StartupDataBase() -&gt; StartupProcessMain() # 进行故障恢复 ServerLoop() BackendStartup() SysLogger_Start() # [进程n] 启动posters进程 StartCheckpointer() -&gt; CheckpointerMain() # [进程2] 启动heckpointer进程 StartBackgroundWriter() -&gt; BackgroundWriterMain() # [进程1] 启动bg writer进程 StartWalWriter() -&gt; InitXLOGAccess() WalWriterMain() # [进程3] 启动walwriter进程 StartAutoVacLauncher() # [进程4] 启动autovacuum进程 pgstat_start() # [进程6] 启动 statistics collector进程 pgarch_start() # [进程5] 启动归档进程 maybe_start_bgworker() 1.3 进程通信 2 进程功能 本章介绍各进程的主要功能。
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>5 min</span>&nbsp;·&nbsp;<span>1025 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 1-2 进程架构" href="http://localhost:1313/posts/postgresql/1-2-postgresql-struct/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 1-3 执行模块
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 整体流程 1.1 执行流程 应用-&gt;驱动：通过驱动的api建立连接，并执行SQL语句 驱动-&gt;服务端：通过libpq协议封装SQL语句，发送至服务端 服务端 postgres线程：接收SQL语句，调用exec_siple_query()开始处理SQL语句 SQL引擎 解析器：通过flex进行词法解析，通过yacc进行语法分析，生成解析树 分析器：对解析树进行语义分析：包括检查表是否存在等，生成查询树 重写器： 计划期：根据查询树生成执行计划 执行器：自顶向下执行各个算子，执行过程中会调用存储引擎统一接口 INSERT / UPDATE / DELETE
+ExecModifyTable 算子：EexecInsert / ExecUpdate / ExecDelete EexecInsert ExecMaterializeSlot ExecBRInsertTriggers /* ROW INSERT 触发器 */ ExecWithCheckOptions /* 检查约束 */ heap_insert /* 存储引擎统一接口 */ ExecInsertIndexTuples ExecARInsertTriggers /* AFTER ROW 触发器 */ ExecProcessReturning SELECT
+ExecIndexScan IndexNext() index_getnext() tid = index_getnext_tid(scan) index_fetch_heap(scan) heap_hot_search_buffer() PageGetItem() </p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>59 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 1-3 执行模块" href="http://localhost:1313/posts/postgresql/1-3-execute/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 1-4 存储模块
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>摘要 本博客以循序渐进的方式，依次简要介绍PostgreSQL存储模块的各个子模块的基础功能，提及内容适合数据库内核初学者。本博客旨在介绍核心原理，以便于理解为首，部分内容可能不会100%准确与具体，针对每个提及的子模块，之后会分别单独写博客详细介绍
+目录 摘要 目录 1 概述 1.1 PostgreSQL的使用流程 1.2 PostgreSQL的基础架构 1.3 PostgreSQL的功能场景 1.4 PostgreSQL存储模块的介绍流程 2 执行模块 3 存储模块 3.1 存储结构 (1) data_directory (2) oid (3) data-file (4) page (5) tuple 3.2 关键机制 (1) mvcc (2) delete 3.3 执行流程 (1) input (2) heapam (3) trancation (4) fsm (5) buffer (6) smgr (7) vfd (8) vm (9) wal (10) wal-buffer 3.4 关键进程 (1) bgwriter (2) walwriter (3) checkpointer (5) walsender (6) autovacuum 3.5 关键流程 (1) heap_insert (2) heap_delete (3) heap_update (4) heap_scan 3.6 辅助机制 (1) index (2) recovery (3) backup (4) toast (5) logical 1 概述 1.1 PostgreSQL的使用流程 本博客仅讨论存储模块的关键原理。简而言之，PostgreSQL将数据合理地组织并存储在磁盘上，并向用户提供SQL接口，让其读写磁盘上的指定数据。以下是PostgreSQL简单工作流程：
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>4 min</span>&nbsp;·&nbsp;<span>686 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 1-4 存储模块" href="http://localhost:1313/posts/postgresql/1-4-storage/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 1-5 initdb
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>initdb 流程 opengauss
+main # initdb.cpp canonicalize_path # PGDATA find_other_exec # 在gs_initdb bin目录下，查找gaussdb bin # 在$GAUSSHOME/share/postgrsql目录下，检查以下文件是否存在 check_input(&#39;postgres.bki, postgres.description, pg_hba.conf.sample, postgresql.conf.sample, ..., system_views.sql, ...&#39;) check_locale_encoding init_log gs_getenv_r(&#39;GAUSSLOG&#39;) write_version_file canonicalize_path(&#39;$PGDATA/PG_VERSION&#39;) fprintf(PG_MAJORVERSION = &#39;9.2&#39;) setup_config readfile(&#39;$GAUSSHOME/share/postgrsql/postgresql.conf.sample&#39;) sprintf_s(&#39;$PGDATA/postgresql.conf&#39;) writefile(&#39;$PGDATA/postgresql.conf&#39;) InitUndoSubsystemMeta bootstrap_template1 write_version_file setup_auth get_set_pwd setup_depend load_plpgsql setup_sysviews setup_description ... setup_privileges setup_schema setup_update vacuum_db make_template0 make_postgres </p>
+  </div>
+  <footer class="entry-footer"><span title='2025-02-26 18:14:00 +0800 CST'>February 26, 2025</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>51 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 1-5 initdb" href="http://localhost:1313/posts/postgresql/1-5-initdb/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 2-1 Parse
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 语法解析概述 1.1 语法解析的目的 语法解析的目的
+用户向数据发送以下SQL语句时：
+CREATE TABLE t1 (c1 INT, c2 TEXT); INSERT INTO t1 VALUES (1, &#39;data1&#39;); DELETE FROM t1 WHERE c1 = 1; 从用户的角度，掌握SQL语法后，我们很容易理解上述SQL的含义。
+从PostgreSQL的角度，上述语句知识一串字符串，需要根据SQL语法的规则，从字符串中解析表名、列名、数据等关键信息。
+语法解析的流程
+此处将语法解析的步骤简要分为以下4个阶段：
+定义语法：PostgreSQL开发人员需要根据SQL标准，制定一些类语法规则。比如： 当用户执行CREATE TABLE ..时，表示用户需要创建表 当用户执行CREATE TABLE tablename ..时，表示用户要创建的表名叫tablename 发布语法：PostgreSQL会在官网上发布其定义的各种语法 构造语句：当开发人员想让数据执行某些操作时，需根据数据库定义的语法，构造SQL语句，再让数据库执行。比如： 当用户想创建一个名为t1的表，需要构造SQL语句CREATE TABLE t1 .. 解析语法：PostgreSQL接收SQL语句后，根据语法规则，可解析SQL想要执行什么操作，生成1个结构体，结构中存储了SQL语句的关键信息，比如： 处理CREATE TABLE t1 ..，结构体中，将有1个变量表示表名，该变量的值将被复制为t1 执行语法：在解析用户操作后，生成一个结构体，即根据结构体，开始执行各种操作 1.2 语法解析的类型 PostgreSQL支持上百种语法，本文主要介绍以下4个常用的语法：
+CREATE TABLE .. SELECT .. FROM .. INSERT INTO .. DELETE FROM .. 2 解析语法 [ WITH [ RECURSIVE ] with_query [, ...] ] SELECT [ ALL | DISTINCT [ ON ( expression [, ...] ) ] ] * | expression [ [ AS ] output_name ] [, ...] [ FROM from_item [, ...] ] [ WHERE condition ] [ GROUP BY expression [, ...] ] [ HAVING condition [, ...] ] [ WINDOW window_name AS ( window_definition ) [, ...] ] [ { UNION | INTERSECT | EXCEPT } [ ALL | DISTINCT ] select ] [ ORDER BY expression [ ASC | DESC | USING operator ] [ NULLS { FIRST | LAST } ] [, ...] ] [ LIMIT { count | ALL } ] [ OFFSET start [ ROW | ROWS ] ] [ FETCH { FIRST | NEXT } [ count ] { ROW | ROWS } ONLY ] [ FOR { UPDATE | NO KEY UPDATE | SHARE | KEY SHARE } [ OF table_name [, ...] ] [ NOWAIT ] [...] ] -- from_item [ ONLY ] table_name [ * ] [ [ AS ] alias [ ( column_alias [, ...] ) ] ] [ LATERAL ] ( select ) [ AS ] alias [ ( column_alias [, ...] ) ] with_query_name [ [ AS ] alias [ ( column_alias [, ...] ) ] ] [ LATERAL ] function_name ( [ argument [, ...] ] ) [ AS ] alias [ ( column_alias [, ...] | column_definition [, ...] ) ] [ LATERAL ] function_name ( [ argument [, ...] ] ) AS ( column_definition [, ...] ) from_item [ NATURAL ] join_type from_item [ ON join_condition | USING ( join_column [, ...] ) ] -- with_query with_query_name [ ( column_name [, ...] ) ] AS ( select | values | insert | update | delete ) TABLE [ ONLY ] table_name [ * ] 参考 http://www.postgres.cn/docs/9.3/sql-select.html
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>10 min</span>&nbsp;·&nbsp;<span>1929 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 2-1 Parse" href="http://localhost:1313/posts/postgresql/2-1-parse/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 2-2 Analyze
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 概述 1.1 语义分析的目的 语义分析的目的
+上文提到，PostgreSQL接收SQL语句时，会生成1个语法解析树，语法解析树存储了SQL语法中的关键信息。比如，在语法INSERT INTO t1 VALUES(1, &#39;data1&#39;)中，解析结果可说明： 这是一条用于插入数据的INSERT语法 数据将插入t1表中 要插入的数据是(1, &#39;data1&#39;) …
+但是，数据库执行时，还需要更多的关键信息才行，比如，在INSERT INTO t1 VALUES(1, &#39;data1&#39;)的语法树中，PostgreSQL需要获取一些关键信息： 数据库中是否有表叫t1 t1表有几列，每列的的数据类型是什么 语法中的值(1, &#39;data1&#39;)是否符合t1表的定义 … 1.2 本文的目标 本文以几个常见且简单的语法为例，介绍语义分析的详细功能
+CREATE TABLE .. SELECT .. FROM .. INSERT INTO .. DELETE FROM .. 1.3 语义分析的调用关系 exec_simple_query pg_parse_query pg_analyze_and_rewrite parse_analyze 1.1 整体流程 // 语义分析 exec_simple_query pg_parse_query pg_analyze_and_rewrite parse_analyze transformTopLevelStmt transformOptionalSelectInto transformStmt transformInsertStmt exec_simple_query() pg_parse_query() for (;;): pg_analyze_and_rewrite() Query *query = parse_analyze(Node *parsetree) List *querytree_list = pg_rewrite_query(query) pg_plan_queries() PortalRun() 1.2 分析器 Query *parse_analyze(Node *parseTree) ParseState *pstate = make_parsestate() Query *query = query = transformTopLevelStmt(pstate, parseTree) query = transformStmt(pstate, parseTree) /* 对各种类型语法进行语义分析 */ Query *result switch nodeTag(parseTree) { case T_InsertStmt: result = transformInsertStmt(pstate, (InsertStmt *) parseTree) case T_DeleteStmt: result = transformDeleteStmt(pstate, (DeleteStmt *) parseTree) case T_UpdateStmt: result = transformUpdateStmt(pstate, (UpdateStmt *) parseTree) case T_SelectStmt: SelectStmt *n = (SelectStmt *) parseTree; if n-&gt;valuesLists: transformValuesClause(pstate, n) else if n-&gt;op == SETOP_NONE: result = transformSelectStmt(pstate, n) case T_DeclareCursorStmt: ... case T_ExplainStmt: ... case T_CreateTableAsStmt: ... default: result = makeNode(Query) result-&gt;commandType = CMD_UTILITY result-&gt;utilityStmt = (Node *) parseTree } return result; 1.3 SELECT 分析 Query *transformSelectStmt(ParseState *pstate, SelectStmt *stmt) Query *qry = makeNode(Query) if stmt-&gt;withClause: qry-&gt;cteList = transformWithClause(pstate, stmt-&gt;withClause) transformFromClause(pstate, stmt-&gt;fromClause) qry-&gt;targetList = transformTargetList(pstate, stmt-&gt;targetList) markTargetListOrigins(pstate, qry-&gt;targetList) Node *qual = transformWhereClause(pstate, stmt-&gt;whereClause) qry-&gt;havingQual = transformWhereClause(pstate, stmt-&gt;havingClause) qry-&gt;sortClause = transformSortClause(pstate, stmt-&gt;sortClause, &amp;qry-&gt;targetList) qry-&gt;groupClause = transformGroupClause(pstate, stmt-&gt;groupClause, &amp;qry-&gt;groupingSets, &amp;qry-&gt;targetList, qry-&gt;sortClause) qry-&gt;distinctClause = transformDistinctOnClause(pstate, stmt-&gt;distinctClause, &amp;qry-&gt;targetList, qry-&gt;sortClause) qry-&gt;limitOffset = transformLimitClause(pstate, stmt-&gt;limitOffset) qry-&gt;limitCount = transformLimitClause(pstate, stmt-&gt;limitCount) qry-&gt;windowClause = transformWindowDefinitions(pstate, pstate-&gt;p_windowdefs, &amp;qry-&gt;targetList) qry-&gt;jointree = makeFromExpr(pstate-&gt;p_joinlist, qual) if pstate-&gt;p_hasAggs || qry-&gt;groupClause || qry-&gt;groupingSets || qry-&gt;havingQual: parseCheckAggregates(pstate, qry) assign_query_collations(pstate, qry) return qry </p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>256 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 2-2 Analyze" href="http://localhost:1313/posts/postgresql/2-2-analyze/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 2-3 Rewrite
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p> 重写功能
+-- 创建2个表 CREATE TABLE t1 (c1 INT, c2 TEXT); CREATE TABLE t2 (c1 INT, c2 TEXT); -- 创建1条重写规则 -- 触发条件：向t1表写入数据时 -- 执行操作：将SQL语句重写为：同时向t2写入相同数据 CREATE OR REPLACE RULE r1 AS ON INSERT TO t1 DO ALSO INSERT INTO t2 VALUES (new.c1, new.c2); -- 向t1写入一条数据 INSERT INTO t1 VALUES (1, &#39;abc&#39;); -- 验证t2也写入了一条数据 SELECT * FROM t2; DROP TABLE t1,t2; 重写规则
+语法
+定义重写规则的语法如下：
+CREATE [ OR REPLACE ] RULE name AS ON { SELECT | INSERT | UPDATE | DELETE } TO table_name [ WHERE condition ] DO [ ALSO | INSTEAD ] { NOTHING | command | ( command ; command ... ) } 约束
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-02-05 18:29:00 +0800 CST'>February 5, 2025</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>233 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 2-3 Rewrite" href="http://localhost:1313/posts/postgresql/2-3-rewrite/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 2-4 Plan
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>SQL 引擎 1 概述 1.1 生成计划的目的 上文提到，在语法分析、语义分析之后，PostgreSQL已获取执行所需的详细信息。计划生成主要针对一些复杂的SQL语句，主要是SQL语句，计划器主要告诉PostgreSQL，如何更高效地执行复杂的SQL语句：
+示例1
+假设，有1个表，表上有1个索引，表中有1000万条数据
+CREATE TABLE t1 (c1 INT, c2 TEXT); CREATE INDEX i1 ON t1(c1); INSERT INTO t1 .. -- 假设1000万条数据 当用户执行以下SQL语句时，数据库需要从t1表中，依次扫描所有的数据，此时，索引并没有什么作用：
+SELECT * FROM t1; 当用户执行以下数据时，数据有2种执行方案：
+语句
+SELECT * FROM t1 WHERE c1 = 10000; 方案1：依次扫描t1表所有数据，然后找到c1=10000的几行
+方案2：先扫描索引i1，找到c1=10000的几行数据所在的位置，再去t1表中指定位置读取数据
+显然，上述示例中，方案2的执行速度更快，数据库需要根据一定的策略，选择哪种执行方案。这便是计划器的职责。
+1.2 生成计划的场景 SQL语法
+CREATE TABLE t1 (c1 INT, c2 TEXT); INSERT INTO t1 VALUES (1, &#39;data-1&#39;), (2, &#39;data-2&#39;); ANALYZE; SELECT * FROM pg_statistic WHERE starelid = &#39;t1&#39;::regclass; 1.3 计划的简单表示 1.4 算子的分类 共40个
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>9 min</span>&nbsp;·&nbsp;<span>1765 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 2-4 Plan" href="http://localhost:1313/posts/postgresql/2-4-plan/"></a>
+</article>
+<footer class="page-footer">
+  <nav class="pagination">
+    <a class="next" href="http://localhost:1313/tags/postgresql/page/2/">Next&nbsp;&nbsp;»
+    </a>
+  </nav>
+</footer>
     </main>
     
 <footer class="footer">
@@ -576,20 +720,56 @@ function switchWeChatTab(tabName) {
 <script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
 
 <script>
+
+
 const MY_LEETCODE_USERNAME = "hashmpa"; 
 let lcDataGlobal = null;
 let flaskEditor = null;
 const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
 const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
 
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
 document.addEventListener("DOMContentLoaded", function() {
     initLeetCodeWidget();
 });
 
-
 document.addEventListener("visibilitychange", function() {
     if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
-        console.log("Checking submission status...");
         checkSubmissionStatus(true); 
     }
 });
@@ -605,80 +785,115 @@ function initLeetCodeWidget() {
         linkBtn.style.opacity = "0.5";        
         linkBtn.href = "javascript:void(0);"; 
     }
-
     updateStreakDisplay();
 
     
-    const PROXY_URL = 'https://corsproxy.io/?'; 
-    const TARGET_URL = 'https://leetcode.cn/graphql';
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
     
     const query = `
-    query questionOfToday {
-        todayRecord {
-            date
-            question {
-                questionFrontendId
-                titleSlug
-                translatedTitle 
-                difficulty
-                translatedContent
-                topicTags { translatedName }
-                codeSnippets { langSlug code }
-            }
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
         }
     }`;
 
-    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: query })
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
     })
-    .then(response => response.json())
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
     .then(result => {
-        const record = result.data.todayRecord[0];
-        if (!record) throw new Error("Empty data");
         
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
         lcDataGlobal = {
-            date: record.date,
-            titleSlug: record.question.titleSlug, 
-            link: `/problems/${record.question.titleSlug}/description/`,
-            title: record.question.translatedTitle,
-            difficulty: record.question.difficulty,
-            content: record.question.translatedContent,
-            snippets: record.question.codeSnippets
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
         };
 
-        
         document.querySelector('.leetcode-loading').style.display = 'none';
         document.querySelector('.leetcode-content').style.display = 'block';
 
-        
         if (linkBtn) {
-            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link; 
-            linkBtn.target = "_blank";            
-            linkBtn.style.pointerEvents = "auto"; 
-            linkBtn.style.opacity = "1";          
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
         }
 
-        
         const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
-        if (lastSolved === record.date) {
+        if (lastSolved === todayStr) {
             showSolvedState();
         } else {
-            
             document.getElementById('lc-state-todo').style.display = 'block';
-            document.getElementById('lc-date').innerText = record.date;
-            document.getElementById('lc-title').innerText = `${record.question.questionFrontendId}. ${record.question.translatedTitle}`;
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
             
             const diffEl = document.getElementById('lc-difficulty');
             const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
-            diffEl.innerText = diffMap[record.question.difficulty] || record.question.difficulty;
-            diffEl.className = `lc-difficulty diff-${record.question.difficulty.toLowerCase()}`;
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
         }
     })
     .catch(err => {
-        console.error("LeetCode Init Error:", err);
-        document.querySelector('.leetcode-loading').innerHTML = "加载失败 (请检查网络)";
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
     });
 }
 
@@ -753,30 +968,26 @@ function checkIfGapIsOnlyWeekends(startDate, endDate) {
 function checkSubmissionStatus(isSilent = false) {
     if (!lcDataGlobal) return;
     
-    const PROXY_URL = 'https://corsproxy.io/?'; 
-    const TARGET_URL = 'https://leetcode.cn/graphql';
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
 
     const query = `
     query recentSubmissions($userSlug: String!) {
         recentSubmissions(userSlug: $userSlug) {
             status
-            question {
-                titleSlug
-            }
+            question { titleSlug }
             submitTime
         }
     }`;
 
     const checkBtn = document.getElementById('btn-check-status');
-    if(checkBtn) {
-        checkBtn.innerText = "⏳ Verifying...";
-        checkBtn.disabled = true;
-    }
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
 
-    fetch(PROXY_URL + encodeURIComponent(TARGET_URL), {
+    fetch(LEETCODE_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
+            operationName: "recentSubmissions",
             query: query,
             variables: { userSlug: MY_LEETCODE_USERNAME }
         })

@@ -1,0 +1,490 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>性能优化 on Kernel Notes</title>
+    <link>http://localhost:1313/tags/%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96/</link>
+    <description>Recent content in 性能优化 on Kernel Notes</description>
+    <generator>Hugo -- 0.155.3</generator>
+    <language>zh-cn</language>
+    <lastBuildDate>Fri, 14 Aug 2026 17:47:31 +0800</lastBuildDate>
+    <atom:link href="http://localhost:1313/tags/%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>PostgreSQL 3-13 逻辑复制原理与性能优化</title>
+      <link>http://localhost:1313/posts/postgresql/3-13-logical-replication-tuning/</link>
+      <pubDate>Mon, 29 Dec 2025 20:38:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/postgresql/3-13-logical-replication-tuning/</guid>
+      <description>&lt;h1 id=&#34;目录&#34;&gt;目录&lt;/h1&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#%E7%9B%AE%E5%BD%95&#34;&gt;目录&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#1-%E5%9F%BA%E6%9C%AC%E6%A6%82%E5%BF%B5&#34;&gt;1 基本概念&lt;/a&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#1-1-%E4%B8%9A%E5%8A%A1%E5%9C%BA%E6%99%AF&#34;&gt;1.1 业务场景&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#1-2-%E9%80%BB%E8%BE%91%E5%A4%8D%E5%88%B6&#34;&gt;1.2 逻辑复制&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#1-3-%E5%AE%9E%E7%8E%B0%E6%80%9D%E8%B7%AF&#34;&gt;1.3 实现思路&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#1-4-%E5%9F%BA%E6%9C%AC%E6%A6%82%E5%BF%B5&#34;&gt;1.4 基本概念&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#2-%E4%BD%BF%E7%94%A8%E6%96%B9%E6%B3%95&#34;&gt;2 使用方法&lt;/a&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#2-1-%E5%8F%91%E5%B8%83%E7%AB%AF%EF%BC%9A%E9%85%8D%E7%BD%AE%E5%8F%82%E6%95%B0&#34;&gt;2.1 发布端：配置参数&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#2-2-%E5%8F%91%E5%B8%83%E7%AB%AF%EF%BC%9A%E5%88%9B%E5%BB%BA%E5%8F%91%E5%B8%83&#34;&gt;2.2 发布端：创建发布&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#2-3-%E8%AE%A2%E9%98%85%E7%AB%AF%EF%BC%9A%E5%88%9B%E5%BB%BA%E8%AE%A2%E9%98%85&#34;&gt;2.3 订阅端：创建订阅&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#3-%E6%A0%B8%E5%BF%83%E8%AE%BE%E8%AE%A1&#34;&gt;3 核心设计&lt;/a&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#3-1-%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84&#34;&gt;3.1 整体架构&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#3-2-%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B&#34;&gt;3.2 工作流程&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#3-3-%E6%95%B0%E6%8D%AE%E6%A0%BC%E5%BC%8F&#34;&gt;3.3 数据格式&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#4-%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81&#34;&gt;4 实现源码&lt;/a&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#4-1-%E8%AE%A2%E9%98%85%E7%AB%AF%EF%BC%9Aapply-launch&#34;&gt;4.1 订阅端：apply-launch&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#4-2-%E8%AE%A2%E9%98%85%E7%AB%AF%EF%BC%9Aapply-worker&#34;&gt;4.2 订阅端：apply-worker&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#4-3-%E5%8F%91%E5%B8%83%E7%AB%AF%EF%BC%9Apostmaster&#34;&gt;4.3 发布端：postmaster&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#4-4-%E5%8F%91%E5%B8%83%E7%AB%AF%EF%BC%9Awal-sender&#34;&gt;4.4 发布端：wal-sender&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#5-%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96&#34;&gt;5 性能优化&lt;/a&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#5-1-%E7%8E%B0%E7%8A%B6&#34;&gt;5.1 现状&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#5-2-%E4%BC%98%E5%8C%96%E6%96%B9%E6%A1%88&#34;&gt;5.2 优化方案&lt;/a&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#%E4%BC%98%E5%8C%96%E7%82%B9%E4%B8%80%EF%BC%9A%E5%8F%91%E5%B8%83%E7%AB%AF-%E6%B5%81%E5%A4%8D%E5%88%B6%E5%8D%8F%E8%AE%AE%EF%BC%88%E9%80%BB%E8%BE%91%E6%95%B0%E6%8D%AE%EF%BC%89&#34;&gt;优化点一：发布端-流复制协议（逻辑数据）&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#%E4%BC%98%E5%8C%96%E7%82%B9%E4%BA%8C%EF%BC%9A%E8%AE%A2%E9%98%85%E6%AE%B5-%E5%B9%B6%E8%A1%8C%E5%9B%9E%E6%94%BE%E6%9C%BA%E5%88%B6%EF%BC%88%E9%80%BB%E8%BE%91%E6%95%B0%E6%8D%AE%EF%BC%89&#34;&gt;优化点二：订阅段-并行回放机制（逻辑数据）&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#%E4%BC%98%E5%8C%96%E7%82%B9%E4%B8%89%EF%BC%9A%E5%8F%91%E5%B8%83%E7%AB%AF-%E5%B9%B6%E8%A1%8C%E8%A7%A3%E7%A0%81%E6%9C%BA%E5%88%B6&#34;&gt;优化点三：发布端-并行解码机制&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#5-3-%E6%9C%AA%E6%9D%A5%E6%96%B9%E6%A1%88&#34;&gt;5.3 未来方案&lt;/a&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#%E4%B8%80%E3%80%81%E8%AE%A1%E5%88%92%E4%BC%98%E5%8C%96%E7%82%B9%E4%B8%80%EF%BC%9A%E5%8F%91%E5%B8%83%E7%AB%AF-%E4%BA%8B%E5%8A%A1%E6%8F%90%E4%BA%A4%E7%AD%89%E5%BE%85&#34;&gt;一、计划优化点一：发布端-事务提交等待&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#5-4-%E6%96%B9%E6%A1%88%E5%88%86%E6%9E%90&#34;&gt;5.4 方案分析&lt;/a&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#%E4%B8%80%E3%80%81%E4%BA%8B%E5%8A%A1%E6%AD%A3%E7%A1%AE%E6%80%A7&#34;&gt;一、事务正确性&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#6-%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95&#34;&gt;6 性能测试&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99&#34;&gt;参考资料&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h1 id=&#34;1-基本概念&#34;&gt;1 基本概念&lt;/h1&gt;
+&lt;h2 id=&#34;11-业务场景&#34;&gt;1.1 业务场景&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;场景一：数据共享（异构数据库）&lt;/strong&gt;&lt;br&gt;
+1个公司，有2个部门：商品库存部门、商品成本部门。2个部门有不同技术栈，使用不同数据库产品:postgresql、mysql。2个部门需共享相同的表：商品信息表。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;场景二：数据容灾&lt;/strong&gt;&lt;br&gt;
+应用存储数据时，同时将数据存储至postgresql于mysql中，避免某款数据库出现无法恢复的数据损坏问题。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;场景三：版本升级&lt;/strong&gt;&lt;br&gt;
+从postgresql 13版本，升级到postgresql 16版本。&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;场景四：数据迁移（异构数据库）&lt;/strong&gt;&lt;br&gt;
+从postgresql，将数据库迁移到mysql中。&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>PostgreSQL 3-13 逻辑复制性能优化</title>
+      <link>http://localhost:1313/posts/postgresql/3-13-replication/</link>
+      <pubDate>Fri, 21 Nov 2025 15:18:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/postgresql/3-13-replication/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;2025-11-21：持续更新中…&lt;/strong&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h1 id=&#34;1-需求概述&#34;&gt;1 需求概述&lt;/h1&gt;
+&lt;h2 id=&#34;11-原始需求&#34;&gt;1.1 原始需求&lt;/h2&gt;
+&lt;p&gt;主备部署模式下，滚动升级时，可能存在主节点未升级，备节点已升级的情况。在该条件下，客户要求主节点持续执行事务，并且主节点及时将数据同步至备节点。目前，存在一下问题：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;物理复制无法使用：由于主节点、备节点版本不一致，主节点生成的wal，备节点可能无法使用。因此，只能使用逻辑复制方案。&lt;/li&gt;
+&lt;li&gt;逻辑复制性能较低：主节点作为发布端，解码wal。备节点作为订阅端，接收loggic-wal，并且回放logic-wal，可解决主备版本不一致的问题。但是，目前Vastbase的逻辑复制功能性能较低，无法满足及时同步数据的要求。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;本需求将针对上述场景，端到端优化逻辑复制功能，让逻辑复制性能整体提升5倍以上，达到100m/s的要求。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;需求来源：&lt;a href=&#34;https://doc.weixin.qq.com/doc/w3_AYsAjQYkADwCNecwqsBM8ShS9YejB?scode=AHUAfwdSAA8UDeKla8AdwAfAa7AFk&amp;amp;roomid=Person:1688855660690652:1688855164259723&amp;amp;version=5.0.2.6008&amp;amp;platform=win&#34;&gt;https://doc.weixin.qq.com/doc/w3_AYsAjQYkADwCNecwqsBM8ShS9YejB?scode=AHUAfwdSAA8UDeKla8AdwAfAa7AFk&amp;amp;roomid=Person%3A1688855660690652%3A1688855164259723&amp;amp;version=5.0.2.6008&amp;amp;platform=win&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;12-问题分析&#34;&gt;1.2 问题分析&lt;/h2&gt;
+&lt;p&gt;逻辑复制分为多个阶段，openGauss和PostgreSQL在部分阶段中做了优化，但未端到端优化。因此，本文将以早期逻辑复制为基础，指出优化设计。&lt;/p&gt;
+&lt;h3 id=&#34;版本一串行复制&#34;&gt;版本一：串行复制&lt;/h3&gt;
+&lt;p&gt;在postgresql 13以及之前版本，逻辑复制的关键设计如下：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;发布端：
+&lt;ul&gt;
+&lt;li&gt;解码日志：wal-sender进程，持续读取wal，串行对wal进行decode，生成logic-wal，并将不同事务的logic-wal，分别存放。&lt;/li&gt;
+&lt;li&gt;发送日志：对wal进行decode时，如果是事务提交产生的wal，则将该事务的所有logic-wal打包，并发送到订阅端。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;订阅端：
+&lt;ul&gt;
+&lt;li&gt;回放日志：apply-worker进程，一次接收同一事务的一批logic-wal，串行回放本批logic-wal后，重新等待下一个事务的logic-wal。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;整体方案如下：&lt;/p&gt;
+&lt;p&gt;&lt;img alt=&#34;pg-13&#34; loading=&#34;lazy&#34; src=&#34;http://localhost:1313/images/PostgreSQL/3-13-replication/pg-13.png&#34;&gt;&lt;/p&gt;
+&lt;p&gt;以上设计，存在多项性能瓶颈，以常见的tpcc测试为例，可能有400+postgres进程在执行事务，实时产生wal日志。但是，只有1个wal-sender进程在串行解码日志，只有1个apply-workder在串行回放日志。&lt;/p&gt;
+&lt;h2 id=&#34;13-方案设计&#34;&gt;1.3 方案设计&lt;/h2&gt;
+&lt;h3 id=&#34;版本二发布端并行解码&#34;&gt;版本二：发布端并行解码&lt;/h3&gt;
+&lt;p&gt;在openGauss中，针对发布端的解码日志阶段，进行了优化，引入多个decoder线程，并行解码wal生成logic-wal。方案设计如下：&lt;/p&gt;
+&lt;p&gt;&lt;img alt=&#34;og&#34; loading=&#34;lazy&#34; src=&#34;http://localhost:1313/images/PostgreSQL/3-13-replication/og.png&#34;&gt;&lt;/p&gt;
+&lt;p&gt;但是，在订阅端，每次对一个事务的一批logica-wal全部回放后，才会接收下一个事务的logic-wal。仅引入并发解码机制，对性能提升较小。发布端和订阅端，均存在负载不均衡的问题，例如，订阅端回放完一个事务的logic-wal之后，需等待下一个事务的logic-wal。&lt;/p&gt;
+&lt;h3 id=&#34;版本三流氏复制协议&#34;&gt;版本三：流氏复制协议&lt;/h3&gt;
+&lt;p&gt;在postgrsql 14版本，针对发布端发送日志阶段，进行了优化，引入流式复制协议，即无需一次发送完一个事务完整的一批logic-wal，而是随时发送logic-wal，即使事务未提交。可解决发布端、订阅端负载不均衡的问题。&lt;/p&gt;
+&lt;p&gt;但是，在订阅端，tpcc场景，发布端400+postgres进程执行事务，订阅端1个apply-worker进程回放日志，仍是瓶颈。&lt;/p&gt;
+&lt;h3 id=&#34;版本四订阅端并行回放&#34;&gt;版本四：订阅端并行回放&lt;/h3&gt;
+&lt;p&gt;在postgrsql 16版本，针对订阅端回放日志阶段，进行了优化，引入多个apply进程，并行回放logic-wal。方案设计如下：&lt;/p&gt;
+&lt;p&gt;&lt;img alt=&#34;pg-16&#34; loading=&#34;lazy&#34; src=&#34;http://localhost:1313/images/PostgreSQL/3-13-replication/pg-16.png&#34;&gt;&lt;/p&gt;
+&lt;h3 id=&#34;版本五并行复制&#34;&gt;版本五：并行复制&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;结论：本需求参考性能测试结果，认为需同时结合：并行解码、流式复制、并行回放机制，才能提升逻辑复制端到端性能。&lt;/li&gt;
+&lt;li&gt;优先级：其中，流式复制、并行回放机制，对性能影响较大，优先级较高。可独立地、优先地实现。&lt;/li&gt;
+&lt;li&gt;其他工作：同时采用上述3个机制，需合理控制发布端解码速率、订阅端回放速率，在实现负载均衡的同事，避免logic-wal堆积。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;2-设计分析&#34;&gt;2 设计分析&lt;/h1&gt;
+&lt;h2 id=&#34;21-必要性&#34;&gt;2.1 必要性&lt;/h2&gt;
+&lt;p&gt;根据postgrsql-16的性能测试结果，流式复制和并行回放机制，可达到70Mb/s的复制速度。&lt;/p&gt;
+&lt;h3 id=&#34;一测试场景&#34;&gt;一、测试场景&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;测试机器：
+&lt;ul&gt;
+&lt;li&gt;IP：172.16.103.90&lt;/li&gt;
+&lt;li&gt;硬件：CPU：鲲鹏920-ARM-128核。缓存L1-L2-L3：8M/64M/256M。内存：760G。磁盘：NVME&lt;/li&gt;
+&lt;li&gt;系统：openEuler&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;tpcc测试场景（为了快速测试，不太标准）
+&lt;ul&gt;
+&lt;li&gt;数据量：100 warhouse&lt;/li&gt;
+&lt;li&gt;并发：400&lt;/li&gt;
+&lt;li&gt;执行时间：1 min&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;逻辑复制配置：
+&lt;ul&gt;
+&lt;li&gt;部署：发布端、订阅端在同一台机器（找不到2台性能机）&lt;/li&gt;
+&lt;li&gt;订阅：创建1个publiction，涵盖所有table&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;二测试数据&#34;&gt;二、测试数据&lt;/h2&gt;
+&lt;p&gt;由于机器、时间等限制，测试未严格控制变量，但是，和准确结果应该有80%以上符合度。&lt;/p&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;版本&lt;/th&gt;
+          &lt;th&gt;配置&lt;/th&gt;
+          &lt;th&gt;tpmc&lt;/th&gt;
+          &lt;th&gt;发布端-wal写入速度&lt;/th&gt;
+          &lt;th&gt;逻辑复制速度（峰值）&lt;/th&gt;
+          &lt;th&gt;逻辑复制速度（平均值）&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;postgrsql-14&lt;/td&gt;
+          &lt;td&gt;串行解码、非流式复制、串行回放&lt;/td&gt;
+          &lt;td&gt;约65w&lt;/td&gt;
+          &lt;td&gt;207 Mb/s&lt;/td&gt;
+          &lt;td&gt;-&lt;/td&gt;
+          &lt;td&gt;16 Mb/s&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;postgresql-16&lt;/td&gt;
+          &lt;td&gt;串行解码、流式复制、串行回放&lt;/td&gt;
+          &lt;td&gt;约65w&lt;/td&gt;
+          &lt;td&gt;212 Mb/s&lt;/td&gt;
+          &lt;td&gt;117 Mb/s&lt;/td&gt;
+          &lt;td&gt;55 Mb/s&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;postgresql-16&lt;/td&gt;
+          &lt;td&gt;串行解码、流式复制、并行回放(4)&lt;/td&gt;
+          &lt;td&gt;约65w&lt;/td&gt;
+          &lt;td&gt;197 Mb/s&lt;/td&gt;
+          &lt;td&gt;113 Mb/s&lt;/td&gt;
+          &lt;td&gt;71 Mb/s&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;blockquote&gt;
+&lt;ul&gt;
+&lt;li&gt;测试：贾旭辉&lt;/li&gt;
+&lt;li&gt;详细数据和结论见wiki：&lt;a href=&#34;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007526&#34;&gt;https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007526&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/blockquote&gt;
+&lt;ul&gt;
+&lt;li&gt;尝试修改源码，让订阅端只接受日志，不apply，确定发布端解码和发送的瓶颈，但是，测试结果有点奇怪，有空再继续。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;22-可行性&#34;&gt;2.2 可行性&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;并行解码：openGauss已引入&lt;/li&gt;
+&lt;li&gt;流式复制：postgreql-16版本已成熟&lt;/li&gt;
+&lt;li&gt;并行回放：postgreql-16版本已成熟&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;23-潜在风险&#34;&gt;2.3 潜在风险&lt;/h2&gt;
+&lt;h3 id=&#34;一数据有一致性&#34;&gt;一、数据有一致性&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;写写冲突&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>flamegraph 火焰图</title>
+      <link>http://localhost:1313/posts/tools/graph/</link>
+      <pubDate>Mon, 09 Jun 2025 11:54:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/tools/graph/</guid>
+      <description>&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;yum install perf
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;git clone https://github.com/brendangregg/FlameGraph.git
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;touch perf.sh
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nv&#34;&gt;pids&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;k&#34;&gt;$(&lt;/span&gt;pgrep &lt;span class=&#34;nv&#34;&gt;$1&lt;/span&gt; &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; head -n 4&lt;span class=&#34;k&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;rm -rf ./tmp_graph
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;mkdir ./tmp_graph
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;for&lt;/span&gt; pid in &lt;span class=&#34;nv&#34;&gt;$pids&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt; &lt;span class=&#34;k&#34;&gt;do&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;nb&#34;&gt;echo&lt;/span&gt; &lt;span class=&#34;s2&#34;&gt;&amp;#34;-- collecting data for &lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$pid&lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    perf record -F &lt;span class=&#34;m&#34;&gt;600&lt;/span&gt; -p &lt;span class=&#34;nv&#34;&gt;$pid&lt;/span&gt; -g -- sleep &lt;span class=&#34;m&#34;&gt;5&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    perf script -i perf.data &amp;gt; ./tmp_graph/perf.unfold.&lt;span class=&#34;nv&#34;&gt;$pid&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    ./flame/stackcollapse-perf.pl ./tmp_graph/perf.unfold.&lt;span class=&#34;nv&#34;&gt;$pid&lt;/span&gt; &amp;gt; ./tmp_graph/perf.folded.&lt;span class=&#34;nv&#34;&gt;$pid&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;done&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;cat ./tmp_graph/perf.folded.* &amp;gt; ./tmp_graph/all.folded
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;./flame/flamegraph.pl ./tmp_graph/all.folded &amp;gt; ./all.svg
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;sh perf.sh 进程名
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;rm -rf ./tmp_graph
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;mkdir ./tmp_graph
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nv&#34;&gt;pid&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$1&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;echo&lt;/span&gt; &lt;span class=&#34;s2&#34;&gt;&amp;#34;-- collecting data for &lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$pid&lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;perf record -F &lt;span class=&#34;m&#34;&gt;600&lt;/span&gt; -p &lt;span class=&#34;nv&#34;&gt;$pid&lt;/span&gt; -g -- sleep &lt;span class=&#34;m&#34;&gt;5&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;perf script -i perf.data &amp;gt; ./tmp_graph/perf.unfold.&lt;span class=&#34;nv&#34;&gt;$pid&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;./flame/stackcollapse-perf.pl ./tmp_graph/perf.unfold.&lt;span class=&#34;nv&#34;&gt;$pid&lt;/span&gt; &amp;gt; ./tmp_graph/perf.folded.&lt;span class=&#34;nv&#34;&gt;$pid&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;done&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;cat ./tmp_graph/perf.folded.* &amp;gt; ./tmp_graph/all.folded
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;./flame/flamegraph.pl ./tmp_graph/all.folded &amp;gt; ./all.svg
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;</description>
+    </item>
+    <item>
+      <title>工具 使用benchmarksql测试tpcc</title>
+      <link>http://localhost:1313/posts/tools/tpcc/</link>
+      <pubDate>Fri, 09 May 2025 11:41:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/tools/tpcc/</guid>
+      <description>&lt;h1 id=&#34;2-安装数据库&#34;&gt;2 安装数据库&lt;/h1&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;scp shenkun@172.16.100.134:/home/shenkun/g100/pkg-5-19.tar.gz ./
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;vast@123
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;export&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;GAUSSHOME&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;pwd&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;export&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;PATH&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$PATH&lt;/span&gt;:&lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/bin
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;export&lt;/span&gt; LD_
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;alias&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;vinit&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;vb_initdb -D $GAUSSHOME/data -w vb.12345 --nodename=db1&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;alias&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;vstart&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;vb_ctl start -D $GAUSSHOME/data&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;alias&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;vrestart&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;vb_ctl restart -D $GAUSSHOME/data&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h1 id=&#34;3-安装benchmarksql&#34;&gt;3 安装benchmarksql&lt;/h1&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;一、下载benchmarksql&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 1.安装java openjdk&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;yum install java
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;yum install java-1.8.0-openjdk-devel
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 2.下载benchmark安装包&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;https://sourceforge.net/projects/benchmarksql/files/latest/download
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 3.下载ant安装包&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;https://dlcdn.apache.org//ant/binaries/apache-ant-1.10.15-bin.tar.gz
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 4.解压benchmark与ant安装包&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;c1&#34;&gt;# 建议git初始化benchmark安装包，如果改错了可以回退&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;二、配置环境变量&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 1.生成环境变量脚本&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;touch envbm
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 在envbm中添加一下内容&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;export&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;BMROOT&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;pwd&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;export&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;BMCODE&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$BMROOT&lt;/span&gt;/benchmarksql-5.0
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;export&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;PATH&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$PATH&lt;/span&gt;:&lt;span class=&#34;nv&#34;&gt;$BMROOT&lt;/span&gt;/apache-ant-1.10.15/bin
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;export&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;DBIP&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;127.0.0.1
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;export&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;DBPORT&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;5432&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 2.配置环境变量&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;source&lt;/span&gt; envbm
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;三、配置benchmarksql配置文件&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 1.生成配置文件&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;mkdir cfg
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;cp &lt;span class=&#34;nv&#34;&gt;$BMCODE&lt;/span&gt;/run/props.pg &lt;span class=&#34;nv&#34;&gt;$BMROOT&lt;/span&gt;/cfg/props.pg
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 2.编辑配置文件&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;sed -i &lt;span class=&#34;s1&#34;&gt;&amp;#39;/^user=/s/=.*/=u1/&amp;#39;&lt;/span&gt; f1
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;c1&#34;&gt;# user=bmuser&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;c1&#34;&gt;# password=bmuser@123&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;c1&#34;&gt;# warehouses=10&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;c1&#34;&gt;# loadWorkers=10&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;c1&#34;&gt;# terminals=10&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;c1&#34;&gt;# runMins=5&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;c1&#34;&gt;# limitTxnsPerMin=0&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 3. 设置表的fillfictor=80&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;cp &lt;span class=&#34;nv&#34;&gt;$BMCODE&lt;/span&gt;/run/sql.common/tableCreates.sql &lt;span class=&#34;nv&#34;&gt;$BMCODE&lt;/span&gt;/run/sql.common/_tableCreates.sql
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;sed -i &lt;span class=&#34;s1&#34;&gt;&amp;#39;/^);/s/);.*/) with (fillfactor=80);/&amp;#39;&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;$BMCODE&lt;/span&gt;/run/sql.common/tableCreates.sql
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;四、生成便捷使用benchmarksql的脚本&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 11 需求 逻辑复制性能优化</title>
+      <link>http://localhost:1313/posts/projectdocs/11-requirement-logical-replication/</link>
+      <pubDate>Fri, 06 Feb 2026 14:30:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/11-requirement-logical-replication/</guid>
+      <description>&lt;h1 id=&#34;1-简介&#34;&gt;1 简介&lt;/h1&gt;
+&lt;h2 id=&#34;11-目的&#34;&gt;1.1 目的&lt;/h2&gt;
+&lt;p&gt;&lt;strong&gt;逻辑复制&lt;/strong&gt;是一种在多个数据库实例之间复制数据的功能，通常用于从一个数据库实例中，将针对指定表的insert、delete、update等写操作，复制到其他另一个数据库实例。在数据库术语中，统一称逻辑复制的发送方为&lt;strong&gt;发布端&lt;/strong&gt;，称接收方为&lt;strong&gt;订阅端&lt;/strong&gt;。Oracle、Postgresql、Vastbase等数据库产品，均提供逻辑复制功能。&lt;/p&gt;
+&lt;p&gt;当前版本，逻辑复制性能较低，以tpcc场景为例，发布端40w tmpc时，订阅端的复制速度约10m/s。在滚动升级等场景，通过逻辑复制在不同实例间同步大量数据，要求逻辑复制性能达到70-100m/s。&lt;/p&gt;
+&lt;p&gt;发布端、订阅端均存在性能瓶颈，均需要优化。但是，由于交付时间较短，以及订阅端方案仍有瑕疵等因素，本版本交付发布端性能优化，下版本交付订阅端性能优化。&lt;/p&gt;
+&lt;h2 id=&#34;12-适用范围&#34;&gt;1.2 适用范围&lt;/h2&gt;
+&lt;p&gt;本文主要用于向开发、测试等角色，介绍G100 3.0.9 psu2及之后版本，逻辑复制的性能优化的设计方向与使用方法。&lt;/p&gt;
+&lt;h2 id=&#34;13-术语定义首字母缩写词和缩略语&#34;&gt;1.3 术语定义、首字母缩写词和缩略语&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;发布端：逻辑复制场景，发送数据方。&lt;/li&gt;
+&lt;li&gt;订阅端：逻辑复制场景，接收数据方。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;13-参考资料&#34;&gt;1.3 参考资料&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Vastbase G100产品文档中逻辑复制使用介绍：&lt;a href=&#34;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/f5c2ae8eb9744d429ad39c02438addf6&#34;&gt;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/f5c2ae8eb9744d429ad39c02438addf6&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;2-g100审计功能重构&#34;&gt;2 G100审计功能重构&lt;/h1&gt;
+&lt;h2 id=&#34;21-功能简述&#34;&gt;2.1 功能简述&lt;/h2&gt;
+&lt;h3 id=&#34;需求背景逻辑复制使用&#34;&gt;需求背景：逻辑复制使用&lt;/h3&gt;
+&lt;p&gt;使用逻辑复制的流程如下：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;发布端：配置逻辑复制&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 设置wal日志详细级别，设计身份等参数，重启集群&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$PGDATA&lt;/span&gt; -c &lt;span class=&#34;s1&#34;&gt;&amp;#39;wal_level=logical&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$PGDATA&lt;/span&gt; -h &lt;span class=&#34;s2&#34;&gt;&amp;#34;host all all 0.0.0.0/0 md5&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$PGDATA&lt;/span&gt; -h &lt;span class=&#34;s2&#34;&gt;&amp;#34;host replication all 0.0.0.0/0 md5&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;vb_ctl restart -D &lt;span class=&#34;nv&#34;&gt;$PGDATA&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;发布端：创建表&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TABLE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pt1&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;INT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c2&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;TEXT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TABLE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pt2&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;INT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;c2&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;TEXT&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;发布端：创建发布，即指定哪些表需复制&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;k&#34;&gt;CREATE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;PUBLICATION&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pub1&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;FOR&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;TABLE&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pt1&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;pt2&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;发布端：创建逻辑复制槽，用于存储复制状态等信息&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 15 设计 逻辑复制性能优化</title>
+      <link>http://localhost:1313/posts/projectdocs/15-design-logical-replication/</link>
+      <pubDate>Wed, 06 May 2026 17:48:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/15-design-logical-replication/</guid>
+      <description>&lt;h1 id=&#34;1-逻辑复制性能优化&#34;&gt;1 逻辑复制性能优化&lt;/h1&gt;
+&lt;h2 id=&#34;11-功能简述&#34;&gt;1.1 功能简述&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;原理：&lt;br&gt;
+假设，发布端执行&lt;code&gt;INSERT INTO t1 VALUES(1,&#39;data1&#39;)&lt;/code&gt;，更改1行数据，产生1条wal日志。逻辑复制功能将读取这条wal，解码并生成1条message，将message发送至订阅端。订阅端应用这条message，等价于重新执行&lt;code&gt;INSERT INTO t1 VALUES(1,&#39;data1&#39;)&lt;/code&gt;。 &lt;img alt=&#34;rep&#34; loading=&#34;lazy&#34; src=&#34;http://localhost:1313/images/ProjectDocs/15-design-logical-replication/rep.png&#34;&gt;&lt;/li&gt;
+&lt;li&gt;问题：&lt;br&gt;
+308.1 psu1以及之前版本，逻辑复制性能较低。以tpcc场景为例，40w tmpc时，发布端产生wal日志速度约100m/s，订阅端的复制速度约10+m/s。&lt;/li&gt;
+&lt;li&gt;客户：&lt;br&gt;
+滚动升级场景中，备机停机升级，主机持续执行业务，备机升级后使用逻辑复制追赶主机数据。长存客户场景，主机产生wal日志速度约40-50m/s，旧版本逻辑复制速度10+m/s，由于逻辑复制速度太慢，备机无法追赶主机，最终导致升级失败。&lt;/li&gt;
+&lt;li&gt;优化&lt;br&gt;
+本需求设计与实现并行逻辑复制机制，大幅提高逻辑复制速度，在上述场景中，订阅端速度可达到70-90m/s。并行逻辑复制分为3个关键子机制：
+&lt;ol&gt;
+&lt;li&gt;发布端多线程并行解码&lt;/li&gt;
+&lt;li&gt;发布端与订阅端流复制传输协议&lt;/li&gt;
+&lt;li&gt;订阅端多线程并行应用&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;12-实现方案&#34;&gt;1.2 实现方案&lt;/h2&gt;
+&lt;p&gt;本章分3个章节，分别介绍3个关键子机制。&lt;/p&gt;
+&lt;h3 id=&#34;121-发布端并行解码机制&#34;&gt;1.2.1 发布端并行解码机制&lt;/h3&gt;
+&lt;p&gt;在旧版本中，发布端采用串行解码机制，只有1个walsender线程，串行执行：1次读取1条wal日志，解码1条wal生成1条message，缓存或发送message。&lt;/p&gt;
+&lt;p&gt;旧版本代码中，发布端有实现并行解码的代码，但是，无法直接使用，订阅端只能是工具，不能是数据库实例，且存在大量问题。本需求基于旧版本并行解码，实现权限的并行解码机制。&lt;/p&gt;
+&lt;p&gt;并行解码机制，将启动多个线程，包括1个reader、多个decoder、1个walsender，它们的功能如下：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;reader：1次读取1条wal日志，将wal发送给decoder&lt;/li&gt;
+&lt;li&gt;decoder：1次接收1条reader发送的wal，解码生成message，将message发送给walsender&lt;/li&gt;
+&lt;li&gt;walsender：1次接收1条decoder发送的message，将message发送给订阅端&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;线程架构图如下：&lt;/p&gt;
+&lt;p&gt;&lt;img alt=&#34;pa-pub&#34; loading=&#34;lazy&#34; src=&#34;http://localhost:1313/images/ProjectDocs/15-design-logical-replication/pa-pub.png&#34;&gt;&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;lsn 1-10
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        d1 &lt;span class=&#34;m&#34;&gt;1&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;4&lt;/span&gt;  collect 阻塞 &lt;span class=&#34;m&#34;&gt;1&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        d2 &lt;span class=&#34;m&#34;&gt;2&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;5&lt;/span&gt;               &lt;span class=&#34;m&#34;&gt;2&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;        d3 &lt;span class=&#34;m&#34;&gt;3&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;6&lt;/span&gt;               &lt;span class=&#34;m&#34;&gt;3&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h3 id=&#34;122-发布端与订阅端流复制协议&#34;&gt;1.2.2 发布端与订阅端流复制协议&lt;/h3&gt;
+&lt;h4 id=&#34;一握手阶段&#34;&gt;一、握手阶段&lt;/h4&gt;
+&lt;p&gt;订阅端与发布端建立连接时，订阅端会根据CRETE SUBSCRIPTION语法设置的参数，生成连接命令，根据连接命令，发布端和订阅端决定采用哪种通信协议，究竟是采用事务复制协议（旧版本）还是流复制协议（新版本）。&lt;/p&gt;
+&lt;h5 id=&#34;事务复制协议旧版本&#34;&gt;事务复制协议（旧版本）&lt;/h5&gt;
+&lt;p&gt;订阅端发送的连接命令如下：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;START_REPLICATION&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;SLOT&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;&amp;#34;$slot_name&amp;#34;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;LOGICAL&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;err&#34;&gt;$&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;start_lsn&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;proto_version&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;3&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;publication_names&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;&amp;#34;$publication_name&amp;#34;&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h5 id=&#34;流复制协议新版本&#34;&gt;流复制协议（新版本）&lt;/h5&gt;
+&lt;p&gt;如果CRETE SUBSCRIPTION时，指定worker_number&amp;gt;1，即启用并行逻辑复制机制，将使用新的连接命令，订阅端发送的连接命令如下：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-sql&#34; data-lang=&#34;sql&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;START_REPLICATION&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;SLOT&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;&amp;#34;$slot_name&amp;#34;&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;LOGICAL&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;err&#34;&gt;$&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;start_lsn&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;w&#34;&gt;    &lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;proto_version&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;3&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;publication_names&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;&amp;#34;$publication_name&amp;#34;&amp;#39;&lt;/span&gt;&lt;span class=&#34;err&#34;&gt;，&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;streaming&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;extreme&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;n&#34;&gt;parallel&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;decode&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;num&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;20&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;max&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;recordbuffer&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&lt;/span&gt;&lt;span class=&#34;k&#34;&gt;in&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;memory&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;100&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;,&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;k&#34;&gt;max&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;txn&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&lt;/span&gt;&lt;span class=&#34;k&#34;&gt;in&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;-&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;memory&lt;/span&gt;&lt;span class=&#34;w&#34;&gt; &lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;100&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt;&lt;span class=&#34;w&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;上述命令中新增了多个参数：&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 15 需求 逻辑复制性能优化</title>
+      <link>http://localhost:1313/posts/projectdocs/15-requirement-logical-replication/</link>
+      <pubDate>Wed, 06 May 2026 10:05:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/15-requirement-logical-replication/</guid>
+      <description>&lt;h1 id=&#34;1-简介&#34;&gt;1 简介&lt;/h1&gt;
+&lt;h2 id=&#34;11-目的&#34;&gt;1.1 目的&lt;/h2&gt;
+&lt;p&gt;&lt;strong&gt;逻辑复制&lt;/strong&gt;是一种在多个数据库实例之间复制数据的功能，通常用于从一个数据库实例中，将针对指定表的insert、delete、update等写操作，复制到其他另一个数据库实例。在数据库术语中，统一称逻辑复制的发送方为&lt;strong&gt;发布端&lt;/strong&gt;，称接收方为&lt;strong&gt;订阅端&lt;/strong&gt;。Oracle、Postgresql、Vastbase等数据库产品，均提供逻辑复制功能。&lt;/p&gt;
+&lt;p&gt;当前版本，逻辑复制性能较低。以tpcc场景为例，发布端40w tmpc时，产生wal日志速度约100+m/s，订阅端的复制速度约10+m/s。在滚动升级场景，主机和备机可能是不同的产品版本，主备复制数据时，不能使用物理复制，只能使用逻辑复制。在长存客户场景中，主机产生wal日志速度在50+m/s左右，备机使用逻辑复制，复制速度约10+m/s，备机将追赶不上主机进度，导致滚动升级失败。&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;主a                     备b                         备c
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;+-----------------------+---------------------------+-----------------------------
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;1&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;==&lt;/span&gt;&amp;gt;执行业务
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;2&lt;/span&gt; 开始滚动升级，暂停流复制 &lt;span class=&#34;nv&#34;&gt;lag&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;400M
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;3&lt;/span&gt; 暂停流复制（物理复制）
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;4&lt;/span&gt; 创建逻辑复制槽 &lt;span class=&#34;nv&#34;&gt;lsn1&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;1G
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;5&lt;/span&gt; 恢复流复制
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;6&lt;/span&gt; 物理复制追赶，到逻辑复制槽
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;6&lt;/span&gt; 开始单节点升级
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;7&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;[&lt;/span&gt;升级&lt;span class=&#34;o&#34;&gt;]&lt;/span&gt; 停止进程
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;8&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;[&lt;/span&gt;升级&lt;span class=&#34;o&#34;&gt;]&lt;/span&gt; 替换二进制等
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;9&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;[&lt;/span&gt;升级&lt;span class=&#34;o&#34;&gt;]&lt;/span&gt; 启动进程
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;10&lt;/span&gt; 单节点升级成功
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;11&lt;/span&gt; 持续执行业务 &lt;span class=&#34;nv&#34;&gt;lsn2&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;2G
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;12&lt;/span&gt; 创建订阅，启动逻辑复制，lsn1&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;1G
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;13&lt;/span&gt; 逻辑复制开始追赶（初始差距：lsn2-lsn1&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;14&lt;/span&gt; 持续执行业务 &lt;span class=&#34;nv&#34;&gt;lsn3&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;2.5G
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;15&lt;/span&gt; 逻辑复制持续追赶 &lt;span class=&#34;nv&#34;&gt;lsn&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;1.6G
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;16&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;可重置lag&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;17&lt;/span&gt; 差距持续缩小（从lsn2-lsn1降低到lag）
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;18&lt;/span&gt; 发送停机命令
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;19&lt;/span&gt; 停止业务
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                        &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;20&lt;/span&gt; 差距持续缩小，从lag缩小至0
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;21&lt;/span&gt; 停止进程成功
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;因此，需大幅提高逻辑复制速度，在长存客户场景中，逻辑复制速度至少需达到70+m/s。目前，发布端、订阅端均存在性能瓶颈，均需要优化。&lt;/p&gt;
+&lt;h2 id=&#34;12-适用范围&#34;&gt;1.2 适用范围&lt;/h2&gt;
+&lt;p&gt;G100 3.0.9 psu2及之后版本&lt;/p&gt;
+&lt;h2 id=&#34;13-术语定义首字母缩写词和缩略语&#34;&gt;1.3 术语定义、首字母缩写词和缩略语&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;发布端：逻辑复制场景，发送数据方。&lt;/li&gt;
+&lt;li&gt;订阅端：逻辑复制场景，接收数据方。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;14-参考资料&#34;&gt;1.4 参考资料&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Vastbase G100产品文档中逻辑复制使用介绍：&lt;a href=&#34;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/f5c2ae8eb9744d429ad39c02438addf6&#34;&gt;https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/f5c2ae8eb9744d429ad39c02438addf6&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;oracle goldengate并行复制：&lt;a href=&#34;https://oracle.hydrogen.sagittarius.connect.product.adaptavist.com/en/database/goldengate/core/26/coredoc/replicat-parallel-replicat.html#GUID-F1CD8E03-8DA1-4A78-95D3-C0516F1DA09A&#34;&gt;https://oracle.hydrogen.sagittarius.connect.product.adaptavist.com/en/database/goldengate/core/26/coredoc/replicat-parallel-replicat.html#GUID-F1CD8E03-8DA1-4A78-95D3-C0516F1DA09A&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;2-逻辑复制性能优化&#34;&gt;2 逻辑复制性能优化&lt;/h1&gt;
+&lt;h2 id=&#34;21-功能简述&#34;&gt;2.1 功能简述&lt;/h2&gt;
+&lt;h3 id=&#34;一逻辑复制使用示例&#34;&gt;一、逻辑复制使用示例&lt;/h3&gt;
+&lt;p&gt;使用逻辑复制，可概括为3个阶段：&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

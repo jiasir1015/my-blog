@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>项目文档 | Kernel Notes</title>
+<meta name="keywords" content="">
+<meta name="description" content="">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/categories/%E9%A1%B9%E7%9B%AE%E6%96%87%E6%A1%A3/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" type="application/rss+xml" href="http://localhost:1313/categories/%E9%A1%B9%E7%9B%AE%E6%96%87%E6%A1%A3/index.xml" title="rss">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/categories/%E9%A1%B9%E7%9B%AE%E6%96%87%E6%A1%A3/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/categories/%E9%A1%B9%E7%9B%AE%E6%96%87%E6%A1%A3/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="项目文档">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="项目文档">
+<meta name="twitter:description" content="">
+
+</head>
+<body class="list" id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"> 
+<header class="page-header">
+  <h1>
+    项目文档
+  </h1>
+</header>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">分享编写需求/设计文档的个人经验
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 简介 1.1 分享的主题 分享一些编写需求、设计文档经验
+1.2 分享的背景 背景：我写的需求文档，（相对）还算详细，所以有此次分享
+308.1，profile功能的需求文档：https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007196 根因：前公司流程繁重，被迫养成这种习惯。
+分享的内容：可分享的干货不多，我觉得，在写文档的过程中，大部分人想的很详细，只是没有编写到文档中，毕竟每个人都有自己的编写风格。所以，本文的重点，是介绍前公司流程与要求，并以我做过的需求为例，为大家提供一点参考。
+分享人经历：交过10&#43;个不算小的需求，完整写过10&#43;次需求与设计文档，格式与海量的接近。
+分享的局限：交付的需求，主要是安全方向，也涉及SQL、存储等多个模块，所以，本文主要以安全需求的角度写，其他模块的需求不一定适用。
+1.3 前公司的流程 与海量相比，前公司的交付流程，几乎一样：
+客户：提出需求 产品、项目、测试、架构等：审核需求 开发：撰写需求/设计文档 各角色：评审需求/设计文档 开发：编写代码 … 其中，在4.评审需求/设计文档环节，前公司区别较大：
+一、评审人员多
+编号 角色 评审人 目的 1 开发 安全组、SQL组、存储组、运维组、.. 避免影响其他模块，协助发现风险 2 测试 测试人、测试组长 学习新需求，识别测试重点 3 架构 架构设计 避免影响其他模块，确保后向兼容 4 资料 资料优化、资料审核 学习新需求 5 用例 用例审核 确保各种check可看护功能 6 其他 流程提升 - 二、评审通过难
+组内评审 线上评审：上述所有角色会上评审，不过，一般很多人会议冲突，关键靠线下评审 线下评审（关键流程）：各类角色共10&#43;必选评审人，通过在线需求文档、设计文档了解需求，提出疑问，提出意见。开发分析解决后，找提出人确认意见，才算闭环。最后，所有必选评审人评审通过，才算完成流程。 在这种流程中，需求与设计文档，要满足很多要求：
+普适：考虑到其他组开发、测试、资料等角色，不熟悉本领域的基础知识，所以，需要详细介绍相关原理，很多原理需要从头介绍
+完整：要充分例举所有可能涉及风险，否则，评审人会认为未考虑到
+举例：做了1个需求，可以为表设置加密属性，需要考虑：系统表、用户表（atore表、ustore表、分区表、临时表、toast表、unlogged表、segment表、hashbuckent表、物化视图…）
+2 需求文档写作思路 2.1 分析过程 首先，客户提出需求，很多需求不够清晰。
+示例：
+profile原始需求： 目前对于数据库用户的管理方式不够便捷，无法像Oracle为用户赋予一组安全策略。一些属性如密码有效期、密码过期天数、密码尝试次数等也只能全局设定，无法指定用户配置。 然后，以我的个人习惯，分析需求的流程如下：
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-07-15 10:54:00 +0800 CST'>July 15, 2025</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>413 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 分享编写需求/设计文档的个人经验" href="http://localhost:1313/posts/projectdocs/writing-requirement-and-design-docs/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 9 接口 E100审计
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p> 配置审计功能
+通过GUC配置审计功能，新增GUC如下： 编号 参数名 默认值 取值范围 功能 1 enable_audit off on, off 控制是否开启审计功能 2 aduit_directory 空 任意绝对路径 审计日志存储目录，确保数据库用户有权访问。如果取值为空，则默认存储于”数据目录/vb_audit”下 3 audit_directory_size 64M [64M, -] 审计日志目录最大空间，如果文件目录达到限制时，最旧的日志文件将被新文件覆盖 4 audit_scope ddl all, ddl, insert, update, select, delete, function 审计范围。可设置多个范围，示例：”ddl, update, delete” 5 audit_buffer_size 16M [1M, 1G] 内存中，审计日志缓冲区大小 6 audit_detail basic,event,sql basic,event, sql 控制审计日志详细程度 7 audit_unclassfied on 启动审计功能
+设置审计参数后，重启数据库，内核关键变化如下： 申请共享内存：工作线程生成日志后，将日志写入共享内存，该内存为审计日志缓冲区，缓冲区大小由GUC参数audit_buffer_size控制 新增进程：新增1个线程，负责将审计缓存区中的日志，存储至文件 生成审计日志
+执行SQL语句时，如果SQL语句在审计范围内，内核一般会生成1条审计日志，如果SQL语句较复杂，语句中多个子操作会生成多条审计日志。 审计日志中，记录的内容如下：
+日志字段 示例 解释 主体类型 user 目前，主体类型只支持用户类型 主体名称 u1 执行操作的用户，即执行SQL前，与数据库建立连接的用户 操作类型 create 针对不同类型的对象，操作不同，例如，针对表有create, insert, select, ..等操作 操作时间 2025-05-01 12:00:01 678956 格式：年-月-日 时-分-秒 微秒 操作XID 20000 事务ID 操作LSN 0/170F5F0 该日志对应的SQL语句，最新生成的XLOG的写入位置 对象类型 table 数据库对象类型，包括database, schema, table, view, … 对象名称 t1 数据库对象名称 对象数据库 db1 对象属于哪个database 对象命名空间 sch1 对象属于哪个schema SQL语句 CREATE TABLE t1(c1 INT, c2 TEXT) 执行操作的原始SQL语句 存储审计日志
+在审计目录下，审计文件设计如下： 命名：格式为：adt_年_月日_时分_秒_微秒.alog，文件名中包含文件创建时间
+示例：
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-06-17 18:18:00 +0800 CST'>June 17, 2025</span>&nbsp;·&nbsp;<span>3 min</span>&nbsp;·&nbsp;<span>571 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 9 接口 E100审计" href="http://localhost:1313/posts/projectdocs/9-api-e100-audit/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 10 设计 SSL协议
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 TLS协议支持第三方流量审计 1.1 功能简述 【需求背景】
+TLS协议，是保障通信安全的加密协议，可分为4个子功能：
+密钥生成：通过密钥交换或密钥协商等协议，让双方生成相同的密钥 身份认证：在开始阶段，双方均向对方发送自己的证书。双方接收证书后，基于PKI体系，校验证书是否合法。 数据加密：发送方发生数据前，使用密钥加密数据，发送数据密文。接受方接受密文后，使用密钥解密，获取数据。 数据校验：在加密数据的同时，生成数据完整性校验码，与数据密文拼接在一起。（简单理解：生成数据的哈希值，并使用密钥加密哈希值）接收方解密数据后，同样生成数据完整性校验码，与接收的相比，判断是否一致。 开源软件libssl.so提供TLS功能，应用只需调用接口，即可实现TLS协议。同时，libssl.so提供100&#43;算法套件，可让应用选择不同的参数组合，1个算法套件，包含4个关键参数：
+密钥生成：密钥生成协议 身份认证：证书算法类型 数据加密：加密算法类型 数据校验：哈希算法类型 例如，libssl.so中，常用的算法套件为：ECDHE-RSA-AES128-SHA256，该套件中，参数的含义如下：
+密钥生成协议：ECDHE协议。（常见协议类型:DHE、ECDHE、RSA等） 证书算法类型：RSA 加密算法类型：AES-128 哈希算法类型：SHA-256 【需求分析】
+vastbase支持TLS协议，当vsql与vastbase通信时，双方可使用TLS模块，生成密钥，并使用密钥加密、解密通信数据，包括：SQL语句、SQL执行结果等。
+客户可能采用第三方工具，截取网络流量，获取传输中的SQL等数据，进行流量审计。但是，在使用TLS协议的情况下，网络中的数据是密文形式，无法进行流量审计。
+vastbase提供1个GUC参数ssl_ciphers，用于配置TLS协议采用的算法套件，旧版本，该参数的取值范围如下：
+ECDHE-ECDSA-AES256-GCM-SHA384 ECDHE-RSA-AES256-GCM-SHA384 DHE-RSA-AES256-GCM-SHA384 ECDHE-ECDSA-AES128-GCM-SHA256 DHE-RSA-AES128-GCM-SHA256 ECDHE-RSA-AES128-SHA256 ECDHE-ECDSA-SM4-CBC-SM3 4个仅tassl支持的国密算法套件 上述7个套件中，密钥生成协议为：ECDHE、DHE，此类DH协议，无法让第三方工具获取密钥。
+本版本，新增4个算法套件：
+AES128-SHA256 AES256-SHA256 AES128-GCM-SHA256 AES256-GCM-SHA384 上述4个套件，密钥生成协议为：RSA，该协议可让第三方工具获取密钥，使其可解密网络流量，获取SQL语句、SQL执行结果等。
+【需求实现】
+之前，vastbase限制ssl_ciphers的取值范围，仅放开7个算法套件，本版本，将新增放开4个算法套件。
+实现时，仅修改ssl_ciphers的取值范围，新增支持4个算法套件[AES128-SHA256、AES256-SHA256、AES128-GCM-SHA256、AES256-GCM-SHA384]，4个算法套件将直接传递给libssl.so，内核不做任何处理。
+因此，本需求无复杂设计。本文主要介绍完整的TLS协议工作原理。
+1.2 实现方案 一、ECDHE与RSA的区别 此处简化ECDHE与RSA的步骤与算法，提取最核心的原理，方便快速理解。
+一、ECDHE密钥协商协议
+第三方工具、攻击者完全无法获取密钥。
+client server &#43;-------------------------------------------&#43;----------------------------------- | &lt;---- 0. 双方随机约定一些公开参数 ------&gt; | | 1. 生成随机私钥 client_priv | 2. 基于client_priv，计算公钥 client_pub | 3. 发送公钥 client_pub ------------&gt; | 4. 接收公钥 client_pub | 5. 生成随机私钥 server_priv | 6. 基于server_priv，计算公钥 server_pub &lt;------------ | 7. 发送公钥 server_pub | 8. 接收公钥 server_pub | 9. 基于client_priv，server_pub，计算密钥 | 10. 基于server_priv，client_pub，计算密钥 （第9步和第10步，可以计算出相同的密钥） 简单举个例子 client server &#43;-------------------------------------------&#43;----------------------------------- | &lt;----- 0. generate and send (2,11) ----&gt; | | 1. generate 8 | 2. caculate (8 * 2) % 11 = 5 | 3. send 5 ----------&gt; | 4. receive 5 | 5. generate 10 | 6. caculate (10 * 2) % 11 = 9 &lt;------------ | 7. send 9 | 8. receive 9 | 9. key = (8 * 9) % 11 = 6 | 10. key = (10 * 5) % 11 = 6 攻击者：截获网络流量，获取2,11,5,9，无法计算出密钥为6 二、RSA密钥交换协议
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-09-09 18:48:00 +0800 CST'>September 9, 2025</span>&nbsp;·&nbsp;<span>3 min</span>&nbsp;·&nbsp;<span>579 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 10 设计 SSL协议" href="http://localhost:1313/posts/projectdocs/10-design-ssl/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 10 需求 SSL协议
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 简介 1.1 目的 在应用与数据库传输数据时，为避免攻击者对数据进行窃听、篡改、伪造、重放等攻击，Vastbase支持采用TLS协议保障数据机密性与完整性。
+通过TLS协议，应用传输数据指至服务端路程如下：
+建立连接：与数据建立TCP连接 生成密钥(TLS)：采用TLS协议协商生成密钥(连接级) 加密数据(TLS)：使用密钥加密数据(SQL等) 发送数据：通过TCP协议，发送数据密文至数据库 客户可能采用第三方工具，截取网络流量，获取传输中的SQL等数据，进行流量审计。但是，在使用TLS协议的情况下，网络中的数据是密文形式，无法进行流量审计。为解决该问题，本文介绍如何让第三方工具获取密钥，以解密网络中的数据密文。
+1.2 适用范围 本文适用于3.0.8 psu4以之后版本。未来本需求将同步至2.2.15版本。
+1.3 术语定义、首字母缩写词和缩略语 SSL: Secure Sockets Layer，于保障网络通信安全的加密协议，早期协议，存在设计缺陷，目前由TLS协议替代。但是，SSL也可不特指SSL协议，可泛指所有通信安全加密协议。同时，由于历史原因，以及前向兼容，数据库中的很多参数与接口采用SSL命令，实际使用的是TLS协议。无需纠结TLS与SSL差异，vastbase中SSL等于TLS。 TLS: Transport Layer Security，更安全的传输加密协议。早期版本1.0,1.1已不安全，主流版本为1.2,1.3。 1.3 参考资料 原始需求：https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001084569 openssl支持的所有cipers： https://docs.openssl.org/3.0/man1/openssl-ciphers/ ssl与tls原理：博客写了一点点，没整理 2 TLS协议支持第三方流量审计 2.1 功能简述 【需求现状】
+目前，大部分第三方流量审计工具，可在一些特定场景下，解密由TLS协议加密后的数据。以vastbase为例，使用TLS协议分为以下阶段：
+生成证书、私钥文件 vastbase端配置证书、私钥文件 vsql端配置证书、私钥文件 vsql连接vastbase
+4.1 建立tcp连接
+4.2 使用证书校验对方身份
+4.3 双发协商选择算法套件：包括密钥生成协议、加密算法等
+4.4 双方协商生成密钥 vsql与vastbase传输数据
+5.1 发送数据前，使用密钥加密数据
+5.2 发送数据密文
+在4.3步骤中，可配置不同的密钥生成协议，对于其中一部分协议，在步骤4.4中，第三方工具可获取密钥，第步骤5.2中，第三方工具截取数据密文后，即可解密数据。
+但是，4.3步骤中，目前vastbase仅支持2种密钥生成协议，这2种协议都无法让第三方工具获取密钥。 【密钥生成协议】
+此处介绍2类常见的密钥生成协议：
+一、DHE密钥协商协议
+Vastbase目前支持的2种协议，都属于此类协议
+client server &#43;-------------------------------------------&#43;----------------------------------- | &lt;-------- 0. 双方随机约定一些参数 ------&gt; | | 1. 生成随机私钥 client_priv | 2. 基于client_priv，计算公钥 client_pub | 3. 发送公钥 client_pub ------------&gt; | 4. 接收公钥 client_pub | 5. 生成随机私钥 server_priv | 6. 基于server_priv，计算公钥 server_pub &lt;------------ | 7. 发送公钥 server_pub | 8. 接收公钥 server_pub | 9. 基于client_priv，server_pub，计算密钥 | 10. 基于server_priv，client_pub，计算密钥 （第9步和第10步，可以计算出相同的密钥） 简单举个例子 client server &#43;-------------------------------------------&#43;----------------------------------- | &lt;----- 0. generate and send (2,11) ----&gt; | | 1. generate 8 | 2. caculate (8 * 2) % 11 = 5 | 3. send 5 ----------&gt; | 4. receive 5 | 5. generate 10 | 6. caculate (10 * 2) % 11 = 9 &lt;------------ | 7. send 9 | 8. receive 9 | 9. key = (8 * 9) % 11 = 6 | 10. key = (10 * 5) % 11 = 6 攻击者：截获网络流量，获取2,11,5,9，无法计算出密钥为6 二、RSA密钥交换协议
+该协议支持第三方工具解密流量，客户选择的工具已适配该协议。TLS还支持其他PSK、SRP等协议，但是，由于这些协议比较少见，且客户选择的工具未适配，本次不适配其他协议。
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-09-03 11:07:00 +0800 CST'>September 3, 2025</span>&nbsp;·&nbsp;<span>6 min</span>&nbsp;·&nbsp;<span>1164 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 10 需求 SSL协议" href="http://localhost:1313/posts/projectdocs/10-requirement-ssl/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 11 需求 逻辑复制性能优化
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 简介 1.1 目的 逻辑复制是一种在多个数据库实例之间复制数据的功能，通常用于从一个数据库实例中，将针对指定表的insert、delete、update等写操作，复制到其他另一个数据库实例。在数据库术语中，统一称逻辑复制的发送方为发布端，称接收方为订阅端。Oracle、Postgresql、Vastbase等数据库产品，均提供逻辑复制功能。
+当前版本，逻辑复制性能较低，以tpcc场景为例，发布端40w tmpc时，订阅端的复制速度约10m/s。在滚动升级等场景，通过逻辑复制在不同实例间同步大量数据，要求逻辑复制性能达到70-100m/s。
+发布端、订阅端均存在性能瓶颈，均需要优化。但是，由于交付时间较短，以及订阅端方案仍有瑕疵等因素，本版本交付发布端性能优化，下版本交付订阅端性能优化。
+1.2 适用范围 本文主要用于向开发、测试等角色，介绍G100 3.0.9 psu2及之后版本，逻辑复制的性能优化的设计方向与使用方法。
+1.3 术语定义、首字母缩写词和缩略语 发布端：逻辑复制场景，发送数据方。 订阅端：逻辑复制场景，接收数据方。 1.3 参考资料 Vastbase G100产品文档中逻辑复制使用介绍：https://docs.vastdata.com.cn/zh_CN/VastbaseG100/V3.0.8/1/f5c2ae8eb9744d429ad39c02438addf6 2 G100审计功能重构 2.1 功能简述 需求背景：逻辑复制使用 使用逻辑复制的流程如下：
+发布端：配置逻辑复制
+# 设置wal日志详细级别，设计身份等参数，重启集群 gs_guc set -D $PGDATA -c &#39;wal_level=logical&#39; gs_guc set -D $PGDATA -h &#34;host all all 0.0.0.0/0 md5&#34; gs_guc set -D $PGDATA -h &#34;host replication all 0.0.0.0/0 md5&#34; vb_ctl restart -D $PGDATA 发布端：创建表
+CREATE TABLE pt1(c1 INT,c2 TEXT); CREATE TABLE pt2(c1 INT, c2 TEXT); 发布端：创建发布，即指定哪些表需复制
+CREATE PUBLICATION pub1 FOR TABLE pt1,pt2; 发布端：创建逻辑复制槽，用于存储复制状态等信息
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2026-02-06 14:30:00 +0800 CST'>February 6, 2026</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>298 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 11 需求 逻辑复制性能优化" href="http://localhost:1313/posts/projectdocs/11-requirement-logical-replication/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 透明加密 设计
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 透明加密 1.1 功能简述 关于透明加密的基本概念，请看需求文档。
+用户使用透明加密的示例如下：
+CREATE TABLE t1 (c1 TEXT, c2 TEXT); CREATE ENCRYPTION KEY tde_key WITH (source=local, password=&#39;pass.123&#39;); CREATE ENCRYPTION POLICY ep1 FRO t1 KEY tde_key; INSERT INTO t1 VALUES (&#39;data1&#39;, &#39;data2&#39;); INSERT INTO t1 VALUES (&#39;data1&#39;, &#39;data2&#39;); SELECT * FROM t1; 1.2 实现方案 1.2.1 整体架构 透明加密的核心目标，是通过数据加密方案，解决攻击者绕过数据库安全机制，直接从磁盘窃取数据的问题。
+在加密数据后，需要确保不影响内核在数据上进行计算。因此，需要在存储层底层，对数据进行加密。另外，为确保存储底层能够识别哪些数据加密，哪些数据不加密，以及使用什么算法加密等，上层需传递加密信息。透明加密逻辑架构如下：
+1.2.2 工作流程 为适配存储底层设计，同时兼顾加密性能，以Page为粒度进行加密，并且，在Page中，存储加密信息。
+1.2.3 详细流程 一、启动进程 在启动进程阶段，故障恢复时，如果回放到属于加密表的xlog，涉及到解密Page，因此，需在故障恢复前加载密钥。
+main # 1. 启动数据库进程（基于pg-16代码） PostmasterMain # 2. 启动postmaster进程 SelectConfigFiles # 3. 读取GUC文件 &#39;tde_load_encryption_key&#39; # 4. 读取密钥文件（后文介绍密钥如何生成） SysLogger_Start StartupDataBase # 5. 开始故障恢复 StartupProcessMain StartupXLOG ReadControlFile PerformWalRecovery for loop: ReadRecord # 6. 读取xlog ApplyWalRecord # 7. 重放xlog GetRmgr.rm_redo ... heap_xlog_insert XLogReadBufferForRedo XLogReadBufferForRedoExtended XLogReadBufferExtended ReadBufferWithoutRelcache ReadBuffer_common smgrread # 8. 读取数据文件 # 需解密，后文统一介绍 ServerLoop for loop: ConnCreate BackendStartup BackendRun PostgresMain # 9. 启动postgres进程 StartCheckpointer StartBackgroundWriter StartChildProcess AuxiliaryProcessMain BackgroundWriterMain # 10. 启动bgwriter进程 二、生成密钥 当前版本，所有表，使用同一个数据密钥。因此，暂时无需新增系统表，存储密钥对象。
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2026-03-23 20:52:00 +0800 CST'>March 23, 2026</span>&nbsp;·&nbsp;<span>3 min</span>&nbsp;·&nbsp;<span>545 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 透明加密 设计" href="http://localhost:1313/posts/projectdocs/13-design-tde/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 透明加密 需求
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 简介 1.1 目的 透明加密特性提供数据加密功能，核心原理是在数据库将数据存储至磁盘时，先加密再存储。
+本需求将从0设计透明加密特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。
+1.2 适用范围 Vastbase V5版本。
+1.3 术语定义、首字母缩写词和缩略语 TDE：Transparent Data Encryption，透明数据加密，由数据库提供的数据加密特性 1.4 参考资料 oracle 透明加密特性：https://docs.oracle.com/en/database/oracle/oracle-database/26/dbtde/preface.html sql server 透明加密特性：https://learn.microsoft.com/en-us/sql/relational-databases/security/encryption/transparent-data-encryption?view=sql-server-ver17 oceanbase 透明加密特性：https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475958 kingbase 透明加密特性：https://docs.kingbase.com.cn/cn/KES-V9R1C10/safe/transparent-data-Encyption dm8 透明加密特性：https://eco.dameng.com/document/dm/zh-cn/pm/storage-encryption.html#7.1.1%20%E5%85%A8%E5%BA%93%E5%8A%A0%E5%AF%86 gaussdb 透明加密特性：https://support.huaweicloud.com/intl/zh-cn/fg-gaussdb-dist-v8/gaussdb-18-0019.html 2 透明加密 2.1 功能简述 一、基本原理 通常，用户将数据传输给数据库后，数据库将数据存储到磁盘。攻击者可能利用多种数据库内部或外部漏洞，例如操作系统漏洞等，绕过数据库安全机制，直接从磁盘读取数文件，窃取用户数据。
+透明加密，是一种由数据库提供的加密特性，可有效解决攻击者从磁盘窃取数据的问题。开启透明加密后，数据库将数据存储到磁盘时，先加密数据，再存储数据密文；数据库从磁盘读取数据时，先解密数据密文，再进行其他计算。用户访问透明加密表时，包括存储、读取数据等，与访问普通表无任何区别，加密和解密过程由数据库自动完成，即对用户透明。
+二、竞品分析 几乎所有商用关系数据库中，都支持透明加密特性，包括oracle, sql server, oceanbase, kingbase, dm8等，postgresql不支持透明加密特性。
+使用透明加密时，通常包括3个阶段：
+定义用于加密的密钥 使用SQL语法，定义哪些对象需加密，不同产品，定义加密对象的粒度不同 使用SQL语法，访问透明加密表，以及进行其他运维等操作 各产品中，定义加密对象的SQL语法如下：
+-- 一、oracle CREATE TABLE t1(c1 INT, c2 TEXT ENCRYPT); CREATE TABLESPACE ts1 DATAFILE .. ENCRYPTION USING &#39;AES192&#39; ENCRYPT; -- 二、sql server CREATE DATABASE ENCRYPTION KEY WITH ALGORITHM = AES_256 .. ALTER DATABASE db1 SET ENCRYPTION ON; -- 三、oceanbase CREATE TABLESPACE ts1 encryption = &#39;y&#39;; -- mysql cmpt CREATE TABLESPACE ts1 ENCRYPTION USING &#39;aes-256&#39;; -- oracle cmpt -- 四、kingbase CREATE TABLESPACE ts .. WITH (ENCRYPTION = TRUE); CREATE TABLE ts .. ENCRYPTED BY &#39;this is a key&#39;; -- 五、dm8 intdb .. ENCRYPT_NAME .. CREATE TABLESPACE .. ENCRYPT WITH .. CREATE TABLE t1 (c1 INT, c2 INT ENCRYPT WITH ..); -- 六、gaussdb CREATE TABLE t1 .. WITH (enable_tde=on); 各产品中，按定义加密对象的粒度，区别如下：
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2026-03-20 10:47:00 +0800 CST'>March 20, 2026</span>&nbsp;·&nbsp;<span>5 min</span>&nbsp;·&nbsp;<span>916 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 透明加密 需求" href="http://localhost:1313/posts/projectdocs/13-requirement-tde/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 mac 设计
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 强制访问控制 1.1 功能简述 从实现的角度看，当用户执行SQL时，强制访问控制主要实现以下功能：
+CREATE ACCESS POLICY ..：在系统表中，记录ACCESS POLICY，以及其中的LABLE等信息 CREATE TABLE ..：创建表时，如果设置acess_policy字段，则自动为表新增1列隐藏列，列名为access_label INSERT ..：向表插入数据时，根据当前用户的write_label，自动为数据生成access_label列的值。 SELECT ..：从表查询数据时，根据当前用户的read_label，自动为查询语句添加过滤条件has_mac_permission(access_label, read_label) 另外，如果为表设置访问策略，需在索引中同时设置访问策略：
+CREATE INDEX ..：自动为索引新增1列，列名为access_label 对于一些其他语法，也许单独适配，包括：
+COPY ..：自动修改旧数据的access_label值 1.2 实现方案 1.2.1 整体流程 本文重点从源码角度，介绍强制访问控制策略如何基于隐藏列，实现强制访问控制，包括：创建、填充、匹配隐藏列等流程。
+核心功能的大致流程如下：
+User Vastbase Disk &#43;---------------------------------------------------&#43;---------------------------------------------------------&#43; # 管理员 | 1. CREATE ACCESS POLICY .. LEVEL .. LABEL .. --&gt; | | 2. 存储access policy至系统表vb_access_policy --&gt; | 3. 存储access level至系统表vb_access_level --&gt; | 4. 存储access label至系统表vb_access_label --&gt; | 5. CREATE TABLE .. (access_policy=..) --&gt; | | 6. 识别是否设置access_policy | 7. 自动添加隐藏列access_label | 8. 存储access_policy至系统表pg_class --&gt; | 9. 存储accessl_label定义至系统表pg_attribute --&gt; | 10. CREATE USER .. ACCESS POLICY .. READ LABEL .. WRITE LABEL --&gt; | | 11. 存储access_policy, read_label, write_label至系统表pg_authid --&gt; # 普通用户 | 12. vsql -U username -W password --&gt; | | 14. set read_label = .. / write_label = .. --&gt; | | 15. 查询pg_authid，判断read_label/write_label是否合法 &lt;-- | 16. 设置临时的read_label/write_label | 17. 如何用户未自动设置read_label/write_label，自动根据pgauthid设置 | 18. INSERT .. --&gt; | | 19. 查询pg_class，判断表是否有access_policy &lt;-- | 20. 自动为隐藏列赋值，取值为write_label | 21. SELECT .. --&gt; | | 22. 查询pg_class，判断表是否有access_policy &lt;-- | 23. 语义分析 | 24. 查询重写：自动新增过滤条件：WHERE has_mac_permission(access_label, read_label) | 24. 计划执行：扫描Tuple，根据过滤条件，过滤不满足权限检查的Tuple 1.2.2 详细流程 一、创建策略 当用户创建策略时，例如：
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2026-03-23 21:41:00 +0800 CST'>March 23, 2026</span>&nbsp;·&nbsp;<span>4 min</span>&nbsp;·&nbsp;<span>759 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 mac 设计" href="http://localhost:1313/posts/projectdocs/14-design-mac/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 mac 需求
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 简介 1.1 目的 本文主要包括以下关键内容：
+介绍访问控制的基本概念 调研其他厂商实现强制控制的方式 设计Vastbase强制访问控制特性，介绍如何使用强制访问特性 1.2 适用范围 Vastbase V5版本。
+1.3 术语定义、首字母缩写词和缩略语 MAC：Mandatory Access Control，强制访问控制，主体访问客体时，基于主体、客体属性，强制控制访问权限。 DAC：Discretionary Access Control，自主访问控制，数据拥有者可自行设置访问权限。 1.4 参考资料 oracle 强制访问控制（标签访问控制 RLS）：https://docs.oracle.com/en/database/oracle/oracle-database/26/olsag/part1.html#GUID-C20C62AE-2A30-45F9-AEEA-52A0D3286FBA oceanbase 强制访问控制（兼容oracle）：https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475944 kingbase 强制访问控制：https://bbs.kingbase.com.cn/kingbase-doc/v8.6.7.24/safety/safety-guide/label-and-mac.html dm 强制访问控制：https://eco.dameng.com/document/dm/zh-cn/pm/mandatory-access-control.html GB/T-20009-数据库管理系统安全评估准则：https://drive.weixin.qq.com/s?k=AHUAfwdSAA82aDcvvD postgresql 行级访问控制 RLS：https://www.postgresql.org/docs/current/ddl-rowsecurity.html 2 强制访问控制 2.1 功能简述 一、基本概念 访问控制的定义：对主体访问客体的行为，系统按照安全策略进行限制与管理的安全机制。
+按安全策略分类，可将访问控制分为很多类，其中，常见的策略有：
+自主访问控制DAC：客体的拥有者，可自行向其他主体赋予访问权限。 强制访问控制MAC：系统为主体、客体分配安全标签，通过主体、客体的安全标签控制访问权限，很多情况下，即使客体的拥有者也无法向其他主体赋予访问权限。 角色访问控制RBAC：不在本文讨论范围。 在数据库领域，主体通常指数据库用户，客体通常指数据库对象，例如DATABASE、SCHEMA、TABLE、COLUMN、ROW、FUNCTION等。
+自主访问控制比较成熟，几乎所有关系数据库，都提供自主访问控制特性，例如，TABLE（客体）的属主（主体），可通过GRANT .. TO ..等语法，为其他用户（主体）赋予权限。
+强制访问控制理论比较成熟，但是，除oracle支持强制访问控制，以及oceanbase等几款产品兼容oracle强制访问控制之外，大部分关系数据库不支持强制访问控制。
+实现强制访问控制时，通常将主体、客体的安全标签，简化为安全等级，当主体访问客体时，比较主体、客体等级高低，以判断访问权限。在机密性场景，遵循不上读、不下写原则。在完整性场景，遵循不下读、不上写原则。
+本需求将从0设计强制访问控制特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。
+二、竞品分析 oracle支持强制访问控制，客体是ROW，即行级强制访问控制。oceanbase、kingbase、dm的访问控制，与oracle一致。sql server、postgresql等其他产品不支持强制访问控制。
+oracle强制访问控制使用示例如下：
+-- 1 定义策略 SA_SYSDBA.CREATE_POLICY(policy_name =&gt; &#39;p1&#39;, column_name =&gt; &#39;lab_col1&#39;) -- 2 定义级别 SA_COMPONENTS.CREATE_LEVEL(policy_name =&gt; &#39;p1&#39;, level_num =&gt; 1, short_name =&gt; &#39;x1&#39;, long_name =&gt; &#39;x1&#39;); SA_COMPONENTS.CREATE_LEVEL(&#39;p1&#39;, 20, &#39;x2&#39;, &#39;x2&#39;); SA_COMPONENTS.CREATE_LEVEL(&#39;p1&#39;, 30, &#39;x3&#39;, &#39;x3&#39;); -- 3 定义组件 SA_COMPONENTS.CREATE_LEVEL(policy_name =&gt;&#39;p1&#39;, comp_num =&gt; 100, short_name =&gt; &#39;sec&#39;, long_name =&gt; &#39;security&#39;); SA_COMPONENTS.CREATE_LEVEL(&#39;p1&#39;, 200, &#39;stg&#39;, &#39;storage&#39;); -- 4 创建标签 SA_SYSDBA.CREATE_LABEL(policy_name =&gt; &#39;p1&#39;, label_tag =&gt; &#39;sec_normal&#39;, label_value =&gt; &#39;x1:security&#39;, data_label =&gt; TRUE); SA_SYSDBA.CREATE_LABEL(&#39;p1&#39;, &#39;sec_leader&#39;, &#39;x3:security&#39;, false); -- 5 为主体设置属性 SA_USER_ADMIN.SET_LEVELS(policy_name =&gt; &#39;p1&#39;, user_name =&gt; &#39;user1&#39;, max_level =&gt; &#39;x2&#39;, min_level =&gt; &#39;x1&#39;, default_level =&gt; &#39;x1&#39;, row_level =&gt; &#39;x1&#39;); SA_USER_ADMIN.SET_COMPARTMENTS(policy_name =&gt; &#39;p1&#39;, user_name =&gt; &#39;user1&#39;, read_comps =&gt; &#39;sec&#39;, write_comps =&gt; &#39;sec&#39;, default_comps =&gt; &#39;sec&#39;, row_comps =&gt; &#39;sec&#39;); -- 6 为客体设置属性 CREATE TABLE t1(c1 INT); SA_USER_ADMIN.APPLY_TABLE_POLICY(policy_name=&gt; &#39;p1&#39;, shema_name =&gt; &#39;s1&#39;, table_name =&gt; &#39;t1&#39;, table_options =&gt; &#39;READ_CONTROL, WRITE_CONTROL, CHECK_CONTROL&#39;, label_function =&gt; &#39;f_create_t1_label(level, comp)&#39;); -- 7 插入数据（主动定义标签） INSERT INTO t1 (c1, lab_col1) VALUES (1, CHAR_TO_LABEL(&#39;p1&#39;, &#39;x1:sec&#39;)); 三、实现思路 在数据库领域，除oracle外，没有其他可借鉴的方案。oracle的设计，太复杂，易用性太低。
+本需求将参考oracle的思想，简化oracle设计。
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2026-03-23 21:40:00 +0800 CST'>March 23, 2026</span>&nbsp;·&nbsp;<span>6 min</span>&nbsp;·&nbsp;<span>1130 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 mac 需求" href="http://localhost:1313/posts/projectdocs/14-requirement-mac/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 15 设计 逻辑复制性能优化
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 逻辑复制性能优化 1.1 功能简述 原理：
+假设，发布端执行INSERT INTO t1 VALUES(1,&#39;data1&#39;)，更改1行数据，产生1条wal日志。逻辑复制功能将读取这条wal，解码并生成1条message，将message发送至订阅端。订阅端应用这条message，等价于重新执行INSERT INTO t1 VALUES(1,&#39;data1&#39;)。 问题：
+308.1 psu1以及之前版本，逻辑复制性能较低。以tpcc场景为例，40w tmpc时，发布端产生wal日志速度约100m/s，订阅端的复制速度约10&#43;m/s。 客户：
+滚动升级场景中，备机停机升级，主机持续执行业务，备机升级后使用逻辑复制追赶主机数据。长存客户场景，主机产生wal日志速度约40-50m/s，旧版本逻辑复制速度10&#43;m/s，由于逻辑复制速度太慢，备机无法追赶主机，最终导致升级失败。 优化
+本需求设计与实现并行逻辑复制机制，大幅提高逻辑复制速度，在上述场景中，订阅端速度可达到70-90m/s。并行逻辑复制分为3个关键子机制： 发布端多线程并行解码 发布端与订阅端流复制传输协议 订阅端多线程并行应用 1.2 实现方案 本章分3个章节，分别介绍3个关键子机制。
+1.2.1 发布端并行解码机制 在旧版本中，发布端采用串行解码机制，只有1个walsender线程，串行执行：1次读取1条wal日志，解码1条wal生成1条message，缓存或发送message。
+旧版本代码中，发布端有实现并行解码的代码，但是，无法直接使用，订阅端只能是工具，不能是数据库实例，且存在大量问题。本需求基于旧版本并行解码，实现权限的并行解码机制。
+并行解码机制，将启动多个线程，包括1个reader、多个decoder、1个walsender，它们的功能如下：
+reader：1次读取1条wal日志，将wal发送给decoder decoder：1次接收1条reader发送的wal，解码生成message，将message发送给walsender walsender：1次接收1条decoder发送的message，将message发送给订阅端 线程架构图如下：
+lsn 1-10 d1 1 4 collect 阻塞 1 d2 2 5 2 d3 3 6 3 1.2.2 发布端与订阅端流复制协议 一、握手阶段 订阅端与发布端建立连接时，订阅端会根据CRETE SUBSCRIPTION语法设置的参数，生成连接命令，根据连接命令，发布端和订阅端决定采用哪种通信协议，究竟是采用事务复制协议（旧版本）还是流复制协议（新版本）。
+事务复制协议（旧版本） 订阅端发送的连接命令如下：
+START_REPLICATION SLOT &#34;$slot_name&#34; LOGICAL $start_lsn (proto_version &#39;3&#39;, publication_names &#39;&#34;$publication_name&#34;&#39;) 流复制协议（新版本） 如果CRETE SUBSCRIPTION时，指定worker_number&gt;1，即启用并行逻辑复制机制，将使用新的连接命令，订阅端发送的连接命令如下：
+START_REPLICATION SLOT &#34;$slot_name&#34; LOGICAL $start_lsn (proto_version &#39;3&#39;, publication_names &#39;&#34;$publication_name&#34;&#39;， streaming &#39;extreme&#39;, parallel-decode-num &#39;20&#39;, max-recordbuffer-in-memory &#39;100&#39;, max-txn-in-memory &#39;100&#39;) 上述命令中新增了多个参数：
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2026-05-06 17:48:00 +0800 CST'>May 6, 2026</span>&nbsp;·&nbsp;<span>6 min</span>&nbsp;·&nbsp;<span>1200 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 15 设计 逻辑复制性能优化" href="http://localhost:1313/posts/projectdocs/15-design-logical-replication/"></a>
+</article>
+<footer class="page-footer">
+  <nav class="pagination">
+    <a class="prev" href="http://localhost:1313/categories/%E9%A1%B9%E7%9B%AE%E6%96%87%E6%A1%A3/page/2/">
+      «&nbsp;Prev&nbsp;
+    </a>
+    <a class="next" href="http://localhost:1313/categories/%E9%A1%B9%E7%9B%AE%E6%96%87%E6%A1%A3/page/4/">Next&nbsp;&nbsp;»
+    </a>
+  </nav>
+</footer>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

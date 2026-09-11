@@ -1,0 +1,1966 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>海量 mac 需求 | Kernel Notes</title>
+<meta name="keywords" content="访问控制, 需求文档">
+<meta name="description" content="1 简介
+1.1 目的
+本文主要包括以下关键内容：
+
+介绍访问控制的基本概念
+调研其他厂商实现强制控制的方式
+设计Vastbase强制访问控制特性，介绍如何使用强制访问特性
+
+1.2 适用范围
+Vastbase V5版本。
+1.3 术语定义、首字母缩写词和缩略语
+
+MAC：Mandatory Access Control，强制访问控制，主体访问客体时，基于主体、客体属性，强制控制访问权限。
+DAC：Discretionary Access Control，自主访问控制，数据拥有者可自行设置访问权限。
+
+1.4 参考资料
+
+oracle 强制访问控制（标签访问控制 RLS）：https://docs.oracle.com/en/database/oracle/oracle-database/26/olsag/part1.html#GUID-C20C62AE-2A30-45F9-AEEA-52A0D3286FBA
+oceanbase 强制访问控制（兼容oracle）：https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475944
+kingbase 强制访问控制：https://bbs.kingbase.com.cn/kingbase-doc/v8.6.7.24/safety/safety-guide/label-and-mac.html
+dm 强制访问控制：https://eco.dameng.com/document/dm/zh-cn/pm/mandatory-access-control.html
+GB/T-20009-数据库管理系统安全评估准则：https://drive.weixin.qq.com/s?k=AHUAfwdSAA82aDcvvD
+postgresql 行级访问控制 RLS：https://www.postgresql.org/docs/current/ddl-rowsecurity.html
+
+2 强制访问控制
+2.1 功能简述
+一、基本概念
+访问控制的定义：对主体访问客体的行为，系统按照安全策略进行限制与管理的安全机制。
+按安全策略分类，可将访问控制分为很多类，其中，常见的策略有：
+
+自主访问控制DAC：客体的拥有者，可自行向其他主体赋予访问权限。
+强制访问控制MAC：系统为主体、客体分配安全标签，通过主体、客体的安全标签控制访问权限，很多情况下，即使客体的拥有者也无法向其他主体赋予访问权限。
+角色访问控制RBAC：不在本文讨论范围。
+
+在数据库领域，主体通常指数据库用户，客体通常指数据库对象，例如DATABASE、SCHEMA、TABLE、COLUMN、ROW、FUNCTION等。
+自主访问控制比较成熟，几乎所有关系数据库，都提供自主访问控制特性，例如，TABLE（客体）的属主（主体），可通过GRANT .. TO ..等语法，为其他用户（主体）赋予权限。
+强制访问控制理论比较成熟，但是，除oracle支持强制访问控制，以及oceanbase等几款产品兼容oracle强制访问控制之外，大部分关系数据库不支持强制访问控制。
+实现强制访问控制时，通常将主体、客体的安全标签，简化为安全等级，当主体访问客体时，比较主体、客体等级高低，以判断访问权限。在机密性场景，遵循不上读、不下写原则。在完整性场景，遵循不下读、不上写原则。
+本需求将从0设计强制访问控制特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。
+二、竞品分析
+oracle支持强制访问控制，客体是ROW，即行级强制访问控制。oceanbase、kingbase、dm的访问控制，与oracle一致。sql server、postgresql等其他产品不支持强制访问控制。
+oracle强制访问控制使用示例如下：
+-- 1 定义策略
+SA_SYSDBA.CREATE_POLICY(policy_name =&gt; &#39;p1&#39;, column_name =&gt; &#39;lab_col1&#39;)
+-- 2 定义级别
+SA_COMPONENTS.CREATE_LEVEL(policy_name =&gt; &#39;p1&#39;, level_num =&gt; 1, short_name =&gt; &#39;x1&#39;, long_name =&gt; &#39;x1&#39;);
+SA_COMPONENTS.CREATE_LEVEL(&#39;p1&#39;, 20, &#39;x2&#39;, &#39;x2&#39;);
+SA_COMPONENTS.CREATE_LEVEL(&#39;p1&#39;, 30, &#39;x3&#39;, &#39;x3&#39;);
+-- 3 定义组件
+SA_COMPONENTS.CREATE_LEVEL(policy_name =&gt;&#39;p1&#39;, comp_num =&gt; 100, short_name =&gt; &#39;sec&#39;, long_name =&gt; &#39;security&#39;);
+SA_COMPONENTS.CREATE_LEVEL(&#39;p1&#39;, 200, &#39;stg&#39;, &#39;storage&#39;);
+-- 4 创建标签
+SA_SYSDBA.CREATE_LABEL(policy_name =&gt; &#39;p1&#39;, label_tag =&gt; &#39;sec_normal&#39;, label_value =&gt; &#39;x1:security&#39;, data_label =&gt; TRUE);
+SA_SYSDBA.CREATE_LABEL(&#39;p1&#39;, &#39;sec_leader&#39;, &#39;x3:security&#39;, false);
+-- 5 为主体设置属性
+SA_USER_ADMIN.SET_LEVELS(policy_name =&gt; &#39;p1&#39;, user_name =&gt; &#39;user1&#39;, max_level =&gt; &#39;x2&#39;, min_level =&gt; &#39;x1&#39;, default_level =&gt; &#39;x1&#39;, row_level =&gt; &#39;x1&#39;);
+SA_USER_ADMIN.SET_COMPARTMENTS(policy_name =&gt; &#39;p1&#39;, user_name =&gt; &#39;user1&#39;, read_comps =&gt; &#39;sec&#39;, write_comps =&gt; &#39;sec&#39;, default_comps =&gt; &#39;sec&#39;, row_comps =&gt; &#39;sec&#39;);
+-- 6 为客体设置属性
+CREATE TABLE t1(c1 INT);
+SA_USER_ADMIN.APPLY_TABLE_POLICY(policy_name=&gt; &#39;p1&#39;, shema_name =&gt; &#39;s1&#39;, table_name =&gt; &#39;t1&#39;, table_options =&gt; &#39;READ_CONTROL, WRITE_CONTROL, CHECK_CONTROL&#39;, label_function =&gt; &#39;f_create_t1_label(level, comp)&#39;);
+-- 7 插入数据（主动定义标签）
+INSERT INTO t1 (c1, lab_col1)
+VALUES (1, CHAR_TO_LABEL(&#39;p1&#39;, &#39;x1:sec&#39;));
+三、实现思路
+在数据库领域，除oracle外，没有其他可借鉴的方案。oracle的设计，太复杂，易用性太低。
+本需求将参考oracle的思想，简化oracle设计。">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/projectdocs/14-requirement-mac/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/projectdocs/14-requirement-mac/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/projectdocs/14-requirement-mac/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="海量 mac 需求">
+  <meta property="og:description" content="1 简介 1.1 目的 本文主要包括以下关键内容：
+介绍访问控制的基本概念 调研其他厂商实现强制控制的方式 设计Vastbase强制访问控制特性，介绍如何使用强制访问特性 1.2 适用范围 Vastbase V5版本。
+1.3 术语定义、首字母缩写词和缩略语 MAC：Mandatory Access Control，强制访问控制，主体访问客体时，基于主体、客体属性，强制控制访问权限。 DAC：Discretionary Access Control，自主访问控制，数据拥有者可自行设置访问权限。 1.4 参考资料 oracle 强制访问控制（标签访问控制 RLS）：https://docs.oracle.com/en/database/oracle/oracle-database/26/olsag/part1.html#GUID-C20C62AE-2A30-45F9-AEEA-52A0D3286FBA oceanbase 强制访问控制（兼容oracle）：https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475944 kingbase 强制访问控制：https://bbs.kingbase.com.cn/kingbase-doc/v8.6.7.24/safety/safety-guide/label-and-mac.html dm 强制访问控制：https://eco.dameng.com/document/dm/zh-cn/pm/mandatory-access-control.html GB/T-20009-数据库管理系统安全评估准则：https://drive.weixin.qq.com/s?k=AHUAfwdSAA82aDcvvD postgresql 行级访问控制 RLS：https://www.postgresql.org/docs/current/ddl-rowsecurity.html 2 强制访问控制 2.1 功能简述 一、基本概念 访问控制的定义：对主体访问客体的行为，系统按照安全策略进行限制与管理的安全机制。
+按安全策略分类，可将访问控制分为很多类，其中，常见的策略有：
+自主访问控制DAC：客体的拥有者，可自行向其他主体赋予访问权限。 强制访问控制MAC：系统为主体、客体分配安全标签，通过主体、客体的安全标签控制访问权限，很多情况下，即使客体的拥有者也无法向其他主体赋予访问权限。 角色访问控制RBAC：不在本文讨论范围。 在数据库领域，主体通常指数据库用户，客体通常指数据库对象，例如DATABASE、SCHEMA、TABLE、COLUMN、ROW、FUNCTION等。
+自主访问控制比较成熟，几乎所有关系数据库，都提供自主访问控制特性，例如，TABLE（客体）的属主（主体），可通过GRANT .. TO ..等语法，为其他用户（主体）赋予权限。
+强制访问控制理论比较成熟，但是，除oracle支持强制访问控制，以及oceanbase等几款产品兼容oracle强制访问控制之外，大部分关系数据库不支持强制访问控制。
+实现强制访问控制时，通常将主体、客体的安全标签，简化为安全等级，当主体访问客体时，比较主体、客体等级高低，以判断访问权限。在机密性场景，遵循不上读、不下写原则。在完整性场景，遵循不下读、不上写原则。
+本需求将从0设计强制访问控制特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。
+二、竞品分析 oracle支持强制访问控制，客体是ROW，即行级强制访问控制。oceanbase、kingbase、dm的访问控制，与oracle一致。sql server、postgresql等其他产品不支持强制访问控制。
+oracle强制访问控制使用示例如下：
+-- 1 定义策略 SA_SYSDBA.CREATE_POLICY(policy_name =&gt; &#39;p1&#39;, column_name =&gt; &#39;lab_col1&#39;) -- 2 定义级别 SA_COMPONENTS.CREATE_LEVEL(policy_name =&gt; &#39;p1&#39;, level_num =&gt; 1, short_name =&gt; &#39;x1&#39;, long_name =&gt; &#39;x1&#39;); SA_COMPONENTS.CREATE_LEVEL(&#39;p1&#39;, 20, &#39;x2&#39;, &#39;x2&#39;); SA_COMPONENTS.CREATE_LEVEL(&#39;p1&#39;, 30, &#39;x3&#39;, &#39;x3&#39;); -- 3 定义组件 SA_COMPONENTS.CREATE_LEVEL(policy_name =&gt;&#39;p1&#39;, comp_num =&gt; 100, short_name =&gt; &#39;sec&#39;, long_name =&gt; &#39;security&#39;); SA_COMPONENTS.CREATE_LEVEL(&#39;p1&#39;, 200, &#39;stg&#39;, &#39;storage&#39;); -- 4 创建标签 SA_SYSDBA.CREATE_LABEL(policy_name =&gt; &#39;p1&#39;, label_tag =&gt; &#39;sec_normal&#39;, label_value =&gt; &#39;x1:security&#39;, data_label =&gt; TRUE); SA_SYSDBA.CREATE_LABEL(&#39;p1&#39;, &#39;sec_leader&#39;, &#39;x3:security&#39;, false); -- 5 为主体设置属性 SA_USER_ADMIN.SET_LEVELS(policy_name =&gt; &#39;p1&#39;, user_name =&gt; &#39;user1&#39;, max_level =&gt; &#39;x2&#39;, min_level =&gt; &#39;x1&#39;, default_level =&gt; &#39;x1&#39;, row_level =&gt; &#39;x1&#39;); SA_USER_ADMIN.SET_COMPARTMENTS(policy_name =&gt; &#39;p1&#39;, user_name =&gt; &#39;user1&#39;, read_comps =&gt; &#39;sec&#39;, write_comps =&gt; &#39;sec&#39;, default_comps =&gt; &#39;sec&#39;, row_comps =&gt; &#39;sec&#39;); -- 6 为客体设置属性 CREATE TABLE t1(c1 INT); SA_USER_ADMIN.APPLY_TABLE_POLICY(policy_name=&gt; &#39;p1&#39;, shema_name =&gt; &#39;s1&#39;, table_name =&gt; &#39;t1&#39;, table_options =&gt; &#39;READ_CONTROL, WRITE_CONTROL, CHECK_CONTROL&#39;, label_function =&gt; &#39;f_create_t1_label(level, comp)&#39;); -- 7 插入数据（主动定义标签） INSERT INTO t1 (c1, lab_col1) VALUES (1, CHAR_TO_LABEL(&#39;p1&#39;, &#39;x1:sec&#39;)); 三、实现思路 在数据库领域，除oracle外，没有其他可借鉴的方案。oracle的设计，太复杂，易用性太低。
+本需求将参考oracle的思想，简化oracle设计。">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-03-23T21:40:00+08:00">
+    <meta property="article:modified_time" content="2026-08-14T17:47:31+08:00">
+    <meta property="article:tag" content="访问控制">
+    <meta property="article:tag" content="需求文档">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="海量 mac 需求">
+<meta name="twitter:description" content="1 简介
+1.1 目的
+本文主要包括以下关键内容：
+
+介绍访问控制的基本概念
+调研其他厂商实现强制控制的方式
+设计Vastbase强制访问控制特性，介绍如何使用强制访问特性
+
+1.2 适用范围
+Vastbase V5版本。
+1.3 术语定义、首字母缩写词和缩略语
+
+MAC：Mandatory Access Control，强制访问控制，主体访问客体时，基于主体、客体属性，强制控制访问权限。
+DAC：Discretionary Access Control，自主访问控制，数据拥有者可自行设置访问权限。
+
+1.4 参考资料
+
+oracle 强制访问控制（标签访问控制 RLS）：https://docs.oracle.com/en/database/oracle/oracle-database/26/olsag/part1.html#GUID-C20C62AE-2A30-45F9-AEEA-52A0D3286FBA
+oceanbase 强制访问控制（兼容oracle）：https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475944
+kingbase 强制访问控制：https://bbs.kingbase.com.cn/kingbase-doc/v8.6.7.24/safety/safety-guide/label-and-mac.html
+dm 强制访问控制：https://eco.dameng.com/document/dm/zh-cn/pm/mandatory-access-control.html
+GB/T-20009-数据库管理系统安全评估准则：https://drive.weixin.qq.com/s?k=AHUAfwdSAA82aDcvvD
+postgresql 行级访问控制 RLS：https://www.postgresql.org/docs/current/ddl-rowsecurity.html
+
+2 强制访问控制
+2.1 功能简述
+一、基本概念
+访问控制的定义：对主体访问客体的行为，系统按照安全策略进行限制与管理的安全机制。
+按安全策略分类，可将访问控制分为很多类，其中，常见的策略有：
+
+自主访问控制DAC：客体的拥有者，可自行向其他主体赋予访问权限。
+强制访问控制MAC：系统为主体、客体分配安全标签，通过主体、客体的安全标签控制访问权限，很多情况下，即使客体的拥有者也无法向其他主体赋予访问权限。
+角色访问控制RBAC：不在本文讨论范围。
+
+在数据库领域，主体通常指数据库用户，客体通常指数据库对象，例如DATABASE、SCHEMA、TABLE、COLUMN、ROW、FUNCTION等。
+自主访问控制比较成熟，几乎所有关系数据库，都提供自主访问控制特性，例如，TABLE（客体）的属主（主体），可通过GRANT .. TO ..等语法，为其他用户（主体）赋予权限。
+强制访问控制理论比较成熟，但是，除oracle支持强制访问控制，以及oceanbase等几款产品兼容oracle强制访问控制之外，大部分关系数据库不支持强制访问控制。
+实现强制访问控制时，通常将主体、客体的安全标签，简化为安全等级，当主体访问客体时，比较主体、客体等级高低，以判断访问权限。在机密性场景，遵循不上读、不下写原则。在完整性场景，遵循不下读、不上写原则。
+本需求将从0设计强制访问控制特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。
+二、竞品分析
+oracle支持强制访问控制，客体是ROW，即行级强制访问控制。oceanbase、kingbase、dm的访问控制，与oracle一致。sql server、postgresql等其他产品不支持强制访问控制。
+oracle强制访问控制使用示例如下：
+-- 1 定义策略
+SA_SYSDBA.CREATE_POLICY(policy_name =&gt; &#39;p1&#39;, column_name =&gt; &#39;lab_col1&#39;)
+-- 2 定义级别
+SA_COMPONENTS.CREATE_LEVEL(policy_name =&gt; &#39;p1&#39;, level_num =&gt; 1, short_name =&gt; &#39;x1&#39;, long_name =&gt; &#39;x1&#39;);
+SA_COMPONENTS.CREATE_LEVEL(&#39;p1&#39;, 20, &#39;x2&#39;, &#39;x2&#39;);
+SA_COMPONENTS.CREATE_LEVEL(&#39;p1&#39;, 30, &#39;x3&#39;, &#39;x3&#39;);
+-- 3 定义组件
+SA_COMPONENTS.CREATE_LEVEL(policy_name =&gt;&#39;p1&#39;, comp_num =&gt; 100, short_name =&gt; &#39;sec&#39;, long_name =&gt; &#39;security&#39;);
+SA_COMPONENTS.CREATE_LEVEL(&#39;p1&#39;, 200, &#39;stg&#39;, &#39;storage&#39;);
+-- 4 创建标签
+SA_SYSDBA.CREATE_LABEL(policy_name =&gt; &#39;p1&#39;, label_tag =&gt; &#39;sec_normal&#39;, label_value =&gt; &#39;x1:security&#39;, data_label =&gt; TRUE);
+SA_SYSDBA.CREATE_LABEL(&#39;p1&#39;, &#39;sec_leader&#39;, &#39;x3:security&#39;, false);
+-- 5 为主体设置属性
+SA_USER_ADMIN.SET_LEVELS(policy_name =&gt; &#39;p1&#39;, user_name =&gt; &#39;user1&#39;, max_level =&gt; &#39;x2&#39;, min_level =&gt; &#39;x1&#39;, default_level =&gt; &#39;x1&#39;, row_level =&gt; &#39;x1&#39;);
+SA_USER_ADMIN.SET_COMPARTMENTS(policy_name =&gt; &#39;p1&#39;, user_name =&gt; &#39;user1&#39;, read_comps =&gt; &#39;sec&#39;, write_comps =&gt; &#39;sec&#39;, default_comps =&gt; &#39;sec&#39;, row_comps =&gt; &#39;sec&#39;);
+-- 6 为客体设置属性
+CREATE TABLE t1(c1 INT);
+SA_USER_ADMIN.APPLY_TABLE_POLICY(policy_name=&gt; &#39;p1&#39;, shema_name =&gt; &#39;s1&#39;, table_name =&gt; &#39;t1&#39;, table_options =&gt; &#39;READ_CONTROL, WRITE_CONTROL, CHECK_CONTROL&#39;, label_function =&gt; &#39;f_create_t1_label(level, comp)&#39;);
+-- 7 插入数据（主动定义标签）
+INSERT INTO t1 (c1, lab_col1)
+VALUES (1, CHAR_TO_LABEL(&#39;p1&#39;, &#39;x1:sec&#39;));
+三、实现思路
+在数据库领域，除oracle外，没有其他可借鉴的方案。oracle的设计，太复杂，易用性太低。
+本需求将参考oracle的思想，简化oracle设计。">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "海量 mac 需求",
+      "item": "http://localhost:1313/posts/projectdocs/14-requirement-mac/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "海量 mac 需求",
+  "name": "海量 mac 需求",
+  "description": "1 简介 1.1 目的 本文主要包括以下关键内容：\n介绍访问控制的基本概念 调研其他厂商实现强制控制的方式 设计Vastbase强制访问控制特性，介绍如何使用强制访问特性 1.2 适用范围 Vastbase V5版本。\n1.3 术语定义、首字母缩写词和缩略语 MAC：Mandatory Access Control，强制访问控制，主体访问客体时，基于主体、客体属性，强制控制访问权限。 DAC：Discretionary Access Control，自主访问控制，数据拥有者可自行设置访问权限。 1.4 参考资料 oracle 强制访问控制（标签访问控制 RLS）：https://docs.oracle.com/en/database/oracle/oracle-database/26/olsag/part1.html#GUID-C20C62AE-2A30-45F9-AEEA-52A0D3286FBA oceanbase 强制访问控制（兼容oracle）：https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475944 kingbase 强制访问控制：https://bbs.kingbase.com.cn/kingbase-doc/v8.6.7.24/safety/safety-guide/label-and-mac.html dm 强制访问控制：https://eco.dameng.com/document/dm/zh-cn/pm/mandatory-access-control.html GB/T-20009-数据库管理系统安全评估准则：https://drive.weixin.qq.com/s?k=AHUAfwdSAA82aDcvvD postgresql 行级访问控制 RLS：https://www.postgresql.org/docs/current/ddl-rowsecurity.html 2 强制访问控制 2.1 功能简述 一、基本概念 访问控制的定义：对主体访问客体的行为，系统按照安全策略进行限制与管理的安全机制。\n按安全策略分类，可将访问控制分为很多类，其中，常见的策略有：\n自主访问控制DAC：客体的拥有者，可自行向其他主体赋予访问权限。 强制访问控制MAC：系统为主体、客体分配安全标签，通过主体、客体的安全标签控制访问权限，很多情况下，即使客体的拥有者也无法向其他主体赋予访问权限。 角色访问控制RBAC：不在本文讨论范围。 在数据库领域，主体通常指数据库用户，客体通常指数据库对象，例如DATABASE、SCHEMA、TABLE、COLUMN、ROW、FUNCTION等。\n自主访问控制比较成熟，几乎所有关系数据库，都提供自主访问控制特性，例如，TABLE（客体）的属主（主体），可通过GRANT .. TO ..等语法，为其他用户（主体）赋予权限。\n强制访问控制理论比较成熟，但是，除oracle支持强制访问控制，以及oceanbase等几款产品兼容oracle强制访问控制之外，大部分关系数据库不支持强制访问控制。\n实现强制访问控制时，通常将主体、客体的安全标签，简化为安全等级，当主体访问客体时，比较主体、客体等级高低，以判断访问权限。在机密性场景，遵循不上读、不下写原则。在完整性场景，遵循不下读、不上写原则。\n本需求将从0设计强制访问控制特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。\n二、竞品分析 oracle支持强制访问控制，客体是ROW，即行级强制访问控制。oceanbase、kingbase、dm的访问控制，与oracle一致。sql server、postgresql等其他产品不支持强制访问控制。\noracle强制访问控制使用示例如下：\n-- 1 定义策略 SA_SYSDBA.CREATE_POLICY(policy_name =\u0026gt; \u0026#39;p1\u0026#39;, column_name =\u0026gt; \u0026#39;lab_col1\u0026#39;) -- 2 定义级别 SA_COMPONENTS.CREATE_LEVEL(policy_name =\u0026gt; \u0026#39;p1\u0026#39;, level_num =\u0026gt; 1, short_name =\u0026gt; \u0026#39;x1\u0026#39;, long_name =\u0026gt; \u0026#39;x1\u0026#39;); SA_COMPONENTS.CREATE_LEVEL(\u0026#39;p1\u0026#39;, 20, \u0026#39;x2\u0026#39;, \u0026#39;x2\u0026#39;); SA_COMPONENTS.CREATE_LEVEL(\u0026#39;p1\u0026#39;, 30, \u0026#39;x3\u0026#39;, \u0026#39;x3\u0026#39;); -- 3 定义组件 SA_COMPONENTS.CREATE_LEVEL(policy_name =\u0026gt;\u0026#39;p1\u0026#39;, comp_num =\u0026gt; 100, short_name =\u0026gt; \u0026#39;sec\u0026#39;, long_name =\u0026gt; \u0026#39;security\u0026#39;); SA_COMPONENTS.CREATE_LEVEL(\u0026#39;p1\u0026#39;, 200, \u0026#39;stg\u0026#39;, \u0026#39;storage\u0026#39;); -- 4 创建标签 SA_SYSDBA.CREATE_LABEL(policy_name =\u0026gt; \u0026#39;p1\u0026#39;, label_tag =\u0026gt; \u0026#39;sec_normal\u0026#39;, label_value =\u0026gt; \u0026#39;x1:security\u0026#39;, data_label =\u0026gt; TRUE); SA_SYSDBA.CREATE_LABEL(\u0026#39;p1\u0026#39;, \u0026#39;sec_leader\u0026#39;, \u0026#39;x3:security\u0026#39;, false); -- 5 为主体设置属性 SA_USER_ADMIN.SET_LEVELS(policy_name =\u0026gt; \u0026#39;p1\u0026#39;, user_name =\u0026gt; \u0026#39;user1\u0026#39;, max_level =\u0026gt; \u0026#39;x2\u0026#39;, min_level =\u0026gt; \u0026#39;x1\u0026#39;, default_level =\u0026gt; \u0026#39;x1\u0026#39;, row_level =\u0026gt; \u0026#39;x1\u0026#39;); SA_USER_ADMIN.SET_COMPARTMENTS(policy_name =\u0026gt; \u0026#39;p1\u0026#39;, user_name =\u0026gt; \u0026#39;user1\u0026#39;, read_comps =\u0026gt; \u0026#39;sec\u0026#39;, write_comps =\u0026gt; \u0026#39;sec\u0026#39;, default_comps =\u0026gt; \u0026#39;sec\u0026#39;, row_comps =\u0026gt; \u0026#39;sec\u0026#39;); -- 6 为客体设置属性 CREATE TABLE t1(c1 INT); SA_USER_ADMIN.APPLY_TABLE_POLICY(policy_name=\u0026gt; \u0026#39;p1\u0026#39;, shema_name =\u0026gt; \u0026#39;s1\u0026#39;, table_name =\u0026gt; \u0026#39;t1\u0026#39;, table_options =\u0026gt; \u0026#39;READ_CONTROL, WRITE_CONTROL, CHECK_CONTROL\u0026#39;, label_function =\u0026gt; \u0026#39;f_create_t1_label(level, comp)\u0026#39;); -- 7 插入数据（主动定义标签） INSERT INTO t1 (c1, lab_col1) VALUES (1, CHAR_TO_LABEL(\u0026#39;p1\u0026#39;, \u0026#39;x1:sec\u0026#39;)); 三、实现思路 在数据库领域，除oracle外，没有其他可借鉴的方案。oracle的设计，太复杂，易用性太低。\n本需求将参考oracle的思想，简化oracle设计。\n",
+  "keywords": [
+    "访问控制", "需求文档"
+  ],
+  "articleBody": "1 简介 1.1 目的 本文主要包括以下关键内容：\n介绍访问控制的基本概念 调研其他厂商实现强制控制的方式 设计Vastbase强制访问控制特性，介绍如何使用强制访问特性 1.2 适用范围 Vastbase V5版本。\n1.3 术语定义、首字母缩写词和缩略语 MAC：Mandatory Access Control，强制访问控制，主体访问客体时，基于主体、客体属性，强制控制访问权限。 DAC：Discretionary Access Control，自主访问控制，数据拥有者可自行设置访问权限。 1.4 参考资料 oracle 强制访问控制（标签访问控制 RLS）：https://docs.oracle.com/en/database/oracle/oracle-database/26/olsag/part1.html#GUID-C20C62AE-2A30-45F9-AEEA-52A0D3286FBA oceanbase 强制访问控制（兼容oracle）：https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475944 kingbase 强制访问控制：https://bbs.kingbase.com.cn/kingbase-doc/v8.6.7.24/safety/safety-guide/label-and-mac.html dm 强制访问控制：https://eco.dameng.com/document/dm/zh-cn/pm/mandatory-access-control.html GB/T-20009-数据库管理系统安全评估准则：https://drive.weixin.qq.com/s?k=AHUAfwdSAA82aDcvvD postgresql 行级访问控制 RLS：https://www.postgresql.org/docs/current/ddl-rowsecurity.html 2 强制访问控制 2.1 功能简述 一、基本概念 访问控制的定义：对主体访问客体的行为，系统按照安全策略进行限制与管理的安全机制。\n按安全策略分类，可将访问控制分为很多类，其中，常见的策略有：\n自主访问控制DAC：客体的拥有者，可自行向其他主体赋予访问权限。 强制访问控制MAC：系统为主体、客体分配安全标签，通过主体、客体的安全标签控制访问权限，很多情况下，即使客体的拥有者也无法向其他主体赋予访问权限。 角色访问控制RBAC：不在本文讨论范围。 在数据库领域，主体通常指数据库用户，客体通常指数据库对象，例如DATABASE、SCHEMA、TABLE、COLUMN、ROW、FUNCTION等。\n自主访问控制比较成熟，几乎所有关系数据库，都提供自主访问控制特性，例如，TABLE（客体）的属主（主体），可通过GRANT .. TO ..等语法，为其他用户（主体）赋予权限。\n强制访问控制理论比较成熟，但是，除oracle支持强制访问控制，以及oceanbase等几款产品兼容oracle强制访问控制之外，大部分关系数据库不支持强制访问控制。\n实现强制访问控制时，通常将主体、客体的安全标签，简化为安全等级，当主体访问客体时，比较主体、客体等级高低，以判断访问权限。在机密性场景，遵循不上读、不下写原则。在完整性场景，遵循不下读、不上写原则。\n本需求将从0设计强制访问控制特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。\n二、竞品分析 oracle支持强制访问控制，客体是ROW，即行级强制访问控制。oceanbase、kingbase、dm的访问控制，与oracle一致。sql server、postgresql等其他产品不支持强制访问控制。\noracle强制访问控制使用示例如下：\n-- 1 定义策略 SA_SYSDBA.CREATE_POLICY(policy_name =\u003e 'p1', column_name =\u003e 'lab_col1') -- 2 定义级别 SA_COMPONENTS.CREATE_LEVEL(policy_name =\u003e 'p1', level_num =\u003e 1, short_name =\u003e 'x1', long_name =\u003e 'x1'); SA_COMPONENTS.CREATE_LEVEL('p1', 20, 'x2', 'x2'); SA_COMPONENTS.CREATE_LEVEL('p1', 30, 'x3', 'x3'); -- 3 定义组件 SA_COMPONENTS.CREATE_LEVEL(policy_name =\u003e'p1', comp_num =\u003e 100, short_name =\u003e 'sec', long_name =\u003e 'security'); SA_COMPONENTS.CREATE_LEVEL('p1', 200, 'stg', 'storage'); -- 4 创建标签 SA_SYSDBA.CREATE_LABEL(policy_name =\u003e 'p1', label_tag =\u003e 'sec_normal', label_value =\u003e 'x1:security', data_label =\u003e TRUE); SA_SYSDBA.CREATE_LABEL('p1', 'sec_leader', 'x3:security', false); -- 5 为主体设置属性 SA_USER_ADMIN.SET_LEVELS(policy_name =\u003e 'p1', user_name =\u003e 'user1', max_level =\u003e 'x2', min_level =\u003e 'x1', default_level =\u003e 'x1', row_level =\u003e 'x1'); SA_USER_ADMIN.SET_COMPARTMENTS(policy_name =\u003e 'p1', user_name =\u003e 'user1', read_comps =\u003e 'sec', write_comps =\u003e 'sec', default_comps =\u003e 'sec', row_comps =\u003e 'sec'); -- 6 为客体设置属性 CREATE TABLE t1(c1 INT); SA_USER_ADMIN.APPLY_TABLE_POLICY(policy_name=\u003e 'p1', shema_name =\u003e 's1', table_name =\u003e 't1', table_options =\u003e 'READ_CONTROL, WRITE_CONTROL, CHECK_CONTROL', label_function =\u003e 'f_create_t1_label(level, comp)'); -- 7 插入数据（主动定义标签） INSERT INTO t1 (c1, lab_col1) VALUES (1, CHAR_TO_LABEL('p1', 'x1:sec')); 三、实现思路 在数据库领域，除oracle外，没有其他可借鉴的方案。oracle的设计，太复杂，易用性太低。\n本需求将参考oracle的思想，简化oracle设计。\n2.2 功能说明 2.2.1 使用流程 场景一、基于等级的强制访问控制 -- 1. 定义访问策略 CREATE ACCESS POLICY p1 LEVLE l1=10, l2=20, l3=30 LABEL lab1=l1, lab2=l2; -- 2. 为表（客体）设置访问策略 CREATE TABLE t1 (c1 INT, c2 TEXT) WITH (access_policy = p1); -- 3. 为用户（主体）设置访问策略 CREATE USER u1 PASSWORD 'u1.pass' ACCESS POLICY p1 WRITE LABEL lab1,lab2 -- 第1个标签是默认标签 READ LABEL lab1,lab2; -- 4. 为主体设置临时标签 SET write_label = lab1; SET read_label = lab1; -- 5. 写数据 INSERT INTO t1 VALUE (1, 'a'); INSERT INTO t1 VALUE (2, 'b', lab2); -- 6. 读数据 SELECT *,access_label FROM t1; -- 预期输出 c1 | c2 | access_label -----+------+--------------- 1 | a | 1: -- 未主动指定label，使用默认的lab1 -- 还有一行不可见：(2, 'b', '2:')，该行主动指定label为lab2，lab2的等级高于读等级read_label -- 内核会自动将本SQL语法改写为： -- SELECT *,access_label FROM t1 WHERE has_mac_permission(access_label, read_label); -- 7. 清理 DROP TABLE t1; DROP USER u1; DROP ACCESS POLICY p1; 场景二、基于标记的强制访问控制 -- 1. 定义访问策略 CREATE ACCESS POLICY p1 MARK ma, mb LABEL laba=ca, labb=cb; -- 2. 为表（客体）设置访问策略 CREATE TABLE t1 (c1 INT, c2 TEXT) WITH (access_policy = p1); -- 3. 为用户（主体）设置访问策略 CREATE USER u1 PASSWORD 'u1.pass' ACCESS POLICY p1 WRITE LABEL laba,labb READ LABEL laba,labb; -- 4. 为主体设置临时标签 SET write_label = laba; SET read_label = laba; -- 5. 写数据 INSERT INTO t1 VALUE (1, 'a'); INSERT INTO t1 VALUE (2, 'b', labb); -- 6. 读数据 SELECT *,access_label FROM t1; -- 预期输出 c1 | c2 | access_label -----+------+--------------- 1 | a | :ma -- 未主动指定label，使用默认的laba -- 还有一行不可见：(2, 'b', ':mb')，该行主动指定label为lab2，lab2的标记为labb，读标记为laba -- 7. 清理 DROP TABLE t1; DROP USER u1; DROP ACCESS POLICY p1; 场景三、基于等级与标记的强制访问控制 -- 1. 定义访问策略 CREATE ACCESS POLICY p1 LEVLE l1=10, l2=20, l3=30 MARK ma, mb LABEL lab1=l1, lab2=l2, laba1=l1:ma, labb1=l1:mb; -- 用户读数据时，不仅要比较level的大小，还要比较mark是否相等 -- 详细步骤省略 场景四、查看访问控制策略 -- 1 创建访问策略 CREATE ACCESS POLICY p1 LEVLE l1=10, l2=20, l3=30 MARK ma, mb LABEL lab1=l1, lab2=l2, laba1=l1:ma, labb1=l1:mb; -- 2 查看访问控制策略 SELECT * FROM vb_access_policy; poloid | polname -------+--------- 17001 | p1 -- 3 查看 LEVEL SELECT * FROM vb_access_level; polid | levname | levelnum ------+---------+-------- 17001 | l1 | 10 17001 | l2 | 20 17001 | l3 | 30 -- 4 查看 MARK SELECT * FROM vb_access_mark; polid | mark ------+------ 17001 | ma 17001 | mb -- 5 查看 LABEL SELECT * FROM vb_access_label; polid | labbel | levelname | mark ------+--------+-----------+------- 17001 | lab1 | l1 | ma -- 6 为表（客体）设置访问策略 CREATE TABLE t1 (c1 INT, c2 TEXT) WITH (access_policy = p1); -- 7 查看表（客体）的访问策略 SELECT relname,reloptions FROM pg_class WHERE relname = 't1'; relname | reloptions --------+------------------ t1 | access_policy=p1 -- 8 为用户（主体）设置访问策略 CREATE USER u1 PASSWORD 'u1.pass' ACCESS POLICY p1 WRITE LABEL laba,labb READ LABEL laba,labb; -- 9 查看用户（主体）设置访问策略 SELECT * FROM pg_authid; rolname | rolaccpol | rolacclab --------+-----------+--------------------- u1 | p1 | lab1:lab2,lab1:lab2 场景五：修改访问控制策略 -- 1 创建访问策略 CREATE ACCESS POLICY p1 LEVLE l1=10, l2=20, l3=30 MARK ma, mb LABEL lab1=l1, lab2=l2, laba1=l1:ma, labb1=l1:mb; -- 2. 为表（客体）设置访问策略 CREATE TABLE t1 (c1 INT, c2 TEXT) WITH (access_policy = p1); INSERT INTO t1 VALUES(1,'lab1'); -- 3. 为用户（主体）设置访问策略 CREATE USER u1 PASSWORD 'u1.pass' ACCESS POLICY p1 WRITE LABEL lab1,lab2 READ LABEL lab1,lab2; -- 3 新增 LEVEL (1次只允许新增、修改、删除单个LEVEL、MARK、LABEL) ALTER ACCESS POLICY p1 ADD LEVLE l4=40; -- 4 修改 LEVEL ALTER ACCESS POLICY p1 ALTER LEVLE l1=15; -- 5 删除 LEVEL ALTER ACCESS POLICY p1 DROP LEVLE l3; ALTER ACCESS POLICY p1 DROP LEVLE l1 CASCADE; -- 预期：同时删除lab1。如果不带CASCADE，由于lab1依赖l1，会删除失败 -- 本示例场景中，以前，u1使用了lab1，现在，u1执行SELECT时，不能用访问控制策略了，INSERT时，使用lab2。 -- 5 新增 MARK ALTER ACCESS POLICY p1 ADD MARK mc,md; -- 6 删除 MARK ALTER ACCESS POLICY p1 DROP MARK mc; -- 7 新增 LABEL ALTER ACCESS POLICY p1 ADD LABEL lab3=l3; -- 8 修改 LABEL ALTER ACCESS POLICY p1 ALTER LABEL lab1=l2; -- 9 删除 LABEL ALTER ACCESS POLICY p1 DROP LABEL lab1; -- 在表中，存储的是label的值，即level与mark，即使删除label，仍然可以正常比较levle与mark 场景六：删除访问策略 扩展场景一：explain 扩展场景二：index_scan 扩展场景三：subquery 扩展场景六：sublink 扩展场景四：join 扩展场景五：view 扩展场景六：copy 扩展场景七：vb_dump 异常场景一：边界场景 -- 1 LEVEL 超过最大值 100 CREATE ACCESS POLICY p1 LEVLE l1=101; -- 2 LEVEL 数量超过限制 100个 CREATE ACCESS POLICY p1 LEVLE l1=1, l2=2, [此处省略98个], l101=101; -- 3 MARK 数量超过限制 100个 CREATE ACCESS POLICY p1 MARK m1, m2, [此处省略98个], m101; -- 3 LABEL 数量超过限制 100个 -- 4 ... 异常场景二：逻辑错误 -- 1 不存在的 LEVEL 和 MARK CREATE ACCESS POLICY p1 LEVLE l1=1 MARK ma LABEL lab2=l2, labb=mb; -- 2 重复的 LEVLE, MARK, LABEL CREATE ACCESS POLICY p1 LEVLE l1=1,l1=2,l2=1 -- 名称不能重复，取值可以重复 MARK ma,ma LABEL lab1=l1,lab1=l2; -- 3 不存在的策略 CREATE USER u1 .. ACCESS POLICY p_not_exist ..; CREATE TABLE t1 .. SECURED BY (access_policy=p_not_exist); -- 4 重复的策略 CREATE USER u1 .. ACCESS POLICY p1 ACCESS POLICY p2; CREATE TABLE t1 .. SECURED BY (access_policy=p1, access_policy=p2); -- 5 .. 2.2.2 配置参数和文件 新增GUC参数write_label\n会话级，默认为空，控制用户向表中写数据时，为数据赋予的标签 新增GUC参数read_label\n会话级，默认为空，控制用户从表中读数据时，使用的标签 2.2.3 数据相关性 无\n2.3 接口信息 新增SQL语法：ACCESS POLICY\nCREATE ACCESS POLICY $policy_name [LEVEL $level_name=$level_number [, $level_name=$level_number ...]] [MARK $mark_name [, $mark_name ...]] LABEL $label_name={$level_name | $mark_name | $level_name:$mark_name [, ...]} ALTER ACCESS POLICY $policy_name [ADD LEVEL $level_name=$level_number [, $level_name=$level_number ...]] [ALTER LEVEL $level_name=$level_number [, $level_name=$level_number ...]] [DROP LEVEL $level_name [, $level_name ...]] [ADD MARK ..] [ALTER MARK ..] [DROP MARK ..] [ADD LABEL ..] [ALTER LABEL ..] [DROP LABEL ..] DROP ACCESS POLICY [IF EXISTS] $policy_name [, $policy_name]; 扩展SQL语法：CREATE/ATLER USER\nCREATE/ALTER USER $user_name [ACCESS POLICY $policy_name WRITE $label_list READ $label_list] 扩展SQL语法：CREATE/ALTER TABLE\nCREATE TABLE $table_name .. WITH (access_policy = $policy_name); ALTER TABLE $table_name .. WITH (access_policy = none); 新增会话级GUC参数write_label\n新增会话级GUC参数read_label\n新增系统表vb_access_policy\n新增系统表vb_access_level\n新增系统表vb_access_mark\n新增系统表vb_access_label\n扩展系统表pg_authid：新增2列rolaccpol，rolacclab\n新增系统函数has_mac_permission(uint64, uint64)\n2.4 正反向行为 2.4.1 生效说明 直接通过SQL语法，可创建、设置访问策略。并通过查看系统表，判断是否操作成功，相关系统表包括：vb_access_policy、vb_access_level、vb_access_mark、vb_access_label、pg_class、pg_authid\nSELECT、UPDATE、DELETE表时，判断查询结果、操作结果，判断访问控制是否生效。\n2.4.2 提示信息 2.4.3 约束和依赖 为表设置访问策略：当前版本，只支持在创建表阶段，设置访问策略，不支持为已存在的表设置访问策略。 修改表的访问策略：只支持取消表的访问策略，不支持修改表的访问策略 2.5 安全性 2.5.1 权限控制 强制访问控制，与自主访问控制、行级访问控制共存，即当主体访问客体时，同时生效。\n2.5.2 审计 审计新增的DDL语法：CREATE/ALTER/DROP ACCESS POLICY。\n2.6 影响范围 2.6.1 对已有UDT,UDF, ECPG的影响 无\n2.6.2 对系统函数的影响 无\n2.6.3 对系统CATALOG的影响 新增vb_access_policy 新增vb_access_level 新增vb_access_mark 新增vb_access_label 扩展pg_authid：新增2列rolaccpol，rolacclab 2.6.4 对xlog日志格式、数据格式的影响 无\n2.6.5 与其他功能交互时的行为表现 与自主访问控制、行级访问控制交互：三者同时生效，互不影响\n2.6.6 版本兼容性 本版本第1次支持，新创建表时，支持设置访问策略，不支持为存量表设置访问策略。\n2.6.7 用户行为变更 新增SQL语法：ACCESS POLICY 扩展SQL语法：CREATE/ATLER USER 扩展SQL语法：CREATE/ALTER TABLE 新增会话级GUC参数write_label 新增会话级GUC参数read_label 新增系统表vb_access_policy 新增系统表vb_access_level 新增系统表vb_access_mark 新增系统表vb_access_label 扩展系统表pg_authid：新增2列rolaccpol，rolacclab 2.7 指标相关 2.7.1 关键资源指标 CPU：\n内存：\n外存：\n2.7.2 系统性指标 2.7.3 性能指标 2.8 测试建议 2.8 其他说明 ",
+  "wordCount" : "1130",
+  "inLanguage": "en",
+  "datePublished": "2026-03-23T21:40:00+08:00",
+  "dateModified": "2026-08-14T17:47:31+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/projectdocs/14-requirement-mac/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      海量 mac 需求
+    </h1>
+    <div class="post-meta">
+      <span title='2026-03-23 21:40:00 +0800 CST'>March 23, 2026</span>&nbsp;·&nbsp;<span>6 min</span>&nbsp;·&nbsp;<span>1130 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#1-%e7%ae%80%e4%bb%8b" aria-label="1 简介">1 简介</a><ul>
+                        
+                <li>
+                    <a href="#11-%e7%9b%ae%e7%9a%84" aria-label="1.1 目的">1.1 目的</a></li>
+                <li>
+                    <a href="#12-%e9%80%82%e7%94%a8%e8%8c%83%e5%9b%b4" aria-label="1.2 适用范围">1.2 适用范围</a></li>
+                <li>
+                    <a href="#13-%e6%9c%af%e8%af%ad%e5%ae%9a%e4%b9%89%e9%a6%96%e5%ad%97%e6%af%8d%e7%bc%a9%e5%86%99%e8%af%8d%e5%92%8c%e7%bc%a9%e7%95%a5%e8%af%ad" aria-label="1.3 术语定义、首字母缩写词和缩略语">1.3 术语定义、首字母缩写词和缩略语</a></li>
+                <li>
+                    <a href="#14-%e5%8f%82%e8%80%83%e8%b5%84%e6%96%99" aria-label="1.4 参考资料">1.4 参考资料</a></li></ul>
+                </li>
+                <li>
+                    <a href="#2-%e5%bc%ba%e5%88%b6%e8%ae%bf%e9%97%ae%e6%8e%a7%e5%88%b6" aria-label="2 强制访问控制">2 强制访问控制</a><ul>
+                        
+                <li>
+                    <a href="#21-%e5%8a%9f%e8%83%bd%e7%ae%80%e8%bf%b0" aria-label="2.1 功能简述">2.1 功能简述</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e5%9f%ba%e6%9c%ac%e6%a6%82%e5%bf%b5" aria-label="一、基本概念">一、基本概念</a></li>
+                <li>
+                    <a href="#%e4%ba%8c%e7%ab%9e%e5%93%81%e5%88%86%e6%9e%90" aria-label="二、竞品分析">二、竞品分析</a></li>
+                <li>
+                    <a href="#%e4%b8%89%e5%ae%9e%e7%8e%b0%e6%80%9d%e8%b7%af" aria-label="三、实现思路">三、实现思路</a></li></ul>
+                </li>
+                <li>
+                    <a href="#22-%e5%8a%9f%e8%83%bd%e8%af%b4%e6%98%8e" aria-label="2.2 功能说明">2.2 功能说明</a><ul>
+                        
+                <li>
+                    <a href="#221-%e4%bd%bf%e7%94%a8%e6%b5%81%e7%a8%8b" aria-label="2.2.1 使用流程">2.2.1 使用流程</a><ul>
+                        
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e4%b8%80%e5%9f%ba%e4%ba%8e%e7%ad%89%e7%ba%a7%e7%9a%84%e5%bc%ba%e5%88%b6%e8%ae%bf%e9%97%ae%e6%8e%a7%e5%88%b6" aria-label="场景一、基于等级的强制访问控制">场景一、基于等级的强制访问控制</a></li>
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e4%ba%8c%e5%9f%ba%e4%ba%8e%e6%a0%87%e8%ae%b0%e7%9a%84%e5%bc%ba%e5%88%b6%e8%ae%bf%e9%97%ae%e6%8e%a7%e5%88%b6" aria-label="场景二、基于标记的强制访问控制">场景二、基于标记的强制访问控制</a></li>
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e4%b8%89%e5%9f%ba%e4%ba%8e%e7%ad%89%e7%ba%a7%e4%b8%8e%e6%a0%87%e8%ae%b0%e7%9a%84%e5%bc%ba%e5%88%b6%e8%ae%bf%e9%97%ae%e6%8e%a7%e5%88%b6" aria-label="场景三、基于等级与标记的强制访问控制">场景三、基于等级与标记的强制访问控制</a></li>
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e5%9b%9b%e6%9f%a5%e7%9c%8b%e8%ae%bf%e9%97%ae%e6%8e%a7%e5%88%b6%e7%ad%96%e7%95%a5" aria-label="场景四、查看访问控制策略">场景四、查看访问控制策略</a></li>
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e4%ba%94%e4%bf%ae%e6%94%b9%e8%ae%bf%e9%97%ae%e6%8e%a7%e5%88%b6%e7%ad%96%e7%95%a5" aria-label="场景五：修改访问控制策略">场景五：修改访问控制策略</a></li>
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e5%85%ad%e5%88%a0%e9%99%a4%e8%ae%bf%e9%97%ae%e7%ad%96%e7%95%a5" aria-label="场景六：删除访问策略">场景六：删除访问策略</a></li>
+                <li>
+                    <a href="#%e6%89%a9%e5%b1%95%e5%9c%ba%e6%99%af%e4%b8%80explain" aria-label="扩展场景一：explain">扩展场景一：explain</a></li>
+                <li>
+                    <a href="#%e6%89%a9%e5%b1%95%e5%9c%ba%e6%99%af%e4%ba%8cindex_scan" aria-label="扩展场景二：index_scan">扩展场景二：index_scan</a></li>
+                <li>
+                    <a href="#%e6%89%a9%e5%b1%95%e5%9c%ba%e6%99%af%e4%b8%89subquery" aria-label="扩展场景三：subquery">扩展场景三：subquery</a></li>
+                <li>
+                    <a href="#%e6%89%a9%e5%b1%95%e5%9c%ba%e6%99%af%e5%85%adsublink" aria-label="扩展场景六：sublink">扩展场景六：sublink</a></li>
+                <li>
+                    <a href="#%e6%89%a9%e5%b1%95%e5%9c%ba%e6%99%af%e5%9b%9bjoin" aria-label="扩展场景四：join">扩展场景四：join</a></li>
+                <li>
+                    <a href="#%e6%89%a9%e5%b1%95%e5%9c%ba%e6%99%af%e4%ba%94view" aria-label="扩展场景五：view">扩展场景五：view</a></li>
+                <li>
+                    <a href="#%e6%89%a9%e5%b1%95%e5%9c%ba%e6%99%af%e5%85%adcopy" aria-label="扩展场景六：copy">扩展场景六：copy</a></li>
+                <li>
+                    <a href="#%e6%89%a9%e5%b1%95%e5%9c%ba%e6%99%af%e4%b8%83vb_dump" aria-label="扩展场景七：vb_dump">扩展场景七：vb_dump</a></li>
+                <li>
+                    <a href="#%e5%bc%82%e5%b8%b8%e5%9c%ba%e6%99%af%e4%b8%80%e8%be%b9%e7%95%8c%e5%9c%ba%e6%99%af" aria-label="异常场景一：边界场景">异常场景一：边界场景</a></li>
+                <li>
+                    <a href="#%e5%bc%82%e5%b8%b8%e5%9c%ba%e6%99%af%e4%ba%8c%e9%80%bb%e8%be%91%e9%94%99%e8%af%af" aria-label="异常场景二：逻辑错误">异常场景二：逻辑错误</a></li></ul>
+                </li>
+                <li>
+                    <a href="#222-%e9%85%8d%e7%bd%ae%e5%8f%82%e6%95%b0%e5%92%8c%e6%96%87%e4%bb%b6" aria-label="2.2.2 配置参数和文件">2.2.2 配置参数和文件</a></li>
+                <li>
+                    <a href="#223-%e6%95%b0%e6%8d%ae%e7%9b%b8%e5%85%b3%e6%80%a7" aria-label="2.2.3 数据相关性">2.2.3 数据相关性</a></li></ul>
+                </li>
+                <li>
+                    <a href="#23-%e6%8e%a5%e5%8f%a3%e4%bf%a1%e6%81%af" aria-label="2.3 接口信息">2.3 接口信息</a></li>
+                <li>
+                    <a href="#24-%e6%ad%a3%e5%8f%8d%e5%90%91%e8%a1%8c%e4%b8%ba" aria-label="2.4 正反向行为">2.4 正反向行为</a><ul>
+                        
+                <li>
+                    <a href="#241-%e7%94%9f%e6%95%88%e8%af%b4%e6%98%8e" aria-label="2.4.1 生效说明">2.4.1 生效说明</a></li>
+                <li>
+                    <a href="#242-%e6%8f%90%e7%a4%ba%e4%bf%a1%e6%81%af" aria-label="2.4.2 提示信息">2.4.2 提示信息</a></li>
+                <li>
+                    <a href="#243-%e7%ba%a6%e6%9d%9f%e5%92%8c%e4%be%9d%e8%b5%96" aria-label="2.4.3 约束和依赖">2.4.3 约束和依赖</a></li></ul>
+                </li>
+                <li>
+                    <a href="#25-%e5%ae%89%e5%85%a8%e6%80%a7" aria-label="2.5 安全性">2.5 安全性</a><ul>
+                        
+                <li>
+                    <a href="#251-%e6%9d%83%e9%99%90%e6%8e%a7%e5%88%b6" aria-label="2.5.1 权限控制">2.5.1 权限控制</a></li>
+                <li>
+                    <a href="#252-%e5%ae%a1%e8%ae%a1" aria-label="2.5.2 审计">2.5.2 审计</a></li></ul>
+                </li>
+                <li>
+                    <a href="#26-%e5%bd%b1%e5%93%8d%e8%8c%83%e5%9b%b4" aria-label="2.6 影响范围">2.6 影响范围</a><ul>
+                        
+                <li>
+                    <a href="#261-%e5%af%b9%e5%b7%b2%e6%9c%89udtudf-ecpg%e7%9a%84%e5%bd%b1%e5%93%8d" aria-label="2.6.1 对已有UDT,UDF, ECPG的影响">2.6.1 对已有UDT,UDF, ECPG的影响</a></li>
+                <li>
+                    <a href="#262-%e5%af%b9%e7%b3%bb%e7%bb%9f%e5%87%bd%e6%95%b0%e7%9a%84%e5%bd%b1%e5%93%8d" aria-label="2.6.2 对系统函数的影响">2.6.2 对系统函数的影响</a></li>
+                <li>
+                    <a href="#263-%e5%af%b9%e7%b3%bb%e7%bb%9fcatalog%e7%9a%84%e5%bd%b1%e5%93%8d" aria-label="2.6.3 对系统CATALOG的影响">2.6.3 对系统CATALOG的影响</a></li>
+                <li>
+                    <a href="#264-%e5%af%b9xlog%e6%97%a5%e5%bf%97%e6%a0%bc%e5%bc%8f%e6%95%b0%e6%8d%ae%e6%a0%bc%e5%bc%8f%e7%9a%84%e5%bd%b1%e5%93%8d" aria-label="2.6.4 对xlog日志格式、数据格式的影响">2.6.4 对xlog日志格式、数据格式的影响</a></li>
+                <li>
+                    <a href="#265-%e4%b8%8e%e5%85%b6%e4%bb%96%e5%8a%9f%e8%83%bd%e4%ba%a4%e4%ba%92%e6%97%b6%e7%9a%84%e8%a1%8c%e4%b8%ba%e8%a1%a8%e7%8e%b0" aria-label="2.6.5 与其他功能交互时的行为表现">2.6.5 与其他功能交互时的行为表现</a></li>
+                <li>
+                    <a href="#266-%e7%89%88%e6%9c%ac%e5%85%bc%e5%ae%b9%e6%80%a7" aria-label="2.6.6 版本兼容性">2.6.6 版本兼容性</a></li>
+                <li>
+                    <a href="#267-%e7%94%a8%e6%88%b7%e8%a1%8c%e4%b8%ba%e5%8f%98%e6%9b%b4" aria-label="2.6.7 用户行为变更">2.6.7 用户行为变更</a></li></ul>
+                </li>
+                <li>
+                    <a href="#27-%e6%8c%87%e6%a0%87%e7%9b%b8%e5%85%b3" aria-label="2.7 指标相关">2.7 指标相关</a><ul>
+                        
+                <li>
+                    <a href="#271-%e5%85%b3%e9%94%ae%e8%b5%84%e6%ba%90%e6%8c%87%e6%a0%87" aria-label="2.7.1 关键资源指标">2.7.1 关键资源指标</a></li>
+                <li>
+                    <a href="#272-%e7%b3%bb%e7%bb%9f%e6%80%a7%e6%8c%87%e6%a0%87" aria-label="2.7.2 系统性指标">2.7.2 系统性指标</a></li>
+                <li>
+                    <a href="#273-%e6%80%a7%e8%83%bd%e6%8c%87%e6%a0%87" aria-label="2.7.3 性能指标">2.7.3 性能指标</a></li></ul>
+                </li>
+                <li>
+                    <a href="#28-%e6%b5%8b%e8%af%95%e5%bb%ba%e8%ae%ae" aria-label="2.8 测试建议">2.8 测试建议</a></li>
+                <li>
+                    <a href="#28-%e5%85%b6%e4%bb%96%e8%af%b4%e6%98%8e" aria-label="2.8 其他说明">2.8 其他说明</a>
+                </li>
+            </ul>
+            </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h1 id="1-简介">1 简介<a hidden class="anchor" aria-hidden="true" href="#1-简介">#</a></h1>
+<h2 id="11-目的">1.1 目的<a hidden class="anchor" aria-hidden="true" href="#11-目的">#</a></h2>
+<p>本文主要包括以下关键内容：</p>
+<ol>
+<li>介绍访问控制的基本概念</li>
+<li>调研其他厂商实现强制控制的方式</li>
+<li>设计Vastbase强制访问控制特性，介绍如何使用强制访问特性</li>
+</ol>
+<h2 id="12-适用范围">1.2 适用范围<a hidden class="anchor" aria-hidden="true" href="#12-适用范围">#</a></h2>
+<p>Vastbase V5版本。</p>
+<h2 id="13-术语定义首字母缩写词和缩略语">1.3 术语定义、首字母缩写词和缩略语<a hidden class="anchor" aria-hidden="true" href="#13-术语定义首字母缩写词和缩略语">#</a></h2>
+<ul>
+<li>MAC：Mandatory Access Control，强制访问控制，主体访问客体时，基于主体、客体属性，强制控制访问权限。</li>
+<li>DAC：Discretionary Access Control，自主访问控制，数据拥有者可自行设置访问权限。</li>
+</ul>
+<h2 id="14-参考资料">1.4 参考资料<a hidden class="anchor" aria-hidden="true" href="#14-参考资料">#</a></h2>
+<ul>
+<li>oracle 强制访问控制（标签访问控制 RLS）：<a href="https://docs.oracle.com/en/database/oracle/oracle-database/26/olsag/part1.html#GUID-C20C62AE-2A30-45F9-AEEA-52A0D3286FBA">https://docs.oracle.com/en/database/oracle/oracle-database/26/olsag/part1.html#GUID-C20C62AE-2A30-45F9-AEEA-52A0D3286FBA</a></li>
+<li>oceanbase 强制访问控制（兼容oracle）：<a href="https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475944">https://www.oceanbase.com/docs/common-oceanbase-database-cn-1000000004475944</a></li>
+<li>kingbase 强制访问控制：<a href="https://bbs.kingbase.com.cn/kingbase-doc/v8.6.7.24/safety/safety-guide/label-and-mac.html">https://bbs.kingbase.com.cn/kingbase-doc/v8.6.7.24/safety/safety-guide/label-and-mac.html</a></li>
+<li>dm 强制访问控制：<a href="https://eco.dameng.com/document/dm/zh-cn/pm/mandatory-access-control.html">https://eco.dameng.com/document/dm/zh-cn/pm/mandatory-access-control.html</a></li>
+<li>GB/T-20009-数据库管理系统安全评估准则：<a href="https://drive.weixin.qq.com/s?k=AHUAfwdSAA82aDcvvD">https://drive.weixin.qq.com/s?k=AHUAfwdSAA82aDcvvD</a></li>
+<li>postgresql 行级访问控制 RLS：<a href="https://www.postgresql.org/docs/current/ddl-rowsecurity.html">https://www.postgresql.org/docs/current/ddl-rowsecurity.html</a></li>
+</ul>
+<h1 id="2-强制访问控制">2 强制访问控制<a hidden class="anchor" aria-hidden="true" href="#2-强制访问控制">#</a></h1>
+<h2 id="21-功能简述">2.1 功能简述<a hidden class="anchor" aria-hidden="true" href="#21-功能简述">#</a></h2>
+<h3 id="一基本概念">一、基本概念<a hidden class="anchor" aria-hidden="true" href="#一基本概念">#</a></h3>
+<p><strong>访问控制</strong>的定义：对主体访问客体的行为，系统按照安全策略进行限制与管理的安全机制。<br>
+按安全策略分类，可将访问控制分为很多类，其中，常见的策略有：</p>
+<ul>
+<li>自主访问控制DAC：客体的拥有者，可自行向其他主体赋予访问权限。</li>
+<li>强制访问控制MAC：系统为主体、客体分配安全标签，通过主体、客体的安全标签控制访问权限，很多情况下，即使客体的拥有者也无法向其他主体赋予访问权限。</li>
+<li>角色访问控制RBAC：不在本文讨论范围。</li>
+</ul>
+<p>在数据库领域，主体通常指数据库用户，客体通常指数据库对象，例如DATABASE、SCHEMA、TABLE、COLUMN、ROW、FUNCTION等。<br>
+自主访问控制比较成熟，几乎所有关系数据库，都提供自主访问控制特性，例如，TABLE（客体）的属主（主体），可通过<code>GRANT .. TO ..</code>等语法，为其他用户（主体）赋予权限。<br>
+强制访问控制理论比较成熟，但是，除oracle支持强制访问控制，以及oceanbase等几款产品兼容oracle强制访问控制之外，大部分关系数据库不支持强制访问控制。</p>
+<p>实现强制访问控制时，通常将主体、客体的安全标签，简化为安全等级，当主体访问客体时，比较主体、客体等级高低，以判断访问权限。在机密性场景，遵循不上读、不下写原则。在完整性场景，遵循不下读、不上写原则。</p>
+<p>本需求将从0设计强制访问控制特性，在保障功能、性能、易用性、可用性、可维护性、可扩展性等的前提下，让特性达到商用标准。</p>
+<h3 id="二竞品分析">二、竞品分析<a hidden class="anchor" aria-hidden="true" href="#二竞品分析">#</a></h3>
+<p>oracle支持强制访问控制，客体是ROW，即行级强制访问控制。oceanbase、kingbase、dm的访问控制，与oracle一致。sql server、postgresql等其他产品不支持强制访问控制。<br>
+oracle强制访问控制使用示例如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 1 定义策略
+</span></span></span><span class="line"><span class="cl"><span class="n">SA_SYSDBA</span><span class="p">.</span><span class="n">CREATE_POLICY</span><span class="p">(</span><span class="n">policy_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;p1&#39;</span><span class="p">,</span><span class="w"> </span><span class="k">column_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;lab_col1&#39;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 2 定义级别
+</span></span></span><span class="line"><span class="cl"><span class="n">SA_COMPONENTS</span><span class="p">.</span><span class="n">CREATE_LEVEL</span><span class="p">(</span><span class="n">policy_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;p1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">level_num</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">short_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;x1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">long_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;x1&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="n">SA_COMPONENTS</span><span class="p">.</span><span class="n">CREATE_LEVEL</span><span class="p">(</span><span class="s1">&#39;p1&#39;</span><span class="p">,</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;x2&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;x2&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="n">SA_COMPONENTS</span><span class="p">.</span><span class="n">CREATE_LEVEL</span><span class="p">(</span><span class="s1">&#39;p1&#39;</span><span class="p">,</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;x3&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;x3&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3 定义组件
+</span></span></span><span class="line"><span class="cl"><span class="n">SA_COMPONENTS</span><span class="p">.</span><span class="n">CREATE_LEVEL</span><span class="p">(</span><span class="n">policy_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="s1">&#39;p1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">comp_num</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w"> </span><span class="n">short_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;sec&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">long_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;security&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="n">SA_COMPONENTS</span><span class="p">.</span><span class="n">CREATE_LEVEL</span><span class="p">(</span><span class="s1">&#39;p1&#39;</span><span class="p">,</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;stg&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;storage&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 4 创建标签
+</span></span></span><span class="line"><span class="cl"><span class="n">SA_SYSDBA</span><span class="p">.</span><span class="n">CREATE_LABEL</span><span class="p">(</span><span class="n">policy_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;p1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">label_tag</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;sec_normal&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">label_value</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;x1:security&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">data_label</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="k">TRUE</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="n">SA_SYSDBA</span><span class="p">.</span><span class="n">CREATE_LABEL</span><span class="p">(</span><span class="s1">&#39;p1&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;sec_leader&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;x3:security&#39;</span><span class="p">,</span><span class="w"> </span><span class="k">false</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 5 为主体设置属性
+</span></span></span><span class="line"><span class="cl"><span class="n">SA_USER_ADMIN</span><span class="p">.</span><span class="n">SET_LEVELS</span><span class="p">(</span><span class="n">policy_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;p1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">user_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;user1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">max_level</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;x2&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">min_level</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;x1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">default_level</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;x1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">row_level</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;x1&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="n">SA_USER_ADMIN</span><span class="p">.</span><span class="n">SET_COMPARTMENTS</span><span class="p">(</span><span class="n">policy_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;p1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">user_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;user1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">read_comps</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;sec&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">write_comps</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;sec&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">default_comps</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;sec&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">row_comps</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;sec&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 6 为客体设置属性
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="n">SA_USER_ADMIN</span><span class="p">.</span><span class="n">APPLY_TABLE_POLICY</span><span class="p">(</span><span class="n">policy_name</span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;p1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">shema_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;s1&#39;</span><span class="p">,</span><span class="w"> </span><span class="k">table_name</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;t1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">table_options</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;READ_CONTROL, WRITE_CONTROL, CHECK_CONTROL&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">label_function</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s1">&#39;f_create_t1_label(level, comp)&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 7 插入数据（主动定义标签）
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">(</span><span class="n">c1</span><span class="p">,</span><span class="w"> </span><span class="n">lab_col1</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">CHAR_TO_LABEL</span><span class="p">(</span><span class="s1">&#39;p1&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;x1:sec&#39;</span><span class="p">));</span><span class="w">
+</span></span></span></code></pre></div><h3 id="三实现思路">三、实现思路<a hidden class="anchor" aria-hidden="true" href="#三实现思路">#</a></h3>
+<p>在数据库领域，除oracle外，没有其他可借鉴的方案。oracle的设计，太复杂，易用性太低。<br>
+本需求将参考oracle的思想，简化oracle设计。</p>
+<h2 id="22-功能说明">2.2 功能说明<a hidden class="anchor" aria-hidden="true" href="#22-功能说明">#</a></h2>
+<h3 id="221-使用流程">2.2.1 使用流程<a hidden class="anchor" aria-hidden="true" href="#221-使用流程">#</a></h3>
+<h4 id="场景一基于等级的强制访问控制">场景一、基于等级的强制访问控制<a hidden class="anchor" aria-hidden="true" href="#场景一基于等级的强制访问控制">#</a></h4>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 1. 定义访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LEVLE</span><span class="w"> </span><span class="n">l1</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="n">l2</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="n">l3</span><span class="o">=</span><span class="mi">30</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LABEL</span><span class="w"> </span><span class="n">lab1</span><span class="o">=</span><span class="n">l1</span><span class="p">,</span><span class="w"> </span><span class="n">lab2</span><span class="o">=</span><span class="n">l2</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 2. 为表（客体）设置访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">)</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="p">(</span><span class="n">access_policy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">p1</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3. 为用户（主体）设置访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">&#39;u1.pass&#39;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">WRITE</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="n">lab1</span><span class="p">,</span><span class="n">lab2</span><span class="w"> </span><span class="c1">-- 第1个标签是默认标签
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">READ</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="n">lab1</span><span class="p">,</span><span class="n">lab2</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 4. 为主体设置临时标签
+</span></span></span><span class="line"><span class="cl"><span class="k">SET</span><span class="w"> </span><span class="n">write_label</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">lab1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SET</span><span class="w"> </span><span class="n">read_label</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">lab1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 5. 写数据
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="n">VALUE</span><span class="w"> </span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;a&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="n">VALUE</span><span class="w"> </span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;b&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">lab2</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 6. 读数据
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="p">,</span><span class="n">access_label</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 预期输出
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">c1</span><span class="w">   </span><span class="o">|</span><span class="w">   </span><span class="n">c2</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">access_label</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-----+------+---------------
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="mi">1</span><span class="w">  </span><span class="o">|</span><span class="w">  </span><span class="n">a</span><span class="w">   </span><span class="o">|</span><span class="w">  </span><span class="mi">1</span><span class="p">:</span><span class="w">              </span><span class="c1">-- 未主动指定label，使用默认的lab1
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 还有一行不可见：(2, &#39;b&#39;, &#39;2:&#39;)，该行主动指定label为lab2，lab2的等级高于读等级read_label
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 内核会自动将本SQL语法改写为：
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- SELECT *,access_label FROM t1 WHERE has_mac_permission(access_label, read_label);
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 7. 清理
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h4 id="场景二基于标记的强制访问控制">场景二、基于标记的强制访问控制<a hidden class="anchor" aria-hidden="true" href="#场景二基于标记的强制访问控制">#</a></h4>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 1. 定义访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">MARK</span><span class="w"> </span><span class="n">ma</span><span class="p">,</span><span class="w"> </span><span class="n">mb</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LABEL</span><span class="w"> </span><span class="n">laba</span><span class="o">=</span><span class="n">ca</span><span class="p">,</span><span class="w"> </span><span class="n">labb</span><span class="o">=</span><span class="n">cb</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 2. 为表（客体）设置访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">)</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="p">(</span><span class="n">access_policy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">p1</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3. 为用户（主体）设置访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">&#39;u1.pass&#39;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">WRITE</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="n">laba</span><span class="p">,</span><span class="n">labb</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">READ</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="n">laba</span><span class="p">,</span><span class="n">labb</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 4. 为主体设置临时标签
+</span></span></span><span class="line"><span class="cl"><span class="k">SET</span><span class="w"> </span><span class="n">write_label</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">laba</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SET</span><span class="w"> </span><span class="n">read_label</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">laba</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 5. 写数据
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="n">VALUE</span><span class="w"> </span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;a&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="n">VALUE</span><span class="w"> </span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;b&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">labb</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 6. 读数据
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="p">,</span><span class="n">access_label</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 预期输出
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">c1</span><span class="w">   </span><span class="o">|</span><span class="w">   </span><span class="n">c2</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">access_label</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-----+------+---------------
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="mi">1</span><span class="w">  </span><span class="o">|</span><span class="w">  </span><span class="n">a</span><span class="w">   </span><span class="o">|</span><span class="w">  </span><span class="p">:</span><span class="n">ma</span><span class="w">             </span><span class="c1">-- 未主动指定label，使用默认的laba
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 还有一行不可见：(2, &#39;b&#39;, &#39;:mb&#39;)，该行主动指定label为lab2，lab2的标记为labb，读标记为laba
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 7. 清理
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h4 id="场景三基于等级与标记的强制访问控制">场景三、基于等级与标记的强制访问控制<a hidden class="anchor" aria-hidden="true" href="#场景三基于等级与标记的强制访问控制">#</a></h4>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 1. 定义访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LEVLE</span><span class="w"> </span><span class="n">l1</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="n">l2</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="n">l3</span><span class="o">=</span><span class="mi">30</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">MARK</span><span class="w"> </span><span class="n">ma</span><span class="p">,</span><span class="w"> </span><span class="n">mb</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LABEL</span><span class="w"> </span><span class="n">lab1</span><span class="o">=</span><span class="n">l1</span><span class="p">,</span><span class="w"> </span><span class="n">lab2</span><span class="o">=</span><span class="n">l2</span><span class="p">,</span><span class="w"> </span><span class="n">laba1</span><span class="o">=</span><span class="n">l1</span><span class="p">:</span><span class="n">ma</span><span class="p">,</span><span class="w"> </span><span class="n">labb1</span><span class="o">=</span><span class="n">l1</span><span class="p">:</span><span class="n">mb</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 用户读数据时，不仅要比较level的大小，还要比较mark是否相等
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 详细步骤省略
+</span></span></span></code></pre></div><h4 id="场景四查看访问控制策略">场景四、查看访问控制策略<a hidden class="anchor" aria-hidden="true" href="#场景四查看访问控制策略">#</a></h4>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 1 创建访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LEVLE</span><span class="w"> </span><span class="n">l1</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="n">l2</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="n">l3</span><span class="o">=</span><span class="mi">30</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">MARK</span><span class="w"> </span><span class="n">ma</span><span class="p">,</span><span class="w"> </span><span class="n">mb</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LABEL</span><span class="w"> </span><span class="n">lab1</span><span class="o">=</span><span class="n">l1</span><span class="p">,</span><span class="w"> </span><span class="n">lab2</span><span class="o">=</span><span class="n">l2</span><span class="p">,</span><span class="w"> </span><span class="n">laba1</span><span class="o">=</span><span class="n">l1</span><span class="p">:</span><span class="n">ma</span><span class="p">,</span><span class="w"> </span><span class="n">labb1</span><span class="o">=</span><span class="n">l1</span><span class="p">:</span><span class="n">mb</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 2 查看访问控制策略
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">vb_access_policy</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="n">poloid</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">polname</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="c1">-------+---------
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="mi">17001</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3 查看 LEVEL
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">vb_access_level</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="n">polid</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">levname</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">levelnum</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="c1">------+---------+--------
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="mi">17001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">l1</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">10</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="mi">17001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">l2</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">20</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="mi">17001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">l3</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">30</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 4 查看 MARK
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">vb_access_mark</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">polid</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">mark</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">------+------
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="mi">17001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">ma</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="mi">17001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">mb</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 5 查看 LABEL
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">vb_access_label</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">polid</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">labbel</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">levelname</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">mark</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">------+--------+-----------+-------
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="mi">17001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">lab1</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="n">l1</span><span class="w">         </span><span class="o">|</span><span class="w"> </span><span class="n">ma</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 6 为表（客体）设置访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">)</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="p">(</span><span class="n">access_policy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">p1</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 7 查看表（客体）的访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">relname</span><span class="p">,</span><span class="n">reloptions</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_class</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">relname</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;t1&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">relname</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">reloptions</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">--------+------------------
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">t1</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="n">access_policy</span><span class="o">=</span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 8 为用户（主体）设置访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">&#39;u1.pass&#39;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">WRITE</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="n">laba</span><span class="p">,</span><span class="n">labb</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">READ</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="n">laba</span><span class="p">,</span><span class="n">labb</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 9 查看用户（主体）设置访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_authid</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">   </span><span class="n">rolname</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">rolaccpol</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">rolacclab</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">   </span><span class="c1">--------+-----------+---------------------
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="n">u1</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="n">p1</span><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="n">lab1</span><span class="p">:</span><span class="n">lab2</span><span class="p">,</span><span class="n">lab1</span><span class="p">:</span><span class="n">lab2</span><span class="w">
+</span></span></span></code></pre></div><h4 id="场景五修改访问控制策略">场景五：修改访问控制策略<a hidden class="anchor" aria-hidden="true" href="#场景五修改访问控制策略">#</a></h4>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 1 创建访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LEVLE</span><span class="w"> </span><span class="n">l1</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="n">l2</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span><span class="w"> </span><span class="n">l3</span><span class="o">=</span><span class="mi">30</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">MARK</span><span class="w"> </span><span class="n">ma</span><span class="p">,</span><span class="w"> </span><span class="n">mb</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LABEL</span><span class="w"> </span><span class="n">lab1</span><span class="o">=</span><span class="n">l1</span><span class="p">,</span><span class="w"> </span><span class="n">lab2</span><span class="o">=</span><span class="n">l2</span><span class="p">,</span><span class="w"> </span><span class="n">laba1</span><span class="o">=</span><span class="n">l1</span><span class="p">:</span><span class="n">ma</span><span class="p">,</span><span class="w"> </span><span class="n">labb1</span><span class="o">=</span><span class="n">l1</span><span class="p">:</span><span class="n">mb</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 2. 为表（客体）设置访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">)</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="p">(</span><span class="n">access_policy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">p1</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="s1">&#39;lab1&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3. 为用户（主体）设置访问策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">&#39;u1.pass&#39;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">WRITE</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="n">lab1</span><span class="p">,</span><span class="n">lab2</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="k">READ</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="n">lab1</span><span class="p">,</span><span class="n">lab2</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3 新增 LEVEL (1次只允许新增、修改、删除单个LEVEL、MARK、LABEL)
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="n">LEVLE</span><span class="w"> </span><span class="n">l4</span><span class="o">=</span><span class="mi">40</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 4 修改 LEVEL
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w"> </span><span class="k">ALTER</span><span class="w"> </span><span class="n">LEVLE</span><span class="w"> </span><span class="n">l1</span><span class="o">=</span><span class="mi">15</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 5 删除 LEVEL
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w"> </span><span class="k">DROP</span><span class="w"> </span><span class="n">LEVLE</span><span class="w"> </span><span class="n">l3</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w"> </span><span class="k">DROP</span><span class="w"> </span><span class="n">LEVLE</span><span class="w"> </span><span class="n">l1</span><span class="w"> </span><span class="k">CASCADE</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 预期：同时删除lab1。如果不带CASCADE，由于lab1依赖l1，会删除失败
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 本示例场景中，以前，u1使用了lab1，现在，u1执行SELECT时，不能用访问控制策略了，INSERT时，使用lab2。
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 5 新增 MARK
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="n">MARK</span><span class="w"> </span><span class="n">mc</span><span class="p">,</span><span class="n">md</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 6 删除 MARK
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w"> </span><span class="k">DROP</span><span class="w"> </span><span class="n">MARK</span><span class="w"> </span><span class="n">mc</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 7 新增 LABEL
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="n">lab3</span><span class="o">=</span><span class="n">l3</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 8 修改 LABEL
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w"> </span><span class="k">ALTER</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="n">lab1</span><span class="o">=</span><span class="n">l2</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 9 删除 LABEL
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w"> </span><span class="k">DROP</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="n">lab1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- 在表中，存储的是label的值，即level与mark，即使删除label，仍然可以正常比较levle与mark
+</span></span></span></code></pre></div><h4 id="场景六删除访问策略">场景六：删除访问策略<a hidden class="anchor" aria-hidden="true" href="#场景六删除访问策略">#</a></h4>
+<h4 id="扩展场景一explain">扩展场景一：explain<a hidden class="anchor" aria-hidden="true" href="#扩展场景一explain">#</a></h4>
+<h4 id="扩展场景二index_scan">扩展场景二：index_scan<a hidden class="anchor" aria-hidden="true" href="#扩展场景二index_scan">#</a></h4>
+<h4 id="扩展场景三subquery">扩展场景三：subquery<a hidden class="anchor" aria-hidden="true" href="#扩展场景三subquery">#</a></h4>
+<h4 id="扩展场景六sublink">扩展场景六：sublink<a hidden class="anchor" aria-hidden="true" href="#扩展场景六sublink">#</a></h4>
+<h4 id="扩展场景四join">扩展场景四：join<a hidden class="anchor" aria-hidden="true" href="#扩展场景四join">#</a></h4>
+<h4 id="扩展场景五view">扩展场景五：view<a hidden class="anchor" aria-hidden="true" href="#扩展场景五view">#</a></h4>
+<h4 id="扩展场景六copy">扩展场景六：copy<a hidden class="anchor" aria-hidden="true" href="#扩展场景六copy">#</a></h4>
+<h4 id="扩展场景七vb_dump">扩展场景七：vb_dump<a hidden class="anchor" aria-hidden="true" href="#扩展场景七vb_dump">#</a></h4>
+<h4 id="异常场景一边界场景">异常场景一：边界场景<a hidden class="anchor" aria-hidden="true" href="#异常场景一边界场景">#</a></h4>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 1 LEVEL 超过最大值 100
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LEVLE</span><span class="w"> </span><span class="n">l1</span><span class="o">=</span><span class="mi">101</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 2 LEVEL 数量超过限制 100个
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LEVLE</span><span class="w"> </span><span class="n">l1</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">l2</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="err">此处省略</span><span class="mi">98</span><span class="err">个</span><span class="p">],</span><span class="w"> </span><span class="n">l101</span><span class="o">=</span><span class="mi">101</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3 MARK 数量超过限制 100个
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">MARK</span><span class="w"> </span><span class="n">m1</span><span class="p">,</span><span class="w"> </span><span class="n">m2</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="err">此处省略</span><span class="mi">98</span><span class="err">个</span><span class="p">],</span><span class="w"> </span><span class="n">m101</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3 LABEL 数量超过限制 100个
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 4 ...
+</span></span></span></code></pre></div><h4 id="异常场景二逻辑错误">异常场景二：逻辑错误<a hidden class="anchor" aria-hidden="true" href="#异常场景二逻辑错误">#</a></h4>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 1 不存在的 LEVEL 和 MARK
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LEVLE</span><span class="w"> </span><span class="n">l1</span><span class="o">=</span><span class="mi">1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">MARK</span><span class="w"> </span><span class="n">ma</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LABEL</span><span class="w"> </span><span class="n">lab2</span><span class="o">=</span><span class="n">l2</span><span class="p">,</span><span class="w"> </span><span class="n">labb</span><span class="o">=</span><span class="n">mb</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 2 重复的 LEVLE, MARK, LABEL
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LEVLE</span><span class="w"> </span><span class="n">l1</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span><span class="n">l1</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span><span class="n">l2</span><span class="o">=</span><span class="mi">1</span><span class="w"> </span><span class="c1">-- 名称不能重复，取值可以重复
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">MARK</span><span class="w"> </span><span class="n">ma</span><span class="p">,</span><span class="n">ma</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LABEL</span><span class="w"> </span><span class="n">lab1</span><span class="o">=</span><span class="n">l1</span><span class="p">,</span><span class="n">lab1</span><span class="o">=</span><span class="n">l2</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3 不存在的策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="p">..</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p_not_exist</span><span class="w"> </span><span class="p">..;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">..</span><span class="w"> </span><span class="n">SECURED</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="p">(</span><span class="n">access_policy</span><span class="o">=</span><span class="n">p_not_exist</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 4 重复的策略
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="p">..</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p1</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="n">p2</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="p">..</span><span class="w"> </span><span class="n">SECURED</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="p">(</span><span class="n">access_policy</span><span class="o">=</span><span class="n">p1</span><span class="p">,</span><span class="w"> </span><span class="n">access_policy</span><span class="o">=</span><span class="n">p2</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 5 ..
+</span></span></span></code></pre></div><h3 id="222-配置参数和文件">2.2.2 配置参数和文件<a hidden class="anchor" aria-hidden="true" href="#222-配置参数和文件">#</a></h3>
+<ol>
+<li>新增GUC参数write_label<br>
+会话级，默认为空，控制用户向表中写数据时，为数据赋予的标签</li>
+<li>新增GUC参数read_label<br>
+会话级，默认为空，控制用户从表中读数据时，使用的标签</li>
+</ol>
+<h3 id="223-数据相关性">2.2.3 数据相关性<a hidden class="anchor" aria-hidden="true" href="#223-数据相关性">#</a></h3>
+<p>无</p>
+<h2 id="23-接口信息">2.3 接口信息<a hidden class="anchor" aria-hidden="true" href="#23-接口信息">#</a></h2>
+<ol>
+<li>
+<p>新增SQL语法：ACCESS POLICY</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="err">$</span><span class="n">policy_name</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="k">LEVEL</span><span class="w"> </span><span class="err">$</span><span class="n">level_name</span><span class="o">=</span><span class="err">$</span><span class="n">level_number</span><span class="w"> </span><span class="p">[,</span><span class="w"> </span><span class="err">$</span><span class="n">level_name</span><span class="o">=</span><span class="err">$</span><span class="n">level_number</span><span class="w"> </span><span class="p">...]]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="n">MARK</span><span class="w"> </span><span class="err">$</span><span class="n">mark_name</span><span class="w"> </span><span class="p">[,</span><span class="w"> </span><span class="err">$</span><span class="n">mark_name</span><span class="w"> </span><span class="p">...]]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">LABEL</span><span class="w"> </span><span class="err">$</span><span class="n">label_name</span><span class="o">=</span><span class="err">{$</span><span class="n">level_name</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="err">$</span><span class="n">mark_name</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="err">$</span><span class="n">level_name</span><span class="p">:</span><span class="err">$</span><span class="n">mark_name</span><span class="w"> </span><span class="p">[,</span><span class="w"> </span><span class="p">...]</span><span class="err">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="err">$</span><span class="n">policy_name</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="k">ADD</span><span class="w"> </span><span class="k">LEVEL</span><span class="w"> </span><span class="err">$</span><span class="n">level_name</span><span class="o">=</span><span class="err">$</span><span class="n">level_number</span><span class="w"> </span><span class="p">[,</span><span class="w"> </span><span class="err">$</span><span class="n">level_name</span><span class="o">=</span><span class="err">$</span><span class="n">level_number</span><span class="w"> </span><span class="p">...]]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="k">ALTER</span><span class="w"> </span><span class="k">LEVEL</span><span class="w"> </span><span class="err">$</span><span class="n">level_name</span><span class="o">=</span><span class="err">$</span><span class="n">level_number</span><span class="w"> </span><span class="p">[,</span><span class="w"> </span><span class="err">$</span><span class="n">level_name</span><span class="o">=</span><span class="err">$</span><span class="n">level_number</span><span class="w"> </span><span class="p">...]]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="k">DROP</span><span class="w"> </span><span class="k">LEVEL</span><span class="w"> </span><span class="err">$</span><span class="n">level_name</span><span class="w"> </span><span class="p">[,</span><span class="w"> </span><span class="err">$</span><span class="n">level_name</span><span class="w"> </span><span class="p">...]]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="k">ADD</span><span class="w"> </span><span class="n">MARK</span><span class="w"> </span><span class="p">..]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="k">ALTER</span><span class="w"> </span><span class="n">MARK</span><span class="w"> </span><span class="p">..]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="k">DROP</span><span class="w"> </span><span class="n">MARK</span><span class="w"> </span><span class="p">..]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="k">ADD</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="p">..]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="k">ALTER</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="p">..]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="k">DROP</span><span class="w"> </span><span class="n">LABEL</span><span class="w"> </span><span class="p">..]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="p">[</span><span class="k">IF</span><span class="w"> </span><span class="k">EXISTS</span><span class="p">]</span><span class="w"> </span><span class="err">$</span><span class="n">policy_name</span><span class="w"> </span><span class="p">[,</span><span class="w"> </span><span class="err">$</span><span class="n">policy_name</span><span class="p">];</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>扩展SQL语法：CREATE/ATLER USER</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="o">/</span><span class="k">ALTER</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="err">$</span><span class="n">user_name</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">[</span><span class="k">ACCESS</span><span class="w"> </span><span class="n">POLICY</span><span class="w"> </span><span class="err">$</span><span class="n">policy_name</span><span class="w"> </span><span class="k">WRITE</span><span class="w"> </span><span class="err">$</span><span class="n">label_list</span><span class="w"> </span><span class="k">READ</span><span class="w"> </span><span class="err">$</span><span class="n">label_list</span><span class="p">]</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>扩展SQL语法：CREATE/ALTER TABLE</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="err">$</span><span class="k">table_name</span><span class="w"> </span><span class="p">..</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="p">(</span><span class="n">access_policy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="err">$</span><span class="n">policy_name</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="err">$</span><span class="k">table_name</span><span class="w"> </span><span class="p">..</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="p">(</span><span class="n">access_policy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">none</span><span class="p">);</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>新增会话级GUC参数write_label</p>
+</li>
+<li>
+<p>新增会话级GUC参数read_label</p>
+</li>
+<li>
+<p>新增系统表vb_access_policy</p>
+</li>
+<li>
+<p>新增系统表vb_access_level</p>
+</li>
+<li>
+<p>新增系统表vb_access_mark</p>
+</li>
+<li>
+<p>新增系统表vb_access_label</p>
+</li>
+<li>
+<p>扩展系统表pg_authid：新增2列rolaccpol，rolacclab</p>
+</li>
+<li>
+<p>新增系统函数has_mac_permission(uint64, uint64)</p>
+</li>
+</ol>
+<h2 id="24-正反向行为">2.4 正反向行为<a hidden class="anchor" aria-hidden="true" href="#24-正反向行为">#</a></h2>
+<h3 id="241-生效说明">2.4.1 生效说明<a hidden class="anchor" aria-hidden="true" href="#241-生效说明">#</a></h3>
+<p>直接通过SQL语法，可创建、设置访问策略。并通过查看系统表，判断是否操作成功，相关系统表包括：vb_access_policy、vb_access_level、vb_access_mark、vb_access_label、pg_class、pg_authid<br>
+SELECT、UPDATE、DELETE表时，判断查询结果、操作结果，判断访问控制是否生效。</p>
+<h3 id="242-提示信息">2.4.2 提示信息<a hidden class="anchor" aria-hidden="true" href="#242-提示信息">#</a></h3>
+<h3 id="243-约束和依赖">2.4.3 约束和依赖<a hidden class="anchor" aria-hidden="true" href="#243-约束和依赖">#</a></h3>
+<ol>
+<li>为表设置访问策略：当前版本，只支持在创建表阶段，设置访问策略，不支持为已存在的表设置访问策略。</li>
+<li>修改表的访问策略：只支持取消表的访问策略，不支持修改表的访问策略</li>
+</ol>
+<h2 id="25-安全性">2.5 安全性<a hidden class="anchor" aria-hidden="true" href="#25-安全性">#</a></h2>
+<h3 id="251-权限控制">2.5.1 权限控制<a hidden class="anchor" aria-hidden="true" href="#251-权限控制">#</a></h3>
+<p>强制访问控制，与自主访问控制、行级访问控制共存，即当主体访问客体时，同时生效。</p>
+<h3 id="252-审计">2.5.2 审计<a hidden class="anchor" aria-hidden="true" href="#252-审计">#</a></h3>
+<p>审计新增的DDL语法：CREATE/ALTER/DROP ACCESS POLICY。</p>
+<h2 id="26-影响范围">2.6 影响范围<a hidden class="anchor" aria-hidden="true" href="#26-影响范围">#</a></h2>
+<h3 id="261-对已有udtudf-ecpg的影响">2.6.1 对已有UDT,UDF, ECPG的影响<a hidden class="anchor" aria-hidden="true" href="#261-对已有udtudf-ecpg的影响">#</a></h3>
+<p>无</p>
+<h3 id="262-对系统函数的影响">2.6.2 对系统函数的影响<a hidden class="anchor" aria-hidden="true" href="#262-对系统函数的影响">#</a></h3>
+<p>无</p>
+<h3 id="263-对系统catalog的影响">2.6.3 对系统CATALOG的影响<a hidden class="anchor" aria-hidden="true" href="#263-对系统catalog的影响">#</a></h3>
+<ol>
+<li>新增vb_access_policy</li>
+<li>新增vb_access_level</li>
+<li>新增vb_access_mark</li>
+<li>新增vb_access_label</li>
+<li>扩展pg_authid：新增2列rolaccpol，rolacclab</li>
+</ol>
+<h3 id="264-对xlog日志格式数据格式的影响">2.6.4 对xlog日志格式、数据格式的影响<a hidden class="anchor" aria-hidden="true" href="#264-对xlog日志格式数据格式的影响">#</a></h3>
+<p>无</p>
+<h3 id="265-与其他功能交互时的行为表现">2.6.5 与其他功能交互时的行为表现<a hidden class="anchor" aria-hidden="true" href="#265-与其他功能交互时的行为表现">#</a></h3>
+<p>与自主访问控制、行级访问控制交互：三者同时生效，互不影响</p>
+<h3 id="266-版本兼容性">2.6.6 版本兼容性<a hidden class="anchor" aria-hidden="true" href="#266-版本兼容性">#</a></h3>
+<p>本版本第1次支持，新创建表时，支持设置访问策略，不支持为存量表设置访问策略。</p>
+<h3 id="267-用户行为变更">2.6.7 用户行为变更<a hidden class="anchor" aria-hidden="true" href="#267-用户行为变更">#</a></h3>
+<ol>
+<li>新增SQL语法：ACCESS POLICY</li>
+<li>扩展SQL语法：CREATE/ATLER USER</li>
+<li>扩展SQL语法：CREATE/ALTER TABLE</li>
+<li>新增会话级GUC参数write_label</li>
+<li>新增会话级GUC参数read_label</li>
+<li>新增系统表vb_access_policy</li>
+<li>新增系统表vb_access_level</li>
+<li>新增系统表vb_access_mark</li>
+<li>新增系统表vb_access_label</li>
+<li>扩展系统表pg_authid：新增2列rolaccpol，rolacclab</li>
+</ol>
+<h2 id="27-指标相关">2.7 指标相关<a hidden class="anchor" aria-hidden="true" href="#27-指标相关">#</a></h2>
+<h3 id="271-关键资源指标">2.7.1 关键资源指标<a hidden class="anchor" aria-hidden="true" href="#271-关键资源指标">#</a></h3>
+<p>CPU：<br>
+内存：<br>
+外存：</p>
+<h3 id="272-系统性指标">2.7.2 系统性指标<a hidden class="anchor" aria-hidden="true" href="#272-系统性指标">#</a></h3>
+<h3 id="273-性能指标">2.7.3 性能指标<a hidden class="anchor" aria-hidden="true" href="#273-性能指标">#</a></h3>
+<h2 id="28-测试建议">2.8 测试建议<a hidden class="anchor" aria-hidden="true" href="#28-测试建议">#</a></h2>
+<h2 id="28-其他说明">2.8 其他说明<a hidden class="anchor" aria-hidden="true" href="#28-其他说明">#</a></h2>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/%E8%AE%BF%E9%97%AE%E6%8E%A7%E5%88%B6/">访问控制</a></li><li><a href="http://localhost:1313/tags/%E9%9C%80%E6%B1%82%E6%96%87%E6%A1%A3/">需求文档</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/projectdocs/15-requirement-logical-replication/">海量 15 需求 逻辑复制性能优化</a></li><li><a href="/posts/projectdocs/14-design-mac/">海量 mac 设计</a></li><li><a href="/posts/projectdocs/13-requirement-tde/">海量 透明加密 需求</a></li><li><a href="/posts/projectdocs/11-requirement-logical-replication/">海量 11 需求 逻辑复制性能优化</a></li><li><a href="/posts/projectdocs/10-requirement-ssl/">海量 10 需求 SSL协议</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./项目文档</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

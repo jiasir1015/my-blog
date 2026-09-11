@@ -11,7 +11,7 @@
 <meta name="description" content="">
 <meta name="author" content="Me">
 <link rel="canonical" href="http://localhost:1313/">
-<link crossorigin="anonymous" href="/assets/css/stylesheet.c4b1cb4d6ac76f08d6d9adf3f8ae2ef1847c2bc8378bc8d6a67e24a8690b647a.css" integrity="sha256-xLHLTWrHbwjW2a3z&#43;K4u8YR8K8g3i8jWpn4kqGkLZHo=" rel="preload stylesheet" as="style">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
 <link rel="icon" href="http://localhost:1313/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
@@ -145,6 +145,16 @@
                     <span>归档</span>
                 </a>
             </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
         </ul>
     </nav>
 </header>
@@ -163,6 +173,7 @@
                 <li><a href="/archives/">📦 Archives (归档)</a></li>
                 <li><a href="/search/">🔍 Search (搜索)</a></li>
                 <li><a href="/about.md/">👨‍💻 About Me (关于)</a></li>
+                <li><a href="/admin/">✍️ Write (写作)</a></li>
                 <li><a href="/index.xml">📡 RSS Feed</a></li>
             </ul>
         </div>
@@ -173,39 +184,83 @@
             <div class="tag-cloud">
                 
                 <a href="http://localhost:1313/tags/postgresql/" class="tag-item">
-                    PostgreSQL <span class="tag-count">(2)</span>
+                    PostgreSQL <span class="tag-count">(45)</span>
                 </a>
                 
-                <a href="http://localhost:1313/tags/bubblefish/" class="tag-item">
-                    BubbleFish <span class="tag-count">(1)</span>
+                <a href="http://localhost:1313/tags/%E5%8A%A0%E5%AF%86/" class="tag-item">
+                    加密 <span class="tag-count">(17)</span>
                 </a>
                 
-                <a href="http://localhost:1313/tags/dfs/" class="tag-item">
-                    DFS <span class="tag-count">(1)</span>
+                <a href="http://localhost:1313/tags/%E5%B7%A5%E5%85%B7/" class="tag-item">
+                    工具 <span class="tag-count">(15)</span>
                 </a>
                 
-                <a href="http://localhost:1313/tags/extension/" class="tag-item">
-                    Extension <span class="tag-count">(1)</span>
+                <a href="http://localhost:1313/tags/%E9%9C%80%E6%B1%82%E6%96%87%E6%A1%A3/" class="tag-item">
+                    需求文档 <span class="tag-count">(14)</span>
                 </a>
                 
-                <a href="http://localhost:1313/tags/leetcode/" class="tag-item">
-                    LeetCode <span class="tag-count">(1)</span>
+                <a href="http://localhost:1313/tags/%E8%AE%BE%E8%AE%A1%E6%96%87%E6%A1%A3/" class="tag-item">
+                    设计文档 <span class="tag-count">(13)</span>
                 </a>
                 
-                <a href="http://localhost:1313/tags/logical-replication/" class="tag-item">
-                    Logical Replication <span class="tag-count">(1)</span>
+                <a href="http://localhost:1313/tags/%E5%AE%A1%E8%AE%A1/" class="tag-item">
+                    审计 <span class="tag-count">(11)</span>
                 </a>
                 
-                <a href="http://localhost:1313/tags/mvcc/" class="tag-item">
-                    MVCC <span class="tag-count">(1)</span>
+                <a href="http://localhost:1313/tags/%E8%BA%AB%E4%BB%BD%E8%AE%A4%E8%AF%81/" class="tag-item">
+                    身份认证 <span class="tag-count">(10)</span>
                 </a>
                 
-                <a href="http://localhost:1313/tags/sqlserver/" class="tag-item">
-                    SQLServer <span class="tag-count">(1)</span>
+                <a href="http://localhost:1313/tags/oracle/" class="tag-item">
+                    Oracle <span class="tag-count">(9)</span>
                 </a>
                 
-                <a href="http://localhost:1313/tags/transaction/" class="tag-item">
-                    Transaction <span class="tag-count">(1)</span>
+                <a href="http://localhost:1313/tags/%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E/" class="tag-item">
+                    存储引擎 <span class="tag-count">(9)</span>
+                </a>
+                
+                <a href="http://localhost:1313/tags/vastbase/" class="tag-item">
+                    Vastbase <span class="tag-count">(8)</span>
+                </a>
+                
+                <a href="http://localhost:1313/tags/%E6%9F%A5%E8%AF%A2%E4%BC%98%E5%8C%96/" class="tag-item">
+                    查询优化 <span class="tag-count">(8)</span>
+                </a>
+                
+                <a href="http://localhost:1313/tags/%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96/" class="tag-item">
+                    性能优化 <span class="tag-count">(7)</span>
+                </a>
+                
+                <a href="http://localhost:1313/tags/%E9%80%BB%E8%BE%91%E5%A4%8D%E5%88%B6/" class="tag-item">
+                    逻辑复制 <span class="tag-count">(7)</span>
+                </a>
+                
+                <a href="http://localhost:1313/tags/%E5%AE%89%E5%85%A8/" class="tag-item">
+                    安全 <span class="tag-count">(6)</span>
+                </a>
+                
+                <a href="http://localhost:1313/tags/%E6%B5%8B%E8%AF%95%E7%94%A8%E4%BE%8B/" class="tag-item">
+                    测试用例 <span class="tag-count">(5)</span>
+                </a>
+                
+                <a href="http://localhost:1313/tags/%E8%AE%BF%E9%97%AE%E6%8E%A7%E5%88%B6/" class="tag-item">
+                    访问控制 <span class="tag-count">(5)</span>
+                </a>
+                
+                <a href="http://localhost:1313/tags/ssl/" class="tag-item">
+                    SSL <span class="tag-count">(4)</span>
+                </a>
+                
+                <a href="http://localhost:1313/tags/%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84%E4%B8%8E%E7%AE%97%E6%B3%95/" class="tag-item">
+                    数据结构与算法 <span class="tag-count">(4)</span>
+                </a>
+                
+                <a href="http://localhost:1313/tags/opengauss/" class="tag-item">
+                    OpenGauss <span class="tag-count">(3)</span>
+                </a>
+                
+                <a href="http://localhost:1313/tags/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="tag-item">
+                    操作系统 <span class="tag-count">(3)</span>
                 </a>
                 
             </div>
@@ -353,11 +408,9 @@
         <h1><img src='/avatar.jpg' class='home-avatar'> Hi there 👋</h1>
     </header>
     <div class="entry-content">
-        <pre><code>我是贾旭辉，一名程序员💻，目前在北京海量数据担任存储引擎组的内核开发。
+        <pre><code>我是贾旭辉，一名程序员，目前在北京海量数据担任存储引擎组的内核开发。
 专注于存储引擎、性能优化等方面的工作。
 这里记录我的技术笔记、Debug踩坑实录，也会记录一些好的文章的阅读心得📖。
-记录并理解，才算真正掌握。
-希望不久的将来，我也能被尊称为架构设计师😂.
 🛠️ Tech Stack: C, C++, A little bit Java, Linux System Programming.
 </code></pre>
 
@@ -438,32 +491,32 @@
                 <div class="category-section">
                     <div class="category-header">
                         
-                        <h3 class="category-title">>_ DATABASE</h3>
+                        <h3 class="category-title">>_ POSTGRESQL</h3>
                         
-                        <a class="category-more" href="http://localhost:1313/categories/database">View All →</a>
+                        <a class="category-more" href="http://localhost:1313/categories/postgresql">View All →</a>
                     </div>
 
                     <div class="category-post-list">
                         
                         
                         <article class="category-post-entry">
-                            <span class="post-date">2026-02-27</span>
-                            <a class="post-link" href="http://localhost:1313/posts/database/babelfish_build/">
-                                <span class="post-title">Babelfish搭建指南</span>
+                            <span class="post-date">2026-09-11</span>
+                            <a class="post-link" href="http://localhost:1313/posts/postgresql/postgresinternal/">
+                                <span class="post-title">PostgresInternal</span>
                             </a>
                         </article>
                         
                         <article class="category-post-entry">
-                            <span class="post-date">2026-02-25</span>
-                            <a class="post-link" href="http://localhost:1313/posts/database/forbid-extension/">
-                                <span class="post-title">避免用户错误使用到pg插件</span>
+                            <span class="post-date">2025-01-21</span>
+                            <a class="post-link" href="http://localhost:1313/posts/postgresql/1-1-install-postgresql/">
+                                <span class="post-title">PostgreSQL 1-1 源码安装 (linux / macos)</span>
                             </a>
                         </article>
                         
                         <article class="category-post-entry">
-                            <span class="post-date">2026-02-10</span>
-                            <a class="post-link" href="http://localhost:1313/posts/database/logical_replication/">
-                                <span class="post-title">逻辑复制</span>
+                            <span class="post-date">2025-01-21</span>
+                            <a class="post-link" href="http://localhost:1313/posts/postgresql/1-2-postgresql-struct/">
+                                <span class="post-title">PostgreSQL 1-2 进程架构</span>
                             </a>
                         </article>
                         
@@ -482,18 +535,208 @@
                 <div class="category-section">
                     <div class="category-header">
                         
-                        <h3 class="category-title">>_ ALGORITHM</h3>
+                        <h3 class="category-title">>_ 项目文档</h3>
                         
-                        <a class="category-more" href="http://localhost:1313/categories/algorithm">View All →</a>
+                        <a class="category-more" href="http://localhost:1313/categories/%E9%A1%B9%E7%9B%AE%E6%96%87%E6%A1%A3">View All →</a>
                     </div>
 
                     <div class="category-post-list">
                         
                         
                         <article class="category-post-entry">
-                            <span class="post-date">2026-02-24</span>
-                            <a class="post-link" href="http://localhost:1313/posts/algorithm/dfs/">
-                                <span class="post-title">深度优先遍历</span>
+                            <span class="post-date">2025-02-25</span>
+                            <a class="post-link" href="http://localhost:1313/posts/projectdocs/1-testcase-oracle-crypto-func/">
+                                <span class="post-title">海量 1 用例 oracle加密函数</span>
+                            </a>
+                        </article>
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2025-02-25</span>
+                            <a class="post-link" href="http://localhost:1313/posts/projectdocs/1-design-oracle-crypto-func/">
+                                <span class="post-title">海量 1 设计 oracle加密函数</span>
+                            </a>
+                        </article>
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2025-02-19</span>
+                            <a class="post-link" href="http://localhost:1313/posts/projectdocs/1-requirement-oracle-crypto-func/">
+                                <span class="post-title">海量 1 需求 oracle加密函数</span>
+                            </a>
+                        </article>
+                        
+                    </div>
+                </div>
+                
+            
+
+                
+                
+                
+                
+
+                
+                
+                <div class="category-section">
+                    <div class="category-header">
+                        
+                        <h3 class="category-title">>_ 安全</h3>
+                        
+                        <a class="category-more" href="http://localhost:1313/categories/%E5%AE%89%E5%85%A8">View All →</a>
+                    </div>
+
+                    <div class="category-post-list">
+                        
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2026-06-11</span>
+                            <a class="post-link" href="http://localhost:1313/posts/security/1-security-architecture/">
+                                <span class="post-title">安全架构</span>
+                            </a>
+                        </article>
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2025-01-21</span>
+                            <a class="post-link" href="http://localhost:1313/posts/security/1-1-cryptography/">
+                                <span class="post-title">传统安全 1 密码学</span>
+                            </a>
+                        </article>
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2025-01-21</span>
+                            <a class="post-link" href="http://localhost:1313/posts/security/1-3-network-attack/">
+                                <span class="post-title">传统安全 3 网络安全</span>
+                            </a>
+                        </article>
+                        
+                    </div>
+                </div>
+                
+            
+
+                
+                
+                
+                
+
+                
+                
+                <div class="category-section">
+                    <div class="category-header">
+                        
+                        <h3 class="category-title">>_ 数据库</h3>
+                        
+                        <a class="category-more" href="http://localhost:1313/categories/%E6%95%B0%E6%8D%AE%E5%BA%93">View All →</a>
+                    </div>
+
+                    <div class="category-post-list">
+                        
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2026-07-27</span>
+                            <a class="post-link" href="http://localhost:1313/posts/database/vexdb/">
+                                <span class="post-title">国测 vexdb</span>
+                            </a>
+                        </article>
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2025-08-28</span>
+                            <a class="post-link" href="http://localhost:1313/posts/database/vastbase-ssl/">
+                                <span class="post-title">Vastbase SSL安全传输</span>
+                            </a>
+                        </article>
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2025-07-29</span>
+                            <a class="post-link" href="http://localhost:1313/posts/database/e100/">
+                                <span class="post-title">e100</span>
+                            </a>
+                        </article>
+                        
+                    </div>
+                </div>
+                
+            
+
+                
+                
+                
+                
+
+                
+                
+                <div class="category-section">
+                    <div class="category-header">
+                        
+                        <h3 class="category-title">>_ 工具</h3>
+                        
+                        <a class="category-more" href="http://localhost:1313/categories/%E5%B7%A5%E5%85%B7">View All →</a>
+                    </div>
+
+                    <div class="category-post-list">
+                        
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2026-08-13</span>
+                            <a class="post-link" href="http://localhost:1313/posts/tools/cpp/">
+                                <span class="post-title">c&#43;&#43;</span>
+                            </a>
+                        </article>
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2026-07-27</span>
+                            <a class="post-link" href="http://localhost:1313/posts/tools/claude-code-vscode/">
+                                <span class="post-title">国测 claude</span>
+                            </a>
+                        </article>
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2026-07-03</span>
+                            <a class="post-link" href="http://localhost:1313/posts/tools/ai/">
+                                <span class="post-title">ai</span>
+                            </a>
+                        </article>
+                        
+                    </div>
+                </div>
+                
+            
+
+                
+                
+                
+                
+
+                
+                
+                <div class="category-section">
+                    <div class="category-header">
+                        
+                        <h3 class="category-title">>_ 数据结构与算法</h3>
+                        
+                        <a class="category-more" href="http://localhost:1313/categories/%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84%E4%B8%8E%E7%AE%97%E6%B3%95">View All →</a>
+                    </div>
+
+                    <div class="category-post-list">
+                        
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2025-01-21</span>
+                            <a class="post-link" href="http://localhost:1313/posts/algorithm/1-summary/">
+                                <span class="post-title">数据结构与算法 1 总结</span>
+                            </a>
+                        </article>
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2025-01-21</span>
+                            <a class="post-link" href="http://localhost:1313/posts/algorithm/2-coding-interview-guide/">
+                                <span class="post-title">数据结构与算法 2 剑指offer</span>
+                            </a>
+                        </article>
+                        
+                        <article class="category-post-entry">
+                            <span class="post-date">2025-01-21</span>
+                            <a class="post-link" href="http://localhost:1313/posts/algorithm/3-sorting/">
+                                <span class="post-title">数据结构与算法 3 排序</span>
                             </a>
                         </article>
                         

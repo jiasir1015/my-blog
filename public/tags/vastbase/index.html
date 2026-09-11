@@ -10,7 +10,7 @@
 <meta name="description" content="">
 <meta name="author" content="Me">
 <link rel="canonical" href="http://localhost:1313/tags/vastbase/">
-<link crossorigin="anonymous" href="/assets/css/stylesheet.c08b01ada1d6770629b7b7d5f450dcf46e8c642e99338041dc14125ffeaed182.css" integrity="sha256-wIsBraHWdwYpt7fV9FDc9G6MZC6ZM4BB3BQSX/6u0YI=" rel="preload stylesheet" as="style">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
 <link rel="icon" href="http://localhost:1313/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
@@ -111,13 +111,13 @@
         </div>
         <ul id="menu">
             <li>
-                <a href="http://localhost:1313/search/" title="Search (Alt &#43; /)" accesskey=/>
-                    <span>Search</span>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
                 </a>
             </li>
             <li>
-                <a href="http://localhost:1313/categories/" title="分类">
-                    <span>分类</span>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
                 </a>
             </li>
             <li>
@@ -128,6 +128,16 @@
             <li>
                 <a href="http://localhost:1313/archives/" title="归档">
                     <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
                 </a>
             </li>
         </ul>
@@ -142,14 +152,153 @@
 
 <article class="post-entry tag-entry"> 
   <header class="entry-header">
-    <h2 class="entry-hint-parent">关于我
+    <h2 class="entry-hint-parent">PostgreSQL 3-13 Vastbase 逻辑复制
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>2 使用 2.1 发布端 配置
+# vb echo &#34;wal_level=logical&#34; &gt;&gt; $GAUSSHOME/data/postgresql.conf echo &#34;max_replication_slots=4&#34; &gt;&gt; $GAUSSHOME/data/postgresql.conf echo &#34;max_wal_senders=4&#34; &gt;&gt; $GAUSSHOME/data/postgresql.conf # echo &#34;max_worker_processes=8&#34; &gt;&gt; $GAUSSHOME/data/postgresql.conf echo &#34;max_logical_replication_workers=32&#34; &gt;&gt; $GAUSSHOME/data/postgresql.conf echo &#34;listen_addresses=&#39;*&#39;&#34; &gt;&gt; $GAUSSHOME/data/postgresql.conf sed -i &#39;1i host all all 0.0.0.0/0 md5\n&#39; $GAUSSHOME/data/pg_hba.conf echo &#34;host replication all 0.0.0.0/0 md5&#34; &gt;&gt; $GAUSSHOME/data/pg_hba.conf # host all all 0.0.0.0/0 md5 psql -d postgres -c &#34;SELECT name,setting FROM pg_settings WHERE name in (&#39;wal_level&#39;, &#39;max_replication_slots&#39;, &#39;max_wal_senders&#39;, &#39;max_worker_processes&#39;, &#39;max_logical_replication_workers&#39;)&#34; 创建基表
+CREATE DATABASE pubdb; \c pubdb CREATE TABLE pt1(c1 INT,c2 TEXT); CREATE TABLE pt2(c1 INT, c2 TEXT); INSERT INTO pt1 VALUES (1,&#39;data1-1&#39;), (2,&#39;data1-2&#39;); INSERT INTO pt1 VALUES (1,&#39;data2-1&#39;), (2,&#39;data2-2&#39;); 创建发布用户
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-11-27 19:07:00 +0800 CST'>November 27, 2025</span>&nbsp;·&nbsp;<span>24 min</span>&nbsp;·&nbsp;<span>4975 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 3-13 Vastbase 逻辑复制" href="http://localhost:1313/posts/postgresql/3-13-vb-rep/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">Vastbase 数据库研发过程安全分析报告
     </h2>
   </header>
   <div class="entry-content">
     <p></p>
   </div>
-  <footer class="entry-footer"><span title='2026-02-10 16:15:52 +0800 CST'>February 10, 2026</span>&nbsp;·&nbsp;<span>0 min</span>&nbsp;·&nbsp;<span>0 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
-  <a class="entry-link" aria-label="post link to 关于我" href="http://localhost:1313/about/about/"></a>
+  <footer class="entry-footer"><span title='2026-08-14 17:53:00 +0800 CST'>August 14, 2026</span>&nbsp;·&nbsp;<span>0 min</span>&nbsp;·&nbsp;<span>0 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to Vastbase 数据库研发过程安全分析报告" href="http://localhost:1313/posts/compliance/sdl-process-security/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">Vastbase SSL安全传输
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 基于SSL证书实现身份认证 在应用与数据库传输数据时，为避免攻击者对数据进行窃听、篡改、伪造、重放等攻击，Vastbae支持采用SSL协议保障数据机密性与完整性。在SSL协议协商密钥的过程中，应用与数据库需通过证书验证对方身份，同时，该证书也可作为登入数据库的身份凭证。
+此处介绍生成证书，并基于证书配置SSL协议，同时基于证书实现身份认证，操作流程可分为以下3个阶段：
+一、生成私钥与证书 二、数据库端配置证书与私钥 三、应用端配置证书与私钥 一、生成私钥与证书 此处介绍基于openssl工具，生成自签名证书的流程
+创建存放私钥与证书的文件夹
+mkdir cadir cd cadir mkdir ./demoCA ./demoCA/newcerts ./demoCA/private echo &#39;01&#39;&gt;./demoCA/serial touch ./demoCA/index.txt 配置openssl工具
+从Vastbase安装包中，获取openssl工具以及openss配置文件。假设Vastbae安装包存放在$GAUSSHOME目录。
+cp $GAUSSHOME/bin/openssl ./ export PATH=`pwd`:$PATH which openssl # 确保openssl来源于Vastbase安装包，避免因版本不同造成证书不可用 openssl version cp $GAUSSHOME/share/sslcert/gsql/openssl.cnf ./ export OPENSSL_CONF=`pwd`/openssl.cnf 创建CA私钥、CA证书
+openssl ecparam -genkey -name SM2 -out demoCA/private/cakey.pem openssl req -new -config openssl.cnf -key demoCA/private/cakey.pem -subj /C=CN/ST=BJ/L=HaiDian/O=VAST/OU=SEC/CN=CA -out cacert.req openssl ca -selfsign -config openssl.cnf -batch -keyfile demoCA/private/cakey.pem -in cacert.req -out demoCA/cacert.pem 创建数据库私钥、数据库证书
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-08-28 09:47:00 +0800 CST'>August 28, 2025</span>&nbsp;·&nbsp;<span>6 min</span>&nbsp;·&nbsp;<span>1153 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to Vastbase SSL安全传输" href="http://localhost:1313/posts/database/vastbase-ssl/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">数据库安全 重构审计
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 审计的背景 1.1 审计的原理 在使用数据库存取数据的大部分场景中，数据库具有以下特点：
+对象多：一个数据库集群中有多个database对象，1个database对象中有多个schema对象，1个schema对象中有多个table、index等对象 用户多：一个数据库中，有多个用户，每个用户可访问的数据库对象不同 应用多：多个应用将数据存储在同一数据库集群中，并同时访问数据库集群 操作多：数据库提供丰富的功能，包括DDL、DML、DCL、运维等 运行久：一个数据库集群，可能会保持数十年运行 审计的主要目的，使记录数据运行过程中发生了哪些事件。审计的3要素是：
+主体：一般指数据库用户 客体：一般指数据库对象，包括：集群、数据对象（database、schema、table、index、function等）、用户等 操作：主体对客体的操作，比如某个用户访问了某个表 1.2 审计的目的 审计具有以下重要意义：
+合法合规：《网络安全法》等法律法规与表中中，要求应用通过《等保测评》等标准，标准中要求应用具备审计功能 故障检测：当数据库出现故障时，协助快速定位问题 攻击检测：通过检查审计日志，可判断是否发生网络安全攻击事件 例行维护：通过检查审计日志，可跟踪对某个对象的访问信息 … 等保测评要求标准（GB/T 28448）中，对审计的要求如下：
+审计范围 全面性 细粒度：登录、访问、修改、删除等 审计内容 用户行为：登录、登出、权限变更 数据访问：敏感数据查询、插入、更新、删除等 异常行为：登录失败、非法访问 审计记录 详细性：时间戳、用户标识、操作类型、操作结果、IP地址等 不可篡改：真实性、完整性 存储安全：未经授权的访问和修改 审计管理 审计策略：审计的目标、范围、内容和频率 审计分析：定期分析审计记录 审计报告 1.3 审计的功能 审计功能包含以下3个部分：
+配置审计功能：日志存储策略等 设置审计范围：设置哪类操作、哪类对象、..需要给设计 生成审计日志：运行时，生成审计日志 管理审计日志：查询，删除，归档审计日志 1.4 oracle审计 oracle审计的发展：
+oracle 8i及更早：支持传统审计 oracle 12c：新增支持统一审计 oracle 23ai：不支持传统审计，仅支持统一审计 oracle统一审计的使用：
+-- 1 设置审计范围：创建审计策略 CREATE AUDIT POLICY ap1 PRIVILEGES CREATE TABLE, ALTER USER -- privilege 子句，记录所有使用CreateTable, AlterUser权限的操作，oracle 12c中，支持256种权限 ACTIONS SELECT,INSERT,UPDATE ON t1 -- aciton 子句，记录所有对表t1执行SELECT,INSERT,UPDATE的操作 ROLES r1; -- role 子句，记录所有使用r1角色的操作 -- 2 启用审计策略 AUDIT POLICY ap1; -- 3 查看审计日志（完整日志） SELECT * FROM UNIFIED_AUDIT_TRAIL; -- 查看关键日志 SELECT * FROM DBA_AUDIT_TRAIL; -- 其他：DBA_COMMON_AUDIT_TRAIL, DBA_AUDIT_SESSION, DBA_AUDIT_OBJECT, DBA_FGA_AUDIT_TRAIL os_username | username | userhost | terminal | timestamp | owner | obj_name | action | action_name | ------------&#43;----------&#43;----------&#43;----------&#43;-----------&#43;-------&#43;----------&#43;--------&#43;-------------&#43; | new_owner | new_name | obj_privilege | sys_privilege | admin_option | grantee | audit_option | ses_actions | &#43;----------&#43;----------&#43;---------------&#43;---------------&#43;--------------&#43;---------&#43;--------------&#43;-------------&#43; logoff_time | logoff_lread | logoff_pwrite | logoff_dlock | comment_text | sessionid | entryid | statementid | returncode | &#43;-----------&#43;--------------&#43;---------------&#43;--------------&#43;--------------&#43;-----------&#43;---------&#43;-------------&#43;------------&#43; | priv_used | client_id | econtext_id | session_cpu | extended_timestamp | proxy_sessionid | global_uid | instance_number | &#43;-----------&#43;-----------&#43;-------------&#43;-------------&#43;--------------------&#43;-----------------&#43;------------&#43;-----------------&#43; os_process | transactionid | scn | sql_bind | sql_text | obj_edition_name | dbid | rls_info | current_user | &#43;----------&#43;---------------&#43;-----&#43;----------&#43;----------&#43;------------------&#43;------&#43;----------&#43;--------------&#43; 其中，可设置的权限、操作等范围如下：
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-03-31 19:24:00 +0800 CST'>March 31, 2025</span>&nbsp;·&nbsp;<span>3 min</span>&nbsp;·&nbsp;<span>504 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 数据库安全 重构审计" href="http://localhost:1313/posts/security/vastbase-audit-refactor/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">Vastbase
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 准备开发环境 1.1 登录远程windows 连接vpn
+下载vpn软件，使用入职时他人帮忙申请的vpn账号登录 登录远程windows电脑
+使用入职时他人帮忙申请的远程windows账号 登录gitlab
+入职时，有人已帮忙申请gutlab账号。http://172.16.19.246 查看vastbase代码
+http://172.16.19.246/VastbaseG100/src 默认无权限，可能搜不到，请找小组领导开通权限 1.2 准备vastbase编译环境 在远程windows中，登录远程centos
+配置git
+生成rsa密钥，配置到gitlab中
+下载vastbase源码
+mkdir g100 cd g100 git clone -b master git@172.16.19.246:VastbaseG100/src.git 下载vastbase依赖的二进制文件
+需要自行通过svn下载，然后，上传到vastbase源码同级目录
+ip: 172.16.19.4 用户名: clouder 密码: 自行询问 目录: /Database/Vastbase/third_party 配置用于编译vastbase的环境变量
+cd g100 touch venv 请确保此时的目录结构如下：
+ls g100 |-- g100 |-- src |-- binarylibs |-- venv 设置环境变量，在venv文件中，输入以下内容：
+export CODE_BASE=`pwd` export BINARYLIBS=`pwd`/binarylibs # 安装目录在源码里写死了，改不了 export GAUSSHOME=`pwd`/src/mppdb_temp_install export GCC_PATH=$BINARYLIBS/buildtools/gcc7.3 export CC=$GCC_PATH/gcc/bin/gcc export CXX=$GCC_PATH/gcc/bin/g&#43;&#43; export LD_LIBRARY_PATH=$GAUSSHOME/lib:$GCC_PATH/gcc/lib64:$GCC_PATH/isl/lib:$GCC_PATH/mpc/lib/:$GCC_PATH/mpfr/lib/:$GCC_PATH/gmp/lib/:$LD_LIBRARY_PATH export PATH=$GAUSSHOME/bin:$GCC_PATH/gcc/bin:$PATH # 以下是vastbase增加的 export PATH=$BINARYLIBS/buildtools/cmake/bin:$PATH 配置快捷命令
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-02-20 14:06:00 +0800 CST'>February 20, 2025</span>&nbsp;·&nbsp;<span>4 min</span>&nbsp;·&nbsp;<span>837 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to Vastbase" href="http://localhost:1313/posts/database/vastbase/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">vastbase 身份认证
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>国策用例 4、配置客户端认证方式 hostssl all all 0.0.0.0/0 cert 1、生成国密证书 创建 CA 目录 cadir 并进入 mkdir cadir cd cadir copy 配置文件 openssl.cnf 到当前目录（不同环境，配置文件路径可能不一样） cp /etc/pki/tls/openssl.cnf . 开始搭建CA环境 mkdir ./demoCA ./demoCA/newcerts ./demoCA/private chmod 777 ./demoCA/private 创建serial文件,写入01 echo &#39;01&#39;&gt;./demoCA/serial 创建文件index.txt touch ./demoCA/index.txt 修改openssl.cnf配置文件中CA_default的参数 dir = ./demoCA default_md = sha256 至此CA环境搭建完成 生成CA私钥 openssl ecparam -out demoCA/private/cakey.pem -name SM2 -genkey 生成根证书请求文件 openssl req -config openssl.cnf -key demoCA/private/cakey.pem -new -out cacert.req -subj /C=CN/ST=BJ/L=HaiDian/O=VAST/OU=SEC/CN=CLIENT 生成自签发根证书 生成根证书时，需要修改openssl.cnf文件，设置basicConstraints=CA:TRUE vi openssl.cnf 生成CA自签发根证书 openssl ca -config openssl.cnf -in cacert.req -keyfile demoCA/private/cakey.pem -selfsign -out demoCA/cacert.pem 生成服务器私钥文件server.key openssl ecparam -out server.key -name SM2 -genkey 生成服务器证书请求文件server.req openssl req -config openssl.cnf -key server.key -new -out server.req -subj /C=CN/ST=BJ/L=HaiDian/O=VAST/OU=SEC/CN=server 生成服务端/客户端证书时，修改openssl.cnf文件，设置basicConstraints=CA:FALSE vi openssl.cnf 对生成的服务器证书请求文件进行签发，签发后将生成正式的服务器证书server.crt openssl ca -config openssl.cnf -in server.req -out server.crt -days 3650 生成客户端私钥 openssl ecparam -out client.key -name SM2 -genkey 生成客户端证书请求文件 openssl req -config openssl.cnf -new -key client.key -out client.req -subj /C=CN/ST=BJ/L=HaiDian/O=VAST/OU=SEC/CN=client 对生成的客户端证书请求文件进行签发，签发后将生成正式的客户端证书client.crt openssl ca -config openssl.cnf -in client.req -out client.crt -days 3650 注：中间会产生交互，按照以下内容进行填写（需注意每个交互的common name填不一样的内容，如分别写：test1,test2,test3）： Country Name (2 letter code) [AU]:CN State or Province Name (full name) [Some-State]:shanxi Locality Name (eg, city) []:xian Organization Name (eg, company) [Internet Widgits Pty Ltd]:Abc Organizational Unit Name (eg, section) []:hello --Common Name可以随意命名 Common Name (eg, YOUR name) []:world --Email可以选择性填写 Email Address []: Please enter the following &#39;extra&#39; attributes to be sent with your certificate request A challenge password []: 1qaz!QAZ An optional company name []:world # --------------------------------------- https://gitee.com/opengauss/openGauss-server/pulls/3254 mkdir certs cp ../../tassl/tassl_demo/cert/openssl.cnf certs/ cd certs #CA openssl ecparam -genkey -name SM2 -out CA.key openssl req -config openssl.cnf -new -subj /C=CN/ST=BJ/L=HaiDian/O=YUNHEENMO/OU=MogDB/CN=FooCA -key CA.key -out CA.csr openssl x509 -sm3 -req -days 1500 -in CA.csr -extfile openssl.cnf -extensions v3_ca -signkey CA.key -out CA.crt #server openssl ecparam -genkey -name SM2 -out server.key openssl req -config openssl.cnf -new -subj /C=CN/ST=BJ/L=HaiDian/O=YUNHEENMO/OU=MogDB/CN=server -key server.key -out server.csr openssl x509 -sm3 -req -days 1500 -in server.csr -CA CA.crt -CAkey CA.key -extfile openssl.cnf -out server.crt -CAcreateserial #server_enc openssl ecparam -genkey -name SM2 -out server_enc.key openssl req -config openssl.cnf -new -subj /C=CN/ST=BJ/L=HaiDian/O=YUNHEENMO/OU=MogDB/CN=server -key server_enc.key -out server_enc.csr openssl x509 -sm3 -req -days 1500 -in server_enc.csr -CA CA.crt -CAkey CA.key -extfile openssl.cnf -out server_enc.crt -CAcreateserial #client openssl ecparam -genkey -name SM2 -out client.key openssl req -config openssl.cnf -new -subj /C=CN/ST=BJ/L=HaiDian/O=YUNHEENMO/OU=MogDB/CN=client -key client.key -out client.csr openssl x509 -sm3 -req -days 1500 -in client.csr -CA CA.crt -CAkey CA.key -extfile openssl.cnf -out client.crt -CAcreateserial #client_enc openssl ecparam -genkey -name SM2 -out client_enc.key openssl req -config openssl.cnf -new -subj /C=CN/ST=BJ/L=HaiDian/O=YUNHEENMO/OU=MogDB/CN=client -key client_enc.key -out client_enc.csr openssl x509 -sm3 -req -days 1500 -in client_enc.csr -CA CA.crt -CAkey CA.key -extfile openssl.cnf -out client_enc.crt -CAcreateserial #修改权限 chmod 0600 * #增加密码保护 openssl ec -sm4 -in server.key -out server.key -passout pass:123qweQWE gs_guc generate -S 123qweQWE -D ./ -o server openssl ec -sm4 -in server_enc.key -out server_enc.key -passout pass:234werWER gs_guc generate -S 234werWER -D ./ -o server_enc openssl ec -sm4 -in client.key -out client.key -passout pass:345ertERT gs_guc generate -S 345ertERT -D ./ -o client openssl ec -sm4 -in client_enc.key -out client_enc.key -passout pass:456rtyRTY gs_guc generate -S 456rtyRTY -D ./ -o client_enc chmod 0600 * #客户端： export CERT=`pwd` echo &#39; export CERT=`pwd` export PGSSLMODE=verify-ca export PGSSLTLCP=1 export PGSSLROOTCERT=$CERT/CA.crt export PGSSLKEY=$CERT/client.key export PGSSLCERT=$CERT/client.crt export PGSSLENCKEY=$CERT/client_enc.key export PGSSLENCCERT=$CERT/client_enc.crt &#39; &gt; client_env source client_env #服务器： gs_guc set -D $GAUSSHOME/data -c &#34;ssl=on&#34; gs_guc set -D $GAUSSHOME/data -c &#34;ssl_ciphers = &#39;ALL&#39;&#34; gs_guc set -D $GAUSSHOME/data -c &#34;ssl_use_tlcp=on&#34; gs_guc set -D $GAUSSHOME/data -c &#34;ssl_ca_file = &#39;$CERT/CA.crt&#39;&#34; gs_guc set -D $GAUSSHOME/data -c &#34;ssl_key_file=&#39;$CERT/server.key&#39;&#34; gs_guc set -D $GAUSSHOME/data -c &#34;ssl_cert_file=&#39;$CERT/server.crt&#39;&#34; gs_guc set -D $GAUSSHOME/data -c &#34;ssl_enc_key_file=&#39;$CERT/server_enc.key&#39;&#34; gs_guc set -D $GAUSSHOME/data -c &#34;ssl_enc_cert_file=&#39;$CERT/server_enc.crt&#39;&#34; 1、生成国密证书 # 创建 CA 目录 cadir 并进入 # copy 配置文件 openssl.cnf 到当前目录（不同环境，配置文件路径可能不一样） cp /etc/pki/tls/openssl.cnf . # 开始搭建CA环境 mkdir ./demoCA ./demoCA/newcerts ./demoCA/private chmod 777 ./demoCA/private # 创建serial文件,写入01 echo &#39;01&#39;&gt;./demoCA/serial # 创建文件index.txt touch ./demoCA/index.txt # 至此CA环境搭建完成 # 生成CA私钥 openssl ecparam -out demoCA/private/cakey.pem -name SM2 -genkey # 生成根证书请求文件 openssl req -config openssl.cnf -key demoCA/private/cakey.pem -new -out cacert.req # 生成自签发根证书 # 生成根证书时，需要修改openssl.cnf文件，设置basicConstraints=CA:TRUE vi openssl.cnf # 生成CA自签发根证书 openssl ca -config openssl.cnf -in cacert.req -keyfile demoCA/private/cakey.pem -selfsign -out demoCA/cacert.pem # 生成服务器私钥文件server.key openssl ecparam -out server.key -name SM2 -genkey # 生成服务器证书请求文件server.req openssl req -config openssl.cnf -key server.key -new -out server.req # 生成服务端/客户端证书时，修改openssl.cnf文件，设置basicConstraints=CA:FALSE vi openssl.cnf # 对生成的服务器证书请求文件进行签发，签发后将生成正式的服务器证书server.crt openssl ca -config openssl.cnf -in server.req -out server.crt -days 3650 # 生成客户端私钥 openssl ecparam -out client.key -name SM2 -genkey # 生成客户端证书请求文件 openssl req -config openssl.cnf -new -key client.key -out client.req # 对生成的客户端证书请求文件进行签发，签发后将生成正式的客户端证书client.crt openssl ca -config openssl.cnf -in client.req -out client.crt -days 3650 # 注：中间会产生交互，按照以下内容进行填写（需注意每个交互的common name填不一样的内容，如分别写：test1,test2,test3）： Country Name (2 letter code) [AU]:CN State or Province Name (full name) [Some-State]:shanxi Locality Name (eg, city) []:xian Organization Name (eg, company) [Internet Widgits Pty Ltd]:Abc Organizational Unit Name (eg, section) []:hello --Common Name可以随意命名 Common Name (eg, YOUR name) []:world --Email可以选择性填写 Email Address []: Please enter the following &#39;extra&#39; attributes to be sent with your certificate request A challenge password []: 1qaz!QAZ An optional company name []:world 2、配置客户端文件 chmod 600 client.key chmod 600 client.crt chmod 600 ./demoCA/cacert.pem chmod 600 server.key chmod 600 server.crt 3、配置服务器端参数 cp server.crt server.key ./demoCA/cacert.pem $PGDATA cp client.crt client.key /home/vastbase/data/vastbase/ export PGSSLCERT=&#34;/home/vastbase/cadir/client.crt&#34; export PGSSLKEY=&#34;/home/vastbase/cadir/client.key&#34; export PGSSLMODE=&#34;verify-ca&#34; export PGSSLROOTCERT=&#34;/home/vastbase/data/vastbase/cacert.pem&#34; vi postgresql.conf ssl = on require_ssl = on ssl_cert_file = &#39;server.crt&#39; ssl_key_file = &#39;server.key&#39; ssl_ca_file = &#39;cacert.pem&#39; ssl_crl_file = &#39;&#39; 4、配置客户端认证方式 vi pg_hba.conf hostssl all all 0.0.0.0/0 cert 5、重启数据库服务 vb_ctl restart vsql - vastbase -r --创建生成客户端证书时Common Name同名用户 create user test3 password&#39;Test@123&#39;; 1、客户端vsql连接到服务端 vsql -dvastbase -r -h IP -U test3 --预期 连接成功，提示SSL connection 1 需求背景 1.2 Oracle Profile功能 一、查看profile信息 设置sqlplus输出格式
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-02-17 14:43:00 +0800 CST'>February 17, 2025</span>&nbsp;·&nbsp;<span>11 min</span>&nbsp;·&nbsp;<span>2247 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to vastbase 身份认证" href="http://localhost:1313/posts/database/vastbase-auth/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">vastbase 加密函数
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 需求背景 1.1 数据加密背景 加密的原理
+不同场景中，适合的加密算法类型不同。对存储数据加密，通常采用对称密码算法，此处主要介绍对称密码算法：
+加密原理：输入1个明文，输入1个密钥，对明文和密钥进行一些运算（比如异或，代换），可得到1个密文。密钥通常是随机生成的。 加密算法：DES算法，发布于1977年，已确定为不安全加密算法。3DES算法，调用3次DES算法，生成3个密钥，安全性与DES差别不大，也属于不安全的加密算法。AES算法，发布于2001年，通用的国际标准 数据库加密函数
+几乎所有数据库，都提供内置加密函数，让用户通过SQL语句调用。最典型的场景如下：
+-- 假设，数据库提供函数encrypt(明文，密钥，加密算法)，输出为密文 -- 用户想表&#39;t1&#39;中存储数据&#39;shenkun&#39;，则存储的语法如下：（用户自己保管密钥） INSERT INTO t1 VALUES (encrypt(&#39;shenkun&#39;, &#39;一串随机的密钥&#39;, &#39;aes&#39;)); 1.2 oracle 加密包 早期版本的oracle中，包含1个名为dbms_obfuscation_toolkit的包，提供7个函数，主要实现加密、解密等功能：
+版本信息：oracle 8i版本开始提供，oracle 10g版本开始不被推荐使用，由dbms_crypto代替，oracle 21c版本正式移除 函数列表： 生成随机数：desgetkey(seed) -&gt; key 加密：desencrypt(input, key) -&gt; encrypted_data 解密：descdecrypt(input, key) -&gt; decrypted_data 生成随机数：des3getkey(which=&gt;0, seed) -&gt; key 加密：des3encrypt(input, key, which=&gt;0, iv=&gt;012345678abcdef) -&gt; encrypted_data 解密：des3decrypt(input, key, which=&gt;0, iv=&gt;012345678abcdef) -&gt; decrypted_data 哈希：md5(input) -&gt; checksum 函数参数：函数参数有3种数据类型：varchar2, raw。与raw类型相比，如果是varchar2类型，参数名需加上_string后缀。比如，raw类型的入参名为input，则varcha2类型入参名为input_string 函数限制： desgetkey：seed长度最短为80字节 desencrypt：input长度是8字节的整数倍；key最短为8字节，超过8字节的部分被丢弃 descdecrypt：input长度是8字节的整数倍；key最短为8字节，超过8字节的部分被丢弃 des3getkey: seed长度最短为80字节 des3encrypt：input长度是8字节的整数倍；which为0时，key最短为16字节，超过16字节的部分被丢弃；which为1时，key最短为24字节，超过24字节的部分被丢弃 des3dencrypt：input长度是8字节的整数倍；which为0时，key最短为16字节，超过16字节的部分被丢弃；which为1时，key最短为24字节，超过24字节的部分被丢弃 md5：无 参考文档 函数介绍：函数背景、注意事项等：https://docs.oracle.com/cd/A97630_01/appdev.920/a96590/adgsec04.htm 函数参数：参数类型、调用示例等：https://docs.oracle.com/cd/B10500_01/appdev.920/a96612/d_obtoo2.htm 以下是上述函数的调用示例：
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-02-09 16:10:00 +0800 CST'>February 9, 2025</span>&nbsp;·&nbsp;<span>6 min</span>&nbsp;·&nbsp;<span>1095 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to vastbase 加密函数" href="http://localhost:1313/posts/database/vastbase-encrypt/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">Vastbase 搭建环境、编译代码、安装数据库
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 准备开发环境 1.1 登录远程windows 连接vpn
+下载vpn软件，使用入职时他人帮忙申请的vpn账号登录 登录远程windows电脑
+使用入职时他人帮忙申请的远程windows账号 登录gitlab
+入职时，有人已帮忙申请gutlab账号。http://172.16.19.246 查看vastbase代码
+http://172.16.19.246/VastbaseG100/src 默认无权限，可能搜不到，请找小组领导开通权限 1.2 准备vastbase编译环境 在远程windows中，登录远程centos
+配置git
+生成rsa密钥，配置到gitlab中
+下载vastbase源码
+mkdir g100 cd g100 git clone -b master git@172.16.19.246:VastbaseG100/src.git 下载vastbase依赖的二进制文件
+需要自行通过svn下载，然后，上传到vastbase源码同级目录
+在文件管理器中，输出ftp://172.16.19.4后，会提示输出账号和密码
+ip: 172.16.19.4 用户名: clouder 密码: 自行询问 目录: /Database/Vastbase/third_party 配置用于编译vastbase的环境变量
+cd g100 touch venv 请确保此时的目录结构如下：
+ls g100 |-- g100 |-- src |-- binarylibs |-- venv 设置环境变量
+export CODE_BASE=`pwd` export BINARYLIBS=`pwd`/binarylibs # 安装目录在源码里写死了，改不了 export GAUSSHOME=`pwd`/src/mppdb_temp_install export GCC_PATH=$BINARYLIBS/buildtools/gcc7.3 export CC=$GCC_PATH/gcc/bin/gcc export CXX=$GCC_PATH/gcc/bin/g&#43;&#43; export LD_LIBRARY_PATH=$GAUSSHOME/lib:$GCC_PATH/gcc/lib64:$GCC_PATH/isl/lib:$GCC_PATH/mpc/lib/:$GCC_PATH/mpfr/lib/:$GCC_PATH/gmp/lib/:$LD_LIBRARY_PATH export PATH=$GAUSSHOME/bin:$GCC_PATH/gcc/bin:$PATH # 以下是vastbase增加的 export PATH=$BINARYLIBS/buildtools/cmake/bin:$PATH 配置快捷命令
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-02-08 16:44:00 +0800 CST'>February 8, 2025</span>&nbsp;·&nbsp;<span>4 min</span>&nbsp;·&nbsp;<span>850 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to Vastbase 搭建环境、编译代码、安装数据库" href="http://localhost:1313/posts/database/vastbase-build/"></a>
 </article>
     </main>
     
@@ -227,6 +376,942 @@
         }
     })
 
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
 </script>
 </body>
 

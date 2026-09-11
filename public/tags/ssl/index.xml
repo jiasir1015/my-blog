@@ -1,0 +1,435 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>SSL on Kernel Notes</title>
+    <link>http://localhost:1313/tags/ssl/</link>
+    <description>Recent content in SSL on Kernel Notes</description>
+    <generator>Hugo -- 0.155.3</generator>
+    <language>zh-cn</language>
+    <lastBuildDate>Fri, 14 Aug 2026 17:47:31 +0800</lastBuildDate>
+    <atom:link href="http://localhost:1313/tags/ssl/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Vastbase SSL安全传输</title>
+      <link>http://localhost:1313/posts/database/vastbase-ssl/</link>
+      <pubDate>Thu, 28 Aug 2025 09:47:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/database/vastbase-ssl/</guid>
+      <description>&lt;h1 id=&#34;1-基于ssl证书实现身份认证&#34;&gt;1 基于SSL证书实现身份认证&lt;/h1&gt;
+&lt;p&gt;在应用与数据库传输数据时，为避免攻击者对数据进行窃听、篡改、伪造、重放等攻击，Vastbae支持采用SSL协议保障数据机密性与完整性。在SSL协议协商密钥的过程中，应用与数据库需通过证书验证对方身份，同时，该证书也可作为登入数据库的身份凭证。&lt;br&gt;
+此处介绍生成证书，并基于证书配置SSL协议，同时基于证书实现身份认证，操作流程可分为以下3个阶段：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;一、生成私钥与证书&lt;/li&gt;
+&lt;li&gt;二、数据库端配置证书与私钥&lt;/li&gt;
+&lt;li&gt;三、应用端配置证书与私钥&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;一生成私钥与证书&#34;&gt;一、生成私钥与证书&lt;/h2&gt;
+&lt;p&gt;此处介绍基于openssl工具，生成自签名证书的流程&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;创建存放私钥与证书的文件夹&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;mkdir cadir
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;cd&lt;/span&gt; cadir
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;mkdir ./demoCA ./demoCA/newcerts ./demoCA/private
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;echo&lt;/span&gt; &lt;span class=&#34;s1&#34;&gt;&amp;#39;01&amp;#39;&lt;/span&gt;&amp;gt;./demoCA/serial
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;touch ./demoCA/index.txt
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;配置openssl工具&lt;br&gt;
+从Vastbase安装包中，获取openssl工具以及openss配置文件。假设Vastbae安装包存放在$GAUSSHOME目录。&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;cp &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/bin/openssl ./
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;export&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;PATH&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;pwd&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;:&lt;span class=&#34;nv&#34;&gt;$PATH&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;which openssl &lt;span class=&#34;c1&#34;&gt;# 确保openssl来源于Vastbase安装包，避免因版本不同造成证书不可用&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl version
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;cp &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/share/sslcert/gsql/openssl.cnf ./
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;export&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;OPENSSL_CONF&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;pwd&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;/openssl.cnf
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;创建CA私钥、CA证书&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ecparam -genkey -name SM2 -out demoCA/private/cakey.pem
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl req -new -config openssl.cnf -key demoCA/private/cakey.pem -subj /C&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;CN/ST&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;BJ/L&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;HaiDian/O&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;VAST/OU&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;SEC/CN&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;CA -out cacert.req
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ca -selfsign -config openssl.cnf -batch -keyfile demoCA/private/cakey.pem -in cacert.req -out demoCA/cacert.pem
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;创建数据库私钥、数据库证书&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>数据库安全 传输加密</title>
+      <link>http://localhost:1313/posts/security/transport-encryption/</link>
+      <pubDate>Wed, 21 May 2025 09:37:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/security/transport-encryption/</guid>
+      <description>&lt;h1 id=&#34;非国密&#34;&gt;非国密&lt;/h1&gt;
+&lt;ol&gt;
+&lt;li&gt;生成证书&lt;/li&gt;
+&lt;li&gt;数据库服务端：配置证书、配置传输加密算法&lt;/li&gt;
+&lt;li&gt;数据库客户端：配置证书&lt;/li&gt;
+&lt;/ol&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 检查openssl版本&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;which openssl
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;    &lt;span class=&#34;c1&#34;&gt;# 确保使用的是vastbase发布包中的openssl，而非操作系统中的openssl&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;cp &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/share/sslcert/gsql/openssl.cnf ./
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;export&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;OPENSSL_CONF&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;pwd&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;/openssl.cnf
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 创建文件&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;mkdir cert
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;cd&lt;/span&gt; cert
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;mkdir ./demoCA ./demoCA/newcerts ./demoCA/private
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;chmod &lt;span class=&#34;m&#34;&gt;700&lt;/span&gt; ./demoCA/private
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;echo&lt;/span&gt; &lt;span class=&#34;s1&#34;&gt;&amp;#39;01&amp;#39;&lt;/span&gt;&amp;gt;./demoCA/serial
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;touch ./demoCA/index.txt
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# ca&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl genrsa -out ./demoCA/private/cakey.pem &lt;span class=&#34;m&#34;&gt;2048&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl req -new -key ./demoCA/private/cakey.pem -out ./demoCA/private/ca_cert_req.pem -subj &lt;span class=&#34;s2&#34;&gt;&amp;#34;/C=CN/ST=Beijing/O=huawei/OU=gauss/CN=root&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl x509 -req -in ./demoCA/private/ca_cert_req.pem -days &lt;span class=&#34;m&#34;&gt;7300&lt;/span&gt; -signkey ./demoCA/private/cakey.pem -out ./demoCA/cacert.pem
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# server&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl genrsa -out server.key &lt;span class=&#34;m&#34;&gt;2048&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl req -new -key server.key -out server.csr -subj &lt;span class=&#34;s2&#34;&gt;&amp;#34;/C=CN/ST=Beijing/O=huawei/OU=gauss/CN=server&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl x509 -req -in server.csr -days &lt;span class=&#34;m&#34;&gt;3650&lt;/span&gt; -CA ./demoCA/cacert.pem -CAkey ./demoCA/private/cakey.pem -CAcreateserial -out server.crt
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# client&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl genrsa -out client.key &lt;span class=&#34;m&#34;&gt;2048&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl req -new -key client.key -out client.csr -subj &lt;span class=&#34;s2&#34;&gt;&amp;#34;/C=CN/ST=Beijing/O=huawei/OU=gauss/CN=client&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl x509 -req -in client.csr -days &lt;span class=&#34;m&#34;&gt;3650&lt;/span&gt; -CA ./demoCA/cacert.pem -CAkey ./demoCA/private/cakey.pem -CAcreateserial -out client.crt
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 查看内容&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl x509 -in client.crt -text
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 设置权限&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;chmod &lt;span class=&#34;m&#34;&gt;600&lt;/span&gt; client.key
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;chmod &lt;span class=&#34;m&#34;&gt;600&lt;/span&gt; client.crt
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;chmod &lt;span class=&#34;m&#34;&gt;600&lt;/span&gt; server.key
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;chmod &lt;span class=&#34;m&#34;&gt;600&lt;/span&gt; server.crt
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;chmod &lt;span class=&#34;m&#34;&gt;600&lt;/span&gt; ./demoCA/cacert.pem
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;export&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;CERT&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;pwd&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;echo&lt;/span&gt; &lt;span class=&#34;s1&#34;&gt;&amp;#39;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;export CERT=`pwd`
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;export PGSSLMODE=verify-ca
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;export PGSSLROOTCERT=$CERT/demoCA/cacert.pem
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;export PGSSLKEY=$CERT/client.key
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;export PGSSLCERT=$CERT/client.crt
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;&lt;/span&gt; &amp;gt; client_env
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;source&lt;/span&gt; client_env
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 设置服务端参数&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl=on&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl_ciphers = &amp;#39;ALL&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl_ca_file = &amp;#39;&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$CERT&lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;/demoCA/cacert.pem&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl_key_file=&amp;#39;&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$CERT&lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;/server.key&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl_cert_file=&amp;#39;&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$CERT&lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;/server.crt&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 重启数据库&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;vsql -d postgres -c &lt;span class=&#34;s2&#34;&gt;&amp;#34; CREATE USER u1 PASSWORD &amp;#39;u1.password&amp;#39; &amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 连接数据库：需加-h参数&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;vsql -h localhost -d postgres -U u1 -W &lt;span class=&#34;s1&#34;&gt;&amp;#39;u1.password&amp;#39;&lt;/span&gt; -r
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;rm -f client.* server.*
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl_ciphers = &amp;#39;ECDHE-ECDSA-SM4-CBC-SM3&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ecparam -name SM2 -genkey -out ./demoCA/private/cakey.pem
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl req -new -key ./demoCA/private/cakey.pem -out ./demoCA/private/ca_cert_req.pem -subj &lt;span class=&#34;s2&#34;&gt;&amp;#34;/C=CN/ST=Beijing/O=huawei/OU=gauss/CN=root&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl x509 -req -in ./demoCA/private/ca_cert_req.pem -days &lt;span class=&#34;m&#34;&gt;7300&lt;/span&gt; -signkey ./demoCA/private/cakey.pem -out ./demoCA/cacert.pem
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# server&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ecparam -name SM2 -genkey -out server.key
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl req -new -key server.key -out server.csr -subj &lt;span class=&#34;s2&#34;&gt;&amp;#34;/C=CN/ST=Beijing/O=huawei/OU=gauss/CN=server&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl x509 -req -in server.csr -days &lt;span class=&#34;m&#34;&gt;3650&lt;/span&gt; -CA ./demoCA/cacert.pem -CAkey ./demoCA/private/cakey.pem -CAcreateserial -out server.crt
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# client&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ecparam -name SM2 -genkey -out client.key
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl req -new -key client.key -out client.csr -subj &lt;span class=&#34;s2&#34;&gt;&amp;#34;/C=CN/ST=Beijing/O=huawei/OU=gauss/CN=client&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl x509 -req -in client.csr -days &lt;span class=&#34;m&#34;&gt;3650&lt;/span&gt; -CA ./demoCA/cacert.pem -CAkey ./demoCA/private/cakey.pem -CAcreateserial -out client.crt
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;chmod &lt;span class=&#34;m&#34;&gt;600&lt;/span&gt; client.key client.crt server.key server.crt ./demoCA/cacert.pem
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl x509 -in client.crt -text
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h1 id=&#34;国密&#34;&gt;国密&lt;/h1&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;mkdir cert
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;cd&lt;/span&gt; cert
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl version
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# OpenSSL 1.1.1s  Tassl 2.1.2 1 Nov 2022&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;cp ../tassl/install/openssl.cnf ./
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;chmod +w ./openssl.cnf
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;echo&lt;/span&gt; &lt;span class=&#34;s1&#34;&gt;&amp;#39;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;[ gm_ca_cert ]
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;subjectKeyIdentifier=hash
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;authorityKeyIdentifier=keyid:always,issuer
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;basicConstraints = critical,CA:true
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;keyUsage = critical, cRLSign, keyCertSign
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;[ gm_sign_cert ]
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;basicConstraints = CA:FALSE
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;keyUsage = critical, digitalSignature, nonRepudiation
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;[ gm_enc_cert ]
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;basicConstraints = CA:FALSE
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;keyUsage = critical, keyEncipherment, dataEncipherment, keyAgreement&amp;#39;&lt;/span&gt; &amp;gt;&amp;gt; ./openssl.cnf
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;mkdir ./demoCA ./demoCA/newcerts ./demoCA/private
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;chmod &lt;span class=&#34;m&#34;&gt;700&lt;/span&gt; ./demoCA/private
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;echo&lt;/span&gt; &lt;span class=&#34;s1&#34;&gt;&amp;#39;01&amp;#39;&lt;/span&gt;&amp;gt;./demoCA/serial
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;touch ./demoCA/index.txt
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# ca&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ecparam -name SM2 -genkey -out ./demoCA/private/cakey.pem
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl req -config openssl.cnf -new -key ./demoCA/private/cakey.pem -sm3 -out ./demoCA/private/ca_cert_req.pem -subj &lt;span class=&#34;s2&#34;&gt;&amp;#34;/C=CN/ST=Beijing/O=huawei/OU=gauss/CN=root&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl x509 -req -extfile openssl.cnf -extensions gm_ca_cert -in ./demoCA/private/ca_cert_req.pem -sm3 -days &lt;span class=&#34;m&#34;&gt;7300&lt;/span&gt; -signkey ./demoCA/private/cakey.pem -out ./demoCA/cacert.pem
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# server&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ecparam -name SM2 -genkey -out server.key
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ec -in server.key -passout pass:gauss@123 -sm4 -out server.key
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl req -config openssl.cnf -new -key server.key -passin pass:gauss@123 -sm3 -out server.csr -subj &lt;span class=&#34;s2&#34;&gt;&amp;#34;/C=CN/ST=Beijing/O=huawei/OU=gauss/CN=server&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl x509 -req -extfile openssl.cnf -extensions gm_sign_cert -in server.csr -sm3 -days &lt;span class=&#34;m&#34;&gt;3650&lt;/span&gt; -CA ./demoCA/cacert.pem -CAkey ./demoCA/private/cakey.pem -passin pass:gauss@123 -CAcreateserial -out server.crt
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# server.enc&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ecparam -name SM2 -genkey -out server_enc.key
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ec -in server_enc.key -passout pass:gauss@123 -sm4 -out server_enc.key
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl req -config openssl.cnf -new -key server_enc.key -passin pass:gauss@123 -sm3 -out server_enc.csr -subj &lt;span class=&#34;s2&#34;&gt;&amp;#34;/C=CN/ST=Beijing/O=huawei/OU=gauss/CN=server&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl x509 -req -extfile openssl.cnf -extensions gm_enc_cert -in server_enc.csr -sm3 -days &lt;span class=&#34;m&#34;&gt;3650&lt;/span&gt; -CA ./demoCA/cacert.pem -CAkey ./demoCA/private/cakey.pem -passin pass:gauss@123 -CAcreateserial -out server_enc.crt
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc encrypt -M server -D ./ -K gauss@123
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# client&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ecparam -name SM2 -genkey -out client.key
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ec -in client.key -passout pass:gauss@123 -sm4 -out client.key
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl req -config openssl.cnf -new -key client.key -passin pass:gauss@123 -sm3 -out client.csr -subj &lt;span class=&#34;s2&#34;&gt;&amp;#34;/C=CN/ST=Beijing/O=huawei/OU=gauss/CN=client&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl x509 -req -extfile openssl.cnf -extensions gm_sign_cert -in client.csr -sm3 -days &lt;span class=&#34;m&#34;&gt;3650&lt;/span&gt; -CA ./demoCA/cacert.pem -CAkey ./demoCA/private/cakey.pem -passin pass:gauss@123 -CAcreateserial -out client.crt
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# client.enc&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ecparam -name SM2 -genkey -out client_enc.key
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl ec -in client_enc.key -passout pass:gauss@123 -sm4 -out client_enc.key
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl req -config openssl.cnf -new -key client_enc.key -passin pass:gauss@123 -sm3 -out client_enc.csr -subj &lt;span class=&#34;s2&#34;&gt;&amp;#34;/C=CN/ST=Beijing/O=huawei/OU=gauss/CN=client&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;openssl x509 -req -extfile openssl.cnf -extensions gm_enc_cert -in client_enc.csr -sm3 -days &lt;span class=&#34;m&#34;&gt;3650&lt;/span&gt; -CA ./demoCA/cacert.pem -CAkey ./demoCA/private/cakey.pem -passin pass:gauss@123 -CAcreateserial -out client_enc.crt
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc encrypt -M client -D ./ -K gauss@123
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# openssl x509 -in client.crt -text&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;export&lt;/span&gt; &lt;span class=&#34;nv&#34;&gt;CERT&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;&lt;span class=&#34;nb&#34;&gt;pwd&lt;/span&gt;&lt;span class=&#34;sb&#34;&gt;`&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;echo&lt;/span&gt; &lt;span class=&#34;s1&#34;&gt;&amp;#39;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;export CERT=`pwd`
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;export PGSSLMODE=verify-ca
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;export PGSSLTLCP=1
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;export PGSSLROOTCERT=$CERT/demoCA/cacert.pem
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;export PGSSLKEY=$CERT/client.key
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;export PGSSLCERT=$CERT/client.crt
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;export PGSSLENCKEY=$CERT/client_enc.key
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;export PGSSLENCCERT=$CERT/client_enc.crt
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;&lt;/span&gt; &amp;gt; client_env
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;nb&#34;&gt;source&lt;/span&gt; client_env
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 设置服务端参数&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data/single_node -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl=on&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data/single_node -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl_ciphers = &amp;#39;ALL&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data/single_node -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl_use_tlcp=on&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data/single_node -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl_ca_file = &amp;#39;&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$CERT&lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;/demoCA/cacert.pem&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data/single_node -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl_key_file=&amp;#39;&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$CERT&lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;/server.key&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data/single_node -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl_cert_file=&amp;#39;&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$CERT&lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;/server.crt&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data/single_node -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl_enc_key_file=&amp;#39;&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$CERT&lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;/server_enc.key&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;gs_guc &lt;span class=&#34;nb&#34;&gt;set&lt;/span&gt; -D &lt;span class=&#34;nv&#34;&gt;$GAUSSHOME&lt;/span&gt;/data/single_node -c &lt;span class=&#34;s2&#34;&gt;&amp;#34;ssl_enc_cert_file=&amp;#39;&lt;/span&gt;&lt;span class=&#34;nv&#34;&gt;$CERT&lt;/span&gt;&lt;span class=&#34;s2&#34;&gt;/server_enc.crt&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;c1&#34;&gt;# 重启数据库&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;</description>
+    </item>
+    <item>
+      <title>海量 10 设计 SSL协议</title>
+      <link>http://localhost:1313/posts/projectdocs/10-design-ssl/</link>
+      <pubDate>Tue, 09 Sep 2025 18:48:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/10-design-ssl/</guid>
+      <description>&lt;h1 id=&#34;1-tls协议支持第三方流量审计&#34;&gt;1 TLS协议支持第三方流量审计&lt;/h1&gt;
+&lt;h2 id=&#34;11-功能简述&#34;&gt;1.1 功能简述&lt;/h2&gt;
+&lt;p&gt;【需求背景】&lt;br&gt;
+TLS协议，是保障通信安全的加密协议，可分为4个子功能：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;密钥生成：通过密钥交换或密钥协商等协议，让双方生成相同的密钥&lt;/li&gt;
+&lt;li&gt;身份认证：在开始阶段，双方均向对方发送自己的证书。双方接收证书后，基于PKI体系，校验证书是否合法。&lt;/li&gt;
+&lt;li&gt;数据加密：发送方发生数据前，使用密钥加密数据，发送数据密文。接受方接受密文后，使用密钥解密，获取数据。&lt;/li&gt;
+&lt;li&gt;数据校验：在加密数据的同时，生成数据完整性校验码，与数据密文拼接在一起。（简单理解：生成数据的哈希值，并使用密钥加密哈希值）接收方解密数据后，同样生成数据完整性校验码，与接收的相比，判断是否一致。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;开源软件libssl.so提供TLS功能，应用只需调用接口，即可实现TLS协议。同时，libssl.so提供100+算法套件，可让应用选择不同的参数组合，1个算法套件，包含4个关键参数：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;密钥生成：密钥生成协议&lt;/li&gt;
+&lt;li&gt;身份认证：证书算法类型&lt;/li&gt;
+&lt;li&gt;数据加密：加密算法类型&lt;/li&gt;
+&lt;li&gt;数据校验：哈希算法类型&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;例如，libssl.so中，常用的算法套件为：ECDHE-RSA-AES128-SHA256，该套件中，参数的含义如下：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;密钥生成协议：ECDHE协议。（常见协议类型:DHE、ECDHE、RSA等）&lt;/li&gt;
+&lt;li&gt;证书算法类型：RSA&lt;/li&gt;
+&lt;li&gt;加密算法类型：AES-128&lt;/li&gt;
+&lt;li&gt;哈希算法类型：SHA-256&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;【需求分析】&lt;br&gt;
+vastbase支持TLS协议，当vsql与vastbase通信时，双方可使用TLS模块，生成密钥，并使用密钥加密、解密通信数据，包括：SQL语句、SQL执行结果等。&lt;br&gt;
+客户可能采用第三方工具，截取网络流量，获取传输中的SQL等数据，进行流量审计。但是，在使用TLS协议的情况下，网络中的数据是密文形式，无法进行流量审计。&lt;/p&gt;
+&lt;p&gt;vastbase提供1个GUC参数ssl_ciphers，用于配置TLS协议采用的算法套件，旧版本，该参数的取值范围如下：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;ECDHE-ECDSA-AES256-GCM-SHA384&lt;/li&gt;
+&lt;li&gt;ECDHE-RSA-AES256-GCM-SHA384&lt;/li&gt;
+&lt;li&gt;DHE-RSA-AES256-GCM-SHA384&lt;/li&gt;
+&lt;li&gt;ECDHE-ECDSA-AES128-GCM-SHA256&lt;/li&gt;
+&lt;li&gt;DHE-RSA-AES128-GCM-SHA256&lt;/li&gt;
+&lt;li&gt;ECDHE-RSA-AES128-SHA256&lt;/li&gt;
+&lt;li&gt;ECDHE-ECDSA-SM4-CBC-SM3&lt;/li&gt;
+&lt;li&gt;4个仅tassl支持的国密算法套件&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;上述7个套件中，密钥生成协议为：ECDHE、DHE，此类DH协议，无法让第三方工具获取密钥。&lt;/p&gt;
+&lt;p&gt;本版本，新增4个算法套件：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;AES128-SHA256&lt;/li&gt;
+&lt;li&gt;AES256-SHA256&lt;/li&gt;
+&lt;li&gt;AES128-GCM-SHA256&lt;/li&gt;
+&lt;li&gt;AES256-GCM-SHA384&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;上述4个套件，密钥生成协议为：RSA，该协议可让第三方工具获取密钥，使其可解密网络流量，获取SQL语句、SQL执行结果等。&lt;/p&gt;
+&lt;p&gt;【需求实现】&lt;br&gt;
+之前，vastbase限制ssl_ciphers的取值范围，仅放开7个算法套件，本版本，将新增放开4个算法套件。&lt;/p&gt;
+&lt;p&gt;实现时，仅修改ssl_ciphers的取值范围，新增支持4个算法套件[AES128-SHA256、AES256-SHA256、AES128-GCM-SHA256、AES256-GCM-SHA384]，4个算法套件将直接传递给libssl.so，内核不做任何处理。&lt;/p&gt;
+&lt;p&gt;因此，本需求无复杂设计。本文主要介绍完整的TLS协议工作原理。&lt;/p&gt;
+&lt;h2 id=&#34;12-实现方案&#34;&gt;1.2 实现方案&lt;/h2&gt;
+&lt;h3 id=&#34;一ecdhe与rsa的区别&#34;&gt;一、ECDHE与RSA的区别&lt;/h3&gt;
+&lt;p&gt;此处简化ECDHE与RSA的步骤与算法，提取最核心的原理，方便快速理解。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;一、ECDHE密钥协商协议&lt;br&gt;
+第三方工具、攻击者完全无法获取密钥。&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;client                                    server
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;+-------------------------------------------+-----------------------------------
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;  &amp;lt;---- 0. 双方随机约定一些公开参数 ------&amp;gt;  &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 1. 生成随机私钥 client_priv
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 2. 基于client_priv，计算公钥 client_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 3. 发送公钥 client_pub ------------&amp;gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 4. 接收公钥 client_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 5. 生成随机私钥 server_priv
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 6. 基于server_priv，计算公钥 server_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                            &amp;lt;------------   &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 7. 发送公钥 server_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 8. 接收公钥 server_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 9. 基于client_priv，server_pub，计算密钥
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 10. 基于server_priv，client_pub，计算密钥
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;（第9步和第10步，可以计算出相同的密钥）
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;简单举个例子
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;client                                    server
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;+-------------------------------------------+-----------------------------------
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;  &amp;lt;----- 0. generate and send &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;2,11&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; ----&amp;gt; &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 1. generate &lt;span class=&#34;m&#34;&gt;8&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 2. caculate &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;8&lt;/span&gt; * 2&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; % &lt;span class=&#34;nv&#34;&gt;11&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;5&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 3. send &lt;span class=&#34;m&#34;&gt;5&lt;/span&gt; ----------&amp;gt;  
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 4. receive &lt;span class=&#34;m&#34;&gt;5&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 5. generate &lt;span class=&#34;m&#34;&gt;10&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 6. caculate &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;10&lt;/span&gt; * 2&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; % &lt;span class=&#34;nv&#34;&gt;11&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;9&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                            &amp;lt;------------   &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 7. send &lt;span class=&#34;m&#34;&gt;9&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 8. receive &lt;span class=&#34;m&#34;&gt;9&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 9. &lt;span class=&#34;nv&#34;&gt;key&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;8&lt;/span&gt; * 9&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; % &lt;span class=&#34;nv&#34;&gt;11&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;6&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 10. &lt;span class=&#34;nv&#34;&gt;key&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;10&lt;/span&gt; * 5&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; % &lt;span class=&#34;nv&#34;&gt;11&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;6&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;攻击者：截获网络流量，获取2,11,5,9，无法计算出密钥为6
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;二、RSA密钥交换协议&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 10 需求 SSL协议</title>
+      <link>http://localhost:1313/posts/projectdocs/10-requirement-ssl/</link>
+      <pubDate>Wed, 03 Sep 2025 11:07:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/10-requirement-ssl/</guid>
+      <description>&lt;h1 id=&#34;1-简介&#34;&gt;1 简介&lt;/h1&gt;
+&lt;h2 id=&#34;11-目的&#34;&gt;1.1 目的&lt;/h2&gt;
+&lt;p&gt;在应用与数据库传输数据时，为避免攻击者对数据进行窃听、篡改、伪造、重放等攻击，Vastbase支持采用TLS协议保障数据机密性与完整性。&lt;br&gt;
+通过TLS协议，应用传输数据指至服务端路程如下：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;建立连接：与数据建立TCP连接&lt;/li&gt;
+&lt;li&gt;生成密钥(TLS)：采用TLS协议协商生成密钥(连接级)&lt;/li&gt;
+&lt;li&gt;加密数据(TLS)：使用密钥加密数据(SQL等)&lt;/li&gt;
+&lt;li&gt;发送数据：通过TCP协议，发送数据密文至数据库&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;客户可能采用第三方工具，截取网络流量，获取传输中的SQL等数据，进行流量审计。但是，在使用TLS协议的情况下，网络中的数据是密文形式，无法进行流量审计。为解决该问题，本文介绍如何让第三方工具获取密钥，以解密网络中的数据密文。&lt;/p&gt;
+&lt;h2 id=&#34;12-适用范围&#34;&gt;1.2 适用范围&lt;/h2&gt;
+&lt;p&gt;本文适用于3.0.8 psu4以之后版本。未来本需求将同步至2.2.15版本。&lt;/p&gt;
+&lt;h2 id=&#34;13-术语定义首字母缩写词和缩略语&#34;&gt;1.3 术语定义、首字母缩写词和缩略语&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;SSL: Secure Sockets Layer，于保障网络通信安全的加密协议，早期协议，存在设计缺陷，目前由TLS协议替代。但是，SSL也可不特指SSL协议，可泛指所有通信安全加密协议。同时，由于历史原因，以及前向兼容，数据库中的很多参数与接口采用SSL命令，实际使用的是TLS协议。无需纠结TLS与SSL差异，vastbase中SSL等于TLS。&lt;/li&gt;
+&lt;li&gt;TLS: Transport Layer Security，更安全的传输加密协议。早期版本1.0,1.1已不安全，主流版本为1.2,1.3。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;13-参考资料&#34;&gt;1.3 参考资料&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;原始需求：&lt;a href=&#34;https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001084569&#34;&gt;https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001084569&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;openssl支持的所有cipers： &lt;a href=&#34;https://docs.openssl.org/3.0/man1/openssl-ciphers/&#34;&gt;https://docs.openssl.org/3.0/man1/openssl-ciphers/&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;ssl与tls原理：博客写了一点点，没整理&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h1 id=&#34;2-tls协议支持第三方流量审计&#34;&gt;2 TLS协议支持第三方流量审计&lt;/h1&gt;
+&lt;h2 id=&#34;21-功能简述&#34;&gt;2.1 功能简述&lt;/h2&gt;
+&lt;p&gt;【需求现状】&lt;br&gt;
+目前，大部分第三方流量审计工具，可在一些特定场景下，解密由TLS协议加密后的数据。以vastbase为例，使用TLS协议分为以下阶段：&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;生成证书、私钥文件&lt;/li&gt;
+&lt;li&gt;vastbase端配置证书、私钥文件&lt;/li&gt;
+&lt;li&gt;vsql端配置证书、私钥文件&lt;/li&gt;
+&lt;li&gt;vsql连接vastbase&lt;br&gt;
+4.1 建立tcp连接&lt;br&gt;
+4.2 使用证书校验对方身份&lt;br&gt;
+4.3 双发协商选择算法套件：包括密钥生成协议、加密算法等&lt;br&gt;
+4.4 双方协商生成密钥&lt;/li&gt;
+&lt;li&gt;vsql与vastbase传输数据&lt;br&gt;
+5.1 发送数据前，使用密钥加密数据&lt;br&gt;
+5.2 发送数据密文&lt;br&gt;
+在4.3步骤中，可配置不同的密钥生成协议，对于其中一部分协议，在步骤4.4中，第三方工具可获取密钥，第步骤5.2中，第三方工具截取数据密文后，即可解密数据。&lt;br&gt;
+但是，4.3步骤中，目前vastbase仅支持2种密钥生成协议，这2种协议都无法让第三方工具获取密钥。&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;【密钥生成协议】&lt;br&gt;
+此处介绍2类常见的密钥生成协议：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;一、DHE密钥协商协议&lt;br&gt;
+Vastbase目前支持的2种协议，都属于此类协议&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;client                                    server
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;+-------------------------------------------+-----------------------------------
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;  &amp;lt;-------- 0. 双方随机约定一些参数 ------&amp;gt;  &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 1. 生成随机私钥 client_priv
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 2. 基于client_priv，计算公钥 client_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 3. 发送公钥 client_pub ------------&amp;gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 4. 接收公钥 client_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 5. 生成随机私钥 server_priv
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 6. 基于server_priv，计算公钥 server_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                            &amp;lt;------------   &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 7. 发送公钥 server_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 8. 接收公钥 server_pub
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 9. 基于client_priv，server_pub，计算密钥
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 10. 基于server_priv，client_pub，计算密钥
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;（第9步和第10步，可以计算出相同的密钥）
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;简单举个例子
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;client                                    server
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;+-------------------------------------------+-----------------------------------
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;  &amp;lt;----- 0. generate and send &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;2,11&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; ----&amp;gt; &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 1. generate &lt;span class=&#34;m&#34;&gt;8&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 2. caculate &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;8&lt;/span&gt; * 2&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; % &lt;span class=&#34;nv&#34;&gt;11&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;5&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 3. send &lt;span class=&#34;m&#34;&gt;5&lt;/span&gt; ----------&amp;gt;  
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 4. receive &lt;span class=&#34;m&#34;&gt;5&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 5. generate &lt;span class=&#34;m&#34;&gt;10&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 6. caculate &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;10&lt;/span&gt; * 2&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; % &lt;span class=&#34;nv&#34;&gt;11&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;9&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                            &amp;lt;------------   &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 7. send &lt;span class=&#34;m&#34;&gt;9&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 8. receive &lt;span class=&#34;m&#34;&gt;9&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 9. &lt;span class=&#34;nv&#34;&gt;key&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;8&lt;/span&gt; * 9&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; % &lt;span class=&#34;nv&#34;&gt;11&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;6&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;                                            &lt;span class=&#34;p&#34;&gt;|&lt;/span&gt; 10. &lt;span class=&#34;nv&#34;&gt;key&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;m&#34;&gt;10&lt;/span&gt; * 5&lt;span class=&#34;o&#34;&gt;)&lt;/span&gt; % &lt;span class=&#34;nv&#34;&gt;11&lt;/span&gt; &lt;span class=&#34;o&#34;&gt;=&lt;/span&gt; &lt;span class=&#34;m&#34;&gt;6&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;攻击者：截获网络流量，获取2,11,5,9，无法计算出密钥为6
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;二、RSA密钥交换协议&lt;br&gt;
+该协议支持第三方工具解密流量，客户选择的工具已适配该协议。TLS还支持其他PSK、SRP等协议，但是，由于这些协议比较少见，且客户选择的工具未适配，本次不适配其他协议。&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

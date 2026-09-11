@@ -1,0 +1,1713 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>WAL 加密模块设计 | Kernel Notes</title>
+<meta name="keywords" content="加密, PostgreSQL, 存储引擎, 设计文档">
+<meta name="description" content="假设集群里已经存在表级透明加密模块，在此基础上设计一个高性能、高易用性的 WAL 加密模块。
+WAL 加密的难点几乎不在&quot;加密&quot;本身，而在两件事：同一个 8KB 页会被反复重写，以及恢复路径要在拿不到 catalog 的时候就能解密。下面按设计决策的顺序展开。
+1 威胁模型
+先划清边界，因为它直接决定后面几个取舍。
+
+要防的：磁盘 / 备份 / 归档介质被拖走；DBA 之外的运维人员直接读 pg_wal/；WAL 归档到对象存储。
+不防的：有 root 权限的在线攻击者（内存里必然有明文）、旁路攻击。
+
+1.1 为什么不用 dm-crypt 了事
+如果只是防&quot;介质丢失&quot;，块设备加密（LUKS/dm-crypt）性价比高得多。在数据库内核里做 WAL 加密，真正的理由只有三个：
+
+密钥要由数据库自己管，不能落在 OS 层（密评 / 国测要求）；
+归档件要天然带密；
+和已有的表级 TDE 共用一套密钥体系。
+
+设计要始终对齐这三个理由，否则很容易做成一个又慢、又没多大意义的模块。
+1.2 FPI 是必须堵的洞
+既然表级 TDE 已经存在，那么 FPI（full page image）就是个必堵的泄漏点。
+如果 TDE 是在 smgr 层做的（缓冲区里是明文、写盘时加密），那么 WAL 里的 FPI 记录的是明文页 —— 加密表的数据会原封不动地漏进 WAL。
+
+只要集群里存在任何一张加密表，WAL 加密就必须强制开启，不能是两个独立开关。
+
+实现上做成一个集群级的 data_encryption = on，或者至少让 CREATE ENCRYPTION POLICY 在 WAL 加密未开启时直接报错。这是易用性设计里最重要的一条：不要把一个&quot;配错了就静默泄密&quot;的组合留给用户。">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/security/wal-encryption-design/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/security/wal-encryption-design/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/security/wal-encryption-design/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="WAL 加密模块设计">
+  <meta property="og:description" content="假设集群里已经存在表级透明加密模块，在此基础上设计一个高性能、高易用性的 WAL 加密模块。
+WAL 加密的难点几乎不在&#34;加密&#34;本身，而在两件事：同一个 8KB 页会被反复重写，以及恢复路径要在拿不到 catalog 的时候就能解密。下面按设计决策的顺序展开。
+1 威胁模型 先划清边界，因为它直接决定后面几个取舍。
+要防的：磁盘 / 备份 / 归档介质被拖走；DBA 之外的运维人员直接读 pg_wal/；WAL 归档到对象存储。 不防的：有 root 权限的在线攻击者（内存里必然有明文）、旁路攻击。 1.1 为什么不用 dm-crypt 了事 如果只是防&#34;介质丢失&#34;，块设备加密（LUKS/dm-crypt）性价比高得多。在数据库内核里做 WAL 加密，真正的理由只有三个：
+密钥要由数据库自己管，不能落在 OS 层（密评 / 国测要求）； 归档件要天然带密； 和已有的表级 TDE 共用一套密钥体系。 设计要始终对齐这三个理由，否则很容易做成一个又慢、又没多大意义的模块。
+1.2 FPI 是必须堵的洞 既然表级 TDE 已经存在，那么 FPI（full page image）就是个必堵的泄漏点。
+如果 TDE 是在 smgr 层做的（缓冲区里是明文、写盘时加密），那么 WAL 里的 FPI 记录的是明文页 —— 加密表的数据会原封不动地漏进 WAL。
+只要集群里存在任何一张加密表，WAL 加密就必须强制开启，不能是两个独立开关。
+实现上做成一个集群级的 data_encryption = on，或者至少让 CREATE ENCRYPTION POLICY 在 WAL 加密未开启时直接报错。这是易用性设计里最重要的一条：不要把一个&#34;配错了就静默泄密&#34;的组合留给用户。">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-09-07T15:30:00+08:00">
+    <meta property="article:modified_time" content="2026-09-07T15:30:00+08:00">
+    <meta property="article:tag" content="加密">
+    <meta property="article:tag" content="PostgreSQL">
+    <meta property="article:tag" content="存储引擎">
+    <meta property="article:tag" content="设计文档">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="WAL 加密模块设计">
+<meta name="twitter:description" content="假设集群里已经存在表级透明加密模块，在此基础上设计一个高性能、高易用性的 WAL 加密模块。
+WAL 加密的难点几乎不在&quot;加密&quot;本身，而在两件事：同一个 8KB 页会被反复重写，以及恢复路径要在拿不到 catalog 的时候就能解密。下面按设计决策的顺序展开。
+1 威胁模型
+先划清边界，因为它直接决定后面几个取舍。
+
+要防的：磁盘 / 备份 / 归档介质被拖走；DBA 之外的运维人员直接读 pg_wal/；WAL 归档到对象存储。
+不防的：有 root 权限的在线攻击者（内存里必然有明文）、旁路攻击。
+
+1.1 为什么不用 dm-crypt 了事
+如果只是防&quot;介质丢失&quot;，块设备加密（LUKS/dm-crypt）性价比高得多。在数据库内核里做 WAL 加密，真正的理由只有三个：
+
+密钥要由数据库自己管，不能落在 OS 层（密评 / 国测要求）；
+归档件要天然带密；
+和已有的表级 TDE 共用一套密钥体系。
+
+设计要始终对齐这三个理由，否则很容易做成一个又慢、又没多大意义的模块。
+1.2 FPI 是必须堵的洞
+既然表级 TDE 已经存在，那么 FPI（full page image）就是个必堵的泄漏点。
+如果 TDE 是在 smgr 层做的（缓冲区里是明文、写盘时加密），那么 WAL 里的 FPI 记录的是明文页 —— 加密表的数据会原封不动地漏进 WAL。
+
+只要集群里存在任何一张加密表，WAL 加密就必须强制开启，不能是两个独立开关。
+
+实现上做成一个集群级的 data_encryption = on，或者至少让 CREATE ENCRYPTION POLICY 在 WAL 加密未开启时直接报错。这是易用性设计里最重要的一条：不要把一个&quot;配错了就静默泄密&quot;的组合留给用户。">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "WAL 加密模块设计",
+      "item": "http://localhost:1313/posts/security/wal-encryption-design/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "WAL 加密模块设计",
+  "name": "WAL 加密模块设计",
+  "description": "假设集群里已经存在表级透明加密模块，在此基础上设计一个高性能、高易用性的 WAL 加密模块。\nWAL 加密的难点几乎不在\u0026quot;加密\u0026quot;本身，而在两件事：同一个 8KB 页会被反复重写，以及恢复路径要在拿不到 catalog 的时候就能解密。下面按设计决策的顺序展开。\n1 威胁模型 先划清边界，因为它直接决定后面几个取舍。\n要防的：磁盘 / 备份 / 归档介质被拖走；DBA 之外的运维人员直接读 pg_wal/；WAL 归档到对象存储。 不防的：有 root 权限的在线攻击者（内存里必然有明文）、旁路攻击。 1.1 为什么不用 dm-crypt 了事 如果只是防\u0026quot;介质丢失\u0026quot;，块设备加密（LUKS/dm-crypt）性价比高得多。在数据库内核里做 WAL 加密，真正的理由只有三个：\n密钥要由数据库自己管，不能落在 OS 层（密评 / 国测要求）； 归档件要天然带密； 和已有的表级 TDE 共用一套密钥体系。 设计要始终对齐这三个理由，否则很容易做成一个又慢、又没多大意义的模块。\n1.2 FPI 是必须堵的洞 既然表级 TDE 已经存在，那么 FPI（full page image）就是个必堵的泄漏点。\n如果 TDE 是在 smgr 层做的（缓冲区里是明文、写盘时加密），那么 WAL 里的 FPI 记录的是明文页 —— 加密表的数据会原封不动地漏进 WAL。\n只要集群里存在任何一张加密表，WAL 加密就必须强制开启，不能是两个独立开关。\n实现上做成一个集群级的 data_encryption = on，或者至少让 CREATE ENCRYPTION POLICY 在 WAL 加密未开启时直接报错。这是易用性设计里最重要的一条：不要把一个\u0026quot;配错了就静默泄密\u0026quot;的组合留给用户。\n",
+  "keywords": [
+    "加密", "PostgreSQL", "存储引擎", "设计文档"
+  ],
+  "articleBody": "假设集群里已经存在表级透明加密模块，在此基础上设计一个高性能、高易用性的 WAL 加密模块。\nWAL 加密的难点几乎不在\"加密\"本身，而在两件事：同一个 8KB 页会被反复重写，以及恢复路径要在拿不到 catalog 的时候就能解密。下面按设计决策的顺序展开。\n1 威胁模型 先划清边界，因为它直接决定后面几个取舍。\n要防的：磁盘 / 备份 / 归档介质被拖走；DBA 之外的运维人员直接读 pg_wal/；WAL 归档到对象存储。 不防的：有 root 权限的在线攻击者（内存里必然有明文）、旁路攻击。 1.1 为什么不用 dm-crypt 了事 如果只是防\"介质丢失\"，块设备加密（LUKS/dm-crypt）性价比高得多。在数据库内核里做 WAL 加密，真正的理由只有三个：\n密钥要由数据库自己管，不能落在 OS 层（密评 / 国测要求）； 归档件要天然带密； 和已有的表级 TDE 共用一套密钥体系。 设计要始终对齐这三个理由，否则很容易做成一个又慢、又没多大意义的模块。\n1.2 FPI 是必须堵的洞 既然表级 TDE 已经存在，那么 FPI（full page image）就是个必堵的泄漏点。\n如果 TDE 是在 smgr 层做的（缓冲区里是明文、写盘时加密），那么 WAL 里的 FPI 记录的是明文页 —— 加密表的数据会原封不动地漏进 WAL。\n只要集群里存在任何一张加密表，WAL 加密就必须强制开启，不能是两个独立开关。\n实现上做成一个集群级的 data_encryption = on，或者至少让 CREATE ENCRYPTION POLICY 在 WAL 加密未开启时直接报错。这是易用性设计里最重要的一条：不要把一个\"配错了就静默泄密\"的组合留给用户。\n2 加密边界：页级，页头留明文 2.1 粒度选择 粒度 问题 按 record 记录平均才一百多字节，AES-NI 流水线跑不起来；XLogReader 要改得面目全非；record header 还得留明文 按 segment（16MB） 无法处理\"写了一半的段\"，直接出局 按 XLOG_BLCKSZ 页 ✅ 和 I/O 单位对齐，reader 天然按页读 选页级。\n2.2 页头必须留明文 +------------------------------+ | XLogPageHeaderData | ← 明文，24B（段首页 40B） +------------------------------+ | payload | ← 密文 | | +------------------------------+ 因为 IV / tweak 要从 xlp_pageaddr 和 xlp_tli 推导，而这两个字段本身就在页头里 —— 不留明文就是鸡生蛋。\n好处是 pg_waldump 不带密钥也能遍历页结构、判断段边界；坏处是泄露 LSN 和 TLI，这个可以接受。\npayload 里的一切都要加密，包括 record header（xl_rmid、xl_info、block refs）。否则攻击者能从 rmgr 序列反推出业务行为模式，密评评审时这算个实打实的扣分项。\n3 算法与 tweak：核心是前缀稳定性 这是整个设计里最容易踩坑的地方。\n3.1 反复重写带来的硬约束 WAL 页会被多次写盘：先写 02000 字节，后面填满了再写 05000 字节。这意味着：\n同一个磁盘位置的同一段字节，必须在每次重写时产生完全相同的密文。\n否则崩溃恢复时会读到前后不一致的页。\n这条要求排除了任何\"每次随机 IV\"的方案 —— 加密必须是位置确定性的。\n3.2 为什么选 XTS 而不是 CTR CTR 满足前缀稳定性，而且并行、无填充、能随机访问，看起来是最优解。但 CTR 有一个致命的失效模式：同一段密钥流加密两份不同的明文，两份明文直接异或泄露。\n而 WAL 里恰好有几个地方会让 LSN 重复：\n时间线切换：备库提升后，TLI=2 的 WAL 会在和 TLI=1 相同的 LSN 区间写入不同内容。如果 IV 只含 LSN，这里就是直接的密钥流复用。 pg_resetwal / 从备份重建后 LSN 回退。 所以如果用 CTR，IV 必须是 (system_identifier, timeline_id, LSN, block_counter) 的完整组合，少一个字段就是灾难 —— 而这个约束在代码里没有任何编译期保护。\nAES-256-XTS（国密场景下 SM4-XTS）在这里更稳：tweak 复用最坏只泄露\"这两个 16 字节块相同\"，不会泄露明文本身。\n对一个要长期维护、会被后人改动的模块，我更愿意选一个\"用错了不会当场崩盘\"的原语。\ntweak = f(segment_no, page_no_in_segment, timeline_id) 每 16B 块独立加密 → 天然前缀稳定 尾部不足 16 字节的部分用密文窃取（CTS）；或者更简单：重写时从 ≤ 写入起点的最近 16 字节边界开始重新加密。跨边界的那个半块会被重新加密成不同密文，但因为写的是同一个磁盘位置，没有正确性问题。\n3.3 国密与密码卡的性能陷阱 要过国测大概率要用 SM4。这里有个很实际的坑：\n千万不要把 WAL 的批量加解密走密码卡（SDF 接口）。\n一次 SDF 调用的往返在几十到几百微秒量级，而 WAL 刷盘路径上每页都要调一次，直接把提交延迟打穿。\n正确的分层是：\n层次 由谁做 频率 主密钥 wrap/unwrap、随机数、密钥生命周期证明 密码卡（SDF） 低频 WAL 页的批量加解密 软件实现 每页 x86 上 SM4 走 AVX2/GFNI 的实现能到 1~3 GB/s； ARMv8 有 SM4 专用指令； 启动时探测 CPU 特性并选择实现。 这个分层在评审时也站得住脚：密钥全生命周期在密码卡内，工作密钥只在受保护内存中以明文存在。\n4 性能设计：真正的瓶颈不在写路径 4.1 写路径 自然的挂载点是 XLogWrite() 里 pg_pwrite() 之前 —— 但那是 WALWriteLock 的临界区，把 crypto 塞进去会直接拉长 group commit 的串行段。\n方案 A：bounce buffer（推荐作为 v1） WAL buffers 保持明文，加密到一块独立的 scratch buffer 再写盘。\n代价：每页多一次 8KB memcpy。1 GB/s 的 WAL 产生率下大约多 10% 的一个核，可以接受。 buffer 必须按 PG_IO_ALIGN_SIZE（4KB）对齐，否则 direct I/O 路径会退化。 最大的好处是安全：不存在\"某个字节被异或两次变回明文\"这类静默泄密 bug。 方案 B：原地增量加密（后续优化） 在 XLogCtl 里维护一个和 xlblocks 平行的 encrypted_upto[] 数组，每次只加密 [encrypted_upto, write_end) 这一段，零拷贝。\n因为 WaitXLogInsertionsToFinish() 保证了写入点以下没有在途的 insert，并发上是安全的。\n但 encrypted_upto 只要算错一个字节，要么双重加密（磁盘上出现明文），要么漏加密 —— 这两种错误都不会报错，只会静默发生。所以要等 A 方案跑稳、有了完整回归用例之后再上 B。\n密钥流预计算（两个方案都适用） XTS/CTR 的密钥流（或 tweak 序列）只依赖位置，不依赖明文。所以可以让 walwriter 或一个辅助进程提前把未来 N 个页的密钥流算好，刷盘时临界区里只剩一次 XOR（≈ memcpy 速度）。\n注意：预计算出来的密钥流等价于密钥材料，必须 mlock 住、禁止进 core dump、时间线切换时立即作废。\n4.2 读路径才是真正要盯的 挂载点只有两处：XLogPageRead()（恢复）和 WALRead()（walsender / pg_waldump）。解密进 XLogReaderState.readBuf，每 8KB 一次，正好和现有的按页读取对齐。\n但受影响最大的是崩溃恢复和备库重放：\n路径 加密开销 主库写 WAL 可并行、可预计算，影响小 walreceiver 落盘 零开销（收到的就是密文，直接写） startup 进程重放 单线程串行解密，无法并行 恢复是单进程串行读 WAL 的。如果软件 SM4 只有 500 MB/s，而 NVMe 能吐 3 GB/s，恢复时间会被解密直接拖长数倍。\nRTO 才是这个模块真正的性能风险点。 验收时必须单独测崩溃恢复耗时和备库 apply lag，而不是只看 pgbench TPS。\n4.3 与 wal_compression 的顺序 wal_compression 是在 XLogRecordAssemble() 里做的，加密在写盘时做，所以顺序天然是\"先压缩后加密\"，是对的 —— 反过来就完全压不动了。\n这个不用改，但值得在注释里写一句，防止后人调整层次时搞反。\n5 密钥管理：易用性主要体现在这里 5.1 密钥必须放在文件里，不能放 catalog 这是最容易设计错的一点。\nstartup 进程开始重放 WAL 时，catalog 还不可读（catalog 本身要靠重放才能一致）。所以 WAL 密钥不能存在 pg_key_data 这类系统表里。\n放在一个独立文件，比如 global/pg_wal_keys，内容自包含：\n{ key_id, wrapped_wal_key, kms_ref / 密码卡容器标识, algo, start_lsn, kcv } 这样 pg_waldump、pg_rewind、pg_basebackup 这些离线工具在没有 running server 的情况下也能拿到密钥（用主密钥解开即可）。这一条决定了整套工具链是否好用。\n5.2 LSN 密钥映射表 文件里存的不是一个密钥，而是一张有序映射：\nLSN 0/00000000 → NONE (加密启用前的历史段，保持明文) LSN 3/A0000000 → key_id = 1 LSN 9/1C000000 → key_id = 2 (轮转) 按段边界切换，不要按任意 LSN 切 —— 一个段一把密钥，归档和 restore 的逻辑会简单一个量级。\n这张表带来两个很大的易用性收益：\n在线轮转：生成新密钥 → 用主密钥包装 → 追加映射 → pg_switch_wal()。旧段依然可解密，旧密钥等归档过期后再退役。全程不停机。 存量集群可直接启用：不需要 initdb，也不需要重写任何东西。这和表级 TDE 必须重写表数据形成鲜明对比，是个很好卖的特性。 5.3 和表级 TDE 共用主密钥 WAL 密钥用同一个 MEK 包装，挂在已有的密钥层次下面。\n用户视角只有一个主密钥要轮转、一个 KMS 要配 —— 这是\"高易用性\"最实在的体现。\n6 周边生态：别让工具链崩掉 场景 设计 物理复制 walsender 直接发密文。备库零解密开销，且不依赖 TLS 配置是否正确。代价是备库必须先有密钥文件 —— 由 pg_basebackup 带过去 归档 archive_command 拷的就是密文，归档件天然加密，不需要额外做任何事 逻辑复制 解码时在 walsender 里解密成明文，再按逻辑格式发给订阅端。这条链路上的明文只能靠 TLS 保护，必须在文档里写清楚。另外解码要重复回读 WAL，解密开销比物理复制高，readBuf 级别的缓存能吃掉大部分 pg_waldump 加 -D 让它能找到密钥文件；不带密钥时降级为只输出页结构 pg_rewind 要读 WAL 找分歧点，走同一套离线密钥加载 pg_receivewal 存密文即可，不需要密钥 7 失败模式：这个模块最危险的地方 7.1 用错密钥 = 静默数据丢失 这个必须单独拿出来说。\nWAL 记录的完整性靠 CRC32C。密钥错了 → 解出乱码 → CRC 校验失败 → 恢复代码会把它当成 “WAL 正常结束” 然后停止重放。\n结果就是：数据库起来了，看着一切正常，实际上丢了最后一大段事务。\n必须堵住：\n页头（明文区）里存 key_id，读的时候比对； 密钥文件里存 KCV（key check value，比如 E_K(0) 截断），加载密钥时就验证，而不是等到解密失败； 恢复过程中，如果一条记录 CRC 失败、但它所在的页 key_id 指向一个我们有的密钥，就不能当作 end-of-WAL —— 要 FATAL，宁可起不来也不能悄悄丢数据。 7.2 完整性的坦白 CTR/XTS 只给机密性，不给完整性。WAL 的 CRC32C 不是密码学 MAC，改了 WAL 再重算 CRC 是完全可行的。\n要真正抗篡改就得上 AEAD（GCM / SM4-GCM），但每页 16 字节的 tag 没地方放（要么改页格式压缩可用载荷，要么搞 sidecar 文件），而且和\"页被反复重写\"叠加之后逻辑相当绕。\n建议 v1 明确只做机密性，在设计文档里把这个边界写死，别让评审或用户误以为它防篡改；抗篡改作为后续版本，或者交给存储层 / 文件系统。\n8 落地与验收 8.1 代码结构 控制在一个 walcrypt.c 里，对外只暴露两个函数：\nvoid WALEncrypt(char *dst, const char *src, XLogRecPtr startptr, Size nbytes, TimeLineID tli); void WALDecrypt(char *buf, XLogRecPtr startptr, Size nbytes, TimeLineID tli); 调用点应该只有三处：\nXLogWrite() —— 写 XLogPageRead() —— 恢复时读 WALRead() —— walsender / 工具读 如果实现过程中发现需要往第四、第五个地方插钩子，说明抽象漏了，应该退回来重新想，而不是继续加钩子。这是判断设计是否还成立的标准。\n8.2 验收指标 项 目标 pgbench TPS 回退 \u003c 3% 批量导入（WAL 密集）吞吐回退 \u003c 5% 崩溃恢复耗时增加 \u003c 10%（重点） 备库 apply lag 增加 基本为 0（密文传输） 密钥轮转 在线，无连接中断 8.3 最该覆盖的测试用例 都在\"反复重写\"的边界上：\n写了一半的页 + 崩溃 + 恢复 + 继续追加； 时间线切换后，同一 LSN 区间写入不同内容； 跨段边界的记录； 密钥轮转恰好落在段中间； 用错密钥启动（必须 FATAL，不能静默截断）。 这几个用例写扎实了，模块基本就稳了。\n9 待深挖 两块值得继续展开：\n原地增量加密的并发证明 —— 要论证 encrypted_upto 和 WaitXLogInsertionsToFinish() 的交互确实无隙； 逻辑解码路径上的解密开销 —— 解码要反复回读 WAL，解密可能会把已有的逻辑复制性能优化吃掉一部分。 ",
+  "wordCount" : "684",
+  "inLanguage": "en",
+  "datePublished": "2026-09-07T15:30:00+08:00",
+  "dateModified": "2026-09-07T15:30:00+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/security/wal-encryption-design/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      WAL 加密模块设计
+    </h1>
+    <div class="post-meta">
+      <span title='2026-09-07 15:30:00 +0800 CST'>September 7, 2026</span>&nbsp;·&nbsp;<span>4 min</span>&nbsp;·&nbsp;<span>684 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#1-%e5%a8%81%e8%83%81%e6%a8%a1%e5%9e%8b" aria-label="1 威胁模型">1 威胁模型</a><ul>
+                        
+                <li>
+                    <a href="#11-%e4%b8%ba%e4%bb%80%e4%b9%88%e4%b8%8d%e7%94%a8-dm-crypt-%e4%ba%86%e4%ba%8b" aria-label="1.1 为什么不用 dm-crypt 了事">1.1 为什么不用 dm-crypt 了事</a></li>
+                <li>
+                    <a href="#12-fpi-%e6%98%af%e5%bf%85%e9%a1%bb%e5%a0%b5%e7%9a%84%e6%b4%9e" aria-label="1.2 FPI 是必须堵的洞">1.2 FPI 是必须堵的洞</a></li></ul>
+                </li>
+                <li>
+                    <a href="#2-%e5%8a%a0%e5%af%86%e8%be%b9%e7%95%8c%e9%a1%b5%e7%ba%a7%e9%a1%b5%e5%a4%b4%e7%95%99%e6%98%8e%e6%96%87" aria-label="2 加密边界：页级，页头留明文">2 加密边界：页级，页头留明文</a><ul>
+                        
+                <li>
+                    <a href="#21-%e7%b2%92%e5%ba%a6%e9%80%89%e6%8b%a9" aria-label="2.1 粒度选择">2.1 粒度选择</a></li>
+                <li>
+                    <a href="#22-%e9%a1%b5%e5%a4%b4%e5%bf%85%e9%a1%bb%e7%95%99%e6%98%8e%e6%96%87" aria-label="2.2 页头必须留明文">2.2 页头必须留明文</a></li></ul>
+                </li>
+                <li>
+                    <a href="#3-%e7%ae%97%e6%b3%95%e4%b8%8e-tweak%e6%a0%b8%e5%bf%83%e6%98%af%e5%89%8d%e7%bc%80%e7%a8%b3%e5%ae%9a%e6%80%a7" aria-label="3 算法与 tweak：核心是前缀稳定性">3 算法与 tweak：核心是前缀稳定性</a><ul>
+                        
+                <li>
+                    <a href="#31-%e5%8f%8d%e5%a4%8d%e9%87%8d%e5%86%99%e5%b8%a6%e6%9d%a5%e7%9a%84%e7%a1%ac%e7%ba%a6%e6%9d%9f" aria-label="3.1 反复重写带来的硬约束">3.1 反复重写带来的硬约束</a></li>
+                <li>
+                    <a href="#32-%e4%b8%ba%e4%bb%80%e4%b9%88%e9%80%89-xts-%e8%80%8c%e4%b8%8d%e6%98%af-ctr" aria-label="3.2 为什么选 XTS 而不是 CTR">3.2 为什么选 XTS 而不是 CTR</a></li>
+                <li>
+                    <a href="#33-%e5%9b%bd%e5%af%86%e4%b8%8e%e5%af%86%e7%a0%81%e5%8d%a1%e7%9a%84%e6%80%a7%e8%83%bd%e9%99%b7%e9%98%b1" aria-label="3.3 国密与密码卡的性能陷阱">3.3 国密与密码卡的性能陷阱</a></li></ul>
+                </li>
+                <li>
+                    <a href="#4-%e6%80%a7%e8%83%bd%e8%ae%be%e8%ae%a1%e7%9c%9f%e6%ad%a3%e7%9a%84%e7%93%b6%e9%a2%88%e4%b8%8d%e5%9c%a8%e5%86%99%e8%b7%af%e5%be%84" aria-label="4 性能设计：真正的瓶颈不在写路径">4 性能设计：真正的瓶颈不在写路径</a><ul>
+                        
+                <li>
+                    <a href="#41-%e5%86%99%e8%b7%af%e5%be%84" aria-label="4.1 写路径">4.1 写路径</a><ul>
+                        
+                <li>
+                    <a href="#%e6%96%b9%e6%a1%88-abounce-buffer%e6%8e%a8%e8%8d%90%e4%bd%9c%e4%b8%ba-v1" aria-label="方案 A：bounce buffer（推荐作为 v1）">方案 A：bounce buffer（推荐作为 v1）</a></li>
+                <li>
+                    <a href="#%e6%96%b9%e6%a1%88-b%e5%8e%9f%e5%9c%b0%e5%a2%9e%e9%87%8f%e5%8a%a0%e5%af%86%e5%90%8e%e7%bb%ad%e4%bc%98%e5%8c%96" aria-label="方案 B：原地增量加密（后续优化）">方案 B：原地增量加密（后续优化）</a></li>
+                <li>
+                    <a href="#%e5%af%86%e9%92%a5%e6%b5%81%e9%a2%84%e8%ae%a1%e7%ae%97%e4%b8%a4%e4%b8%aa%e6%96%b9%e6%a1%88%e9%83%bd%e9%80%82%e7%94%a8" aria-label="密钥流预计算（两个方案都适用）">密钥流预计算（两个方案都适用）</a></li></ul>
+                </li>
+                <li>
+                    <a href="#42-%e8%af%bb%e8%b7%af%e5%be%84%e6%89%8d%e6%98%af%e7%9c%9f%e6%ad%a3%e8%a6%81%e7%9b%af%e7%9a%84" aria-label="4.2 读路径才是真正要盯的">4.2 读路径才是真正要盯的</a></li>
+                <li>
+                    <a href="#43-%e4%b8%8e-wal_compression-%e7%9a%84%e9%a1%ba%e5%ba%8f" aria-label="4.3 与 wal_compression 的顺序">4.3 与 wal_compression 的顺序</a></li></ul>
+                </li>
+                <li>
+                    <a href="#5-%e5%af%86%e9%92%a5%e7%ae%a1%e7%90%86%e6%98%93%e7%94%a8%e6%80%a7%e4%b8%bb%e8%a6%81%e4%bd%93%e7%8e%b0%e5%9c%a8%e8%bf%99%e9%87%8c" aria-label="5 密钥管理：易用性主要体现在这里">5 密钥管理：易用性主要体现在这里</a><ul>
+                        
+                <li>
+                    <a href="#51-%e5%af%86%e9%92%a5%e5%bf%85%e9%a1%bb%e6%94%be%e5%9c%a8%e6%96%87%e4%bb%b6%e9%87%8c%e4%b8%8d%e8%83%bd%e6%94%be-catalog" aria-label="5.1 密钥必须放在文件里，不能放 catalog">5.1 密钥必须放在文件里，不能放 catalog</a></li>
+                <li>
+                    <a href="#52-lsn-%e5%af%86%e9%92%a5%e6%98%a0%e5%b0%84%e8%a1%a8" aria-label="5.2 LSN 密钥映射表">5.2 LSN 密钥映射表</a></li>
+                <li>
+                    <a href="#53-%e5%92%8c%e8%a1%a8%e7%ba%a7-tde-%e5%85%b1%e7%94%a8%e4%b8%bb%e5%af%86%e9%92%a5" aria-label="5.3 和表级 TDE 共用主密钥">5.3 和表级 TDE 共用主密钥</a></li></ul>
+                </li>
+                <li>
+                    <a href="#6-%e5%91%a8%e8%be%b9%e7%94%9f%e6%80%81%e5%88%ab%e8%ae%a9%e5%b7%a5%e5%85%b7%e9%93%be%e5%b4%a9%e6%8e%89" aria-label="6 周边生态：别让工具链崩掉">6 周边生态：别让工具链崩掉</a></li>
+                <li>
+                    <a href="#7-%e5%a4%b1%e8%b4%a5%e6%a8%a1%e5%bc%8f%e8%bf%99%e4%b8%aa%e6%a8%a1%e5%9d%97%e6%9c%80%e5%8d%b1%e9%99%a9%e7%9a%84%e5%9c%b0%e6%96%b9" aria-label="7 失败模式：这个模块最危险的地方">7 失败模式：这个模块最危险的地方</a><ul>
+                        
+                <li>
+                    <a href="#71-%e7%94%a8%e9%94%99%e5%af%86%e9%92%a5--%e9%9d%99%e9%bb%98%e6%95%b0%e6%8d%ae%e4%b8%a2%e5%a4%b1" aria-label="7.1 用错密钥 = 静默数据丢失">7.1 用错密钥 = 静默数据丢失</a></li>
+                <li>
+                    <a href="#72-%e5%ae%8c%e6%95%b4%e6%80%a7%e7%9a%84%e5%9d%a6%e7%99%bd" aria-label="7.2 完整性的坦白">7.2 完整性的坦白</a></li></ul>
+                </li>
+                <li>
+                    <a href="#8-%e8%90%bd%e5%9c%b0%e4%b8%8e%e9%aa%8c%e6%94%b6" aria-label="8 落地与验收">8 落地与验收</a><ul>
+                        
+                <li>
+                    <a href="#81-%e4%bb%a3%e7%a0%81%e7%bb%93%e6%9e%84" aria-label="8.1 代码结构">8.1 代码结构</a></li>
+                <li>
+                    <a href="#82-%e9%aa%8c%e6%94%b6%e6%8c%87%e6%a0%87" aria-label="8.2 验收指标">8.2 验收指标</a></li>
+                <li>
+                    <a href="#83-%e6%9c%80%e8%af%a5%e8%a6%86%e7%9b%96%e7%9a%84%e6%b5%8b%e8%af%95%e7%94%a8%e4%be%8b" aria-label="8.3 最该覆盖的测试用例">8.3 最该覆盖的测试用例</a></li></ul>
+                </li>
+                <li>
+                    <a href="#9-%e5%be%85%e6%b7%b1%e6%8c%96" aria-label="9 待深挖">9 待深挖</a>
+                </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><p>假设集群里已经存在表级透明加密模块，在此基础上设计一个高性能、高易用性的 WAL 加密模块。</p>
+<p>WAL 加密的难点几乎不在&quot;加密&quot;本身，而在两件事：<strong>同一个 8KB 页会被反复重写</strong>，以及<strong>恢复路径要在拿不到 catalog 的时候就能解密</strong>。下面按设计决策的顺序展开。</p>
+<h2 id="1-威胁模型">1 威胁模型<a hidden class="anchor" aria-hidden="true" href="#1-威胁模型">#</a></h2>
+<p>先划清边界，因为它直接决定后面几个取舍。</p>
+<ul>
+<li><strong>要防的</strong>：磁盘 / 备份 / 归档介质被拖走；DBA 之外的运维人员直接读 <code>pg_wal/</code>；WAL 归档到对象存储。</li>
+<li><strong>不防的</strong>：有 root 权限的在线攻击者（内存里必然有明文）、旁路攻击。</li>
+</ul>
+<h3 id="11-为什么不用-dm-crypt-了事">1.1 为什么不用 dm-crypt 了事<a hidden class="anchor" aria-hidden="true" href="#11-为什么不用-dm-crypt-了事">#</a></h3>
+<p>如果只是防&quot;介质丢失&quot;，块设备加密（LUKS/dm-crypt）性价比高得多。在数据库内核里做 WAL 加密，真正的理由只有三个：</p>
+<ol>
+<li>密钥要由数据库自己管，不能落在 OS 层（密评 / 国测要求）；</li>
+<li>归档件要天然带密；</li>
+<li>和已有的表级 TDE 共用一套密钥体系。</li>
+</ol>
+<p>设计要始终对齐这三个理由，否则很容易做成一个又慢、又没多大意义的模块。</p>
+<h3 id="12-fpi-是必须堵的洞">1.2 FPI 是必须堵的洞<a hidden class="anchor" aria-hidden="true" href="#12-fpi-是必须堵的洞">#</a></h3>
+<p>既然表级 TDE 已经存在，那么 <strong>FPI（full page image）就是个必堵的泄漏点</strong>。</p>
+<p>如果 TDE 是在 smgr 层做的（缓冲区里是明文、写盘时加密），那么 WAL 里的 FPI 记录的是<strong>明文页</strong> —— 加密表的数据会原封不动地漏进 WAL。</p>
+<blockquote>
+<p>只要集群里存在任何一张加密表，WAL 加密就必须强制开启，不能是两个独立开关。</p>
+</blockquote>
+<p>实现上做成一个集群级的 <code>data_encryption = on</code>，或者至少让 <code>CREATE ENCRYPTION POLICY</code> 在 WAL 加密未开启时直接报错。这是易用性设计里最重要的一条：<strong>不要把一个&quot;配错了就静默泄密&quot;的组合留给用户</strong>。</p>
+<h2 id="2-加密边界页级页头留明文">2 加密边界：页级，页头留明文<a hidden class="anchor" aria-hidden="true" href="#2-加密边界页级页头留明文">#</a></h2>
+<h3 id="21-粒度选择">2.1 粒度选择<a hidden class="anchor" aria-hidden="true" href="#21-粒度选择">#</a></h3>
+<table>
+  <thead>
+      <tr>
+          <th>粒度</th>
+          <th>问题</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>按 record</td>
+          <td>记录平均才一百多字节，AES-NI 流水线跑不起来；<code>XLogReader</code> 要改得面目全非；record header 还得留明文</td>
+      </tr>
+      <tr>
+          <td>按 segment（16MB）</td>
+          <td>无法处理&quot;写了一半的段&quot;，直接出局</td>
+      </tr>
+      <tr>
+          <td><strong>按 XLOG_BLCKSZ 页</strong></td>
+          <td>✅ 和 I/O 单位对齐，reader 天然按页读</td>
+      </tr>
+  </tbody>
+</table>
+<p>选页级。</p>
+<h3 id="22-页头必须留明文">2.2 页头必须留明文<a hidden class="anchor" aria-hidden="true" href="#22-页头必须留明文">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-text" data-lang="text"><span class="line"><span class="cl">+------------------------------+
+</span></span><span class="line"><span class="cl">| XLogPageHeaderData           |  ← 明文，24B（段首页 40B）
+</span></span><span class="line"><span class="cl">+------------------------------+
+</span></span><span class="line"><span class="cl">| payload                      |  ← 密文
+</span></span><span class="line"><span class="cl">|                              |
+</span></span><span class="line"><span class="cl">+------------------------------+
+</span></span></code></pre></div><p>因为 IV / tweak 要从 <code>xlp_pageaddr</code> 和 <code>xlp_tli</code> 推导，而这两个字段本身就在页头里 —— 不留明文就是鸡生蛋。</p>
+<p>好处是 <code>pg_waldump</code> 不带密钥也能遍历页结构、判断段边界；坏处是泄露 LSN 和 TLI，这个可以接受。</p>
+<p><strong>payload 里的一切都要加密，包括 record header</strong>（<code>xl_rmid</code>、<code>xl_info</code>、block refs）。否则攻击者能从 rmgr 序列反推出业务行为模式，密评评审时这算个实打实的扣分项。</p>
+<h2 id="3-算法与-tweak核心是前缀稳定性">3 算法与 tweak：核心是前缀稳定性<a hidden class="anchor" aria-hidden="true" href="#3-算法与-tweak核心是前缀稳定性">#</a></h2>
+<p>这是整个设计里最容易踩坑的地方。</p>
+<h3 id="31-反复重写带来的硬约束">3.1 反复重写带来的硬约束<a hidden class="anchor" aria-hidden="true" href="#31-反复重写带来的硬约束">#</a></h3>
+<p>WAL 页会被<strong>多次写盘</strong>：先写 0<del>2000 字节，后面填满了再写 0</del>5000 字节。这意味着：</p>
+<blockquote>
+<p>同一个磁盘位置的同一段字节，必须在每次重写时产生<strong>完全相同的密文</strong>。</p>
+</blockquote>
+<p>否则崩溃恢复时会读到前后不一致的页。</p>
+<p>这条要求排除了任何&quot;每次随机 IV&quot;的方案 —— 加密必须是<strong>位置确定性</strong>的。</p>
+<h3 id="32-为什么选-xts-而不是-ctr">3.2 为什么选 XTS 而不是 CTR<a hidden class="anchor" aria-hidden="true" href="#32-为什么选-xts-而不是-ctr">#</a></h3>
+<p>CTR 满足前缀稳定性，而且并行、无填充、能随机访问，看起来是最优解。但 CTR 有一个致命的失效模式：<strong>同一段密钥流加密两份不同的明文，两份明文直接异或泄露</strong>。</p>
+<p>而 WAL 里恰好有几个地方会让 LSN 重复：</p>
+<ul>
+<li><strong>时间线切换</strong>：备库提升后，TLI=2 的 WAL 会在和 TLI=1 相同的 LSN 区间写入不同内容。如果 IV 只含 LSN，这里就是直接的密钥流复用。</li>
+<li><code>pg_resetwal</code> / 从备份重建后 LSN 回退。</li>
+</ul>
+<p>所以如果用 CTR，IV <strong>必须</strong>是 <code>(system_identifier, timeline_id, LSN, block_counter)</code> 的完整组合，少一个字段就是灾难 —— 而这个约束在代码里没有任何编译期保护。</p>
+<p><strong>AES-256-XTS（国密场景下 SM4-XTS）在这里更稳</strong>：tweak 复用最坏只泄露&quot;这两个 16 字节块相同&quot;，不会泄露明文本身。</p>
+<p>对一个要长期维护、会被后人改动的模块，我更愿意选一个&quot;用错了不会当场崩盘&quot;的原语。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-text" data-lang="text"><span class="line"><span class="cl">tweak = f(segment_no, page_no_in_segment, timeline_id)
+</span></span><span class="line"><span class="cl">每 16B 块独立加密 → 天然前缀稳定
+</span></span></code></pre></div><p>尾部不足 16 字节的部分用密文窃取（CTS）；或者更简单：<strong>重写时从 ≤ 写入起点的最近 16 字节边界开始重新加密</strong>。跨边界的那个半块会被重新加密成不同密文，但因为写的是同一个磁盘位置，没有正确性问题。</p>
+<h3 id="33-国密与密码卡的性能陷阱">3.3 国密与密码卡的性能陷阱<a hidden class="anchor" aria-hidden="true" href="#33-国密与密码卡的性能陷阱">#</a></h3>
+<p>要过国测大概率要用 SM4。这里有个很实际的坑：</p>
+<blockquote>
+<p><strong>千万不要把 WAL 的批量加解密走密码卡（SDF 接口）。</strong></p>
+</blockquote>
+<p>一次 SDF 调用的往返在几十到几百微秒量级，而 WAL 刷盘路径上每页都要调一次，直接把提交延迟打穿。</p>
+<p>正确的分层是：</p>
+<table>
+  <thead>
+      <tr>
+          <th>层次</th>
+          <th>由谁做</th>
+          <th>频率</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>主密钥 wrap/unwrap、随机数、密钥生命周期证明</td>
+          <td><strong>密码卡（SDF）</strong></td>
+          <td>低频</td>
+      </tr>
+      <tr>
+          <td>WAL 页的批量加解密</td>
+          <td><strong>软件实现</strong></td>
+          <td>每页</td>
+      </tr>
+  </tbody>
+</table>
+<ul>
+<li>x86 上 SM4 走 AVX2/GFNI 的实现能到 1~3 GB/s；</li>
+<li>ARMv8 有 SM4 专用指令；</li>
+<li>启动时探测 CPU 特性并选择实现。</li>
+</ul>
+<p>这个分层在评审时也站得住脚：密钥全生命周期在密码卡内，工作密钥只在受保护内存中以明文存在。</p>
+<h2 id="4-性能设计真正的瓶颈不在写路径">4 性能设计：真正的瓶颈不在写路径<a hidden class="anchor" aria-hidden="true" href="#4-性能设计真正的瓶颈不在写路径">#</a></h2>
+<h3 id="41-写路径">4.1 写路径<a hidden class="anchor" aria-hidden="true" href="#41-写路径">#</a></h3>
+<p>自然的挂载点是 <code>XLogWrite()</code> 里 <code>pg_pwrite()</code> 之前 —— 但那是 <code>WALWriteLock</code> 的临界区，把 crypto 塞进去会直接拉长 group commit 的串行段。</p>
+<h4 id="方案-abounce-buffer推荐作为-v1">方案 A：bounce buffer（推荐作为 v1）<a hidden class="anchor" aria-hidden="true" href="#方案-abounce-buffer推荐作为-v1">#</a></h4>
+<p>WAL buffers 保持明文，加密到一块独立的 scratch buffer 再写盘。</p>
+<ul>
+<li>代价：每页多一次 8KB memcpy。1 GB/s 的 WAL 产生率下大约多 10% 的一个核，可以接受。</li>
+<li>buffer 必须按 <code>PG_IO_ALIGN_SIZE</code>（4KB）对齐，否则 direct I/O 路径会退化。</li>
+<li><strong>最大的好处是安全</strong>：不存在&quot;某个字节被异或两次变回明文&quot;这类静默泄密 bug。</li>
+</ul>
+<h4 id="方案-b原地增量加密后续优化">方案 B：原地增量加密（后续优化）<a hidden class="anchor" aria-hidden="true" href="#方案-b原地增量加密后续优化">#</a></h4>
+<p>在 <code>XLogCtl</code> 里维护一个和 <code>xlblocks</code> 平行的 <code>encrypted_upto[]</code> 数组，每次只加密 <code>[encrypted_upto, write_end)</code> 这一段，零拷贝。</p>
+<p>因为 <code>WaitXLogInsertionsToFinish()</code> 保证了写入点以下没有在途的 insert，并发上是安全的。</p>
+<p>但 <code>encrypted_upto</code> 只要算错一个字节，要么双重加密（磁盘上出现明文），要么漏加密 —— <strong>这两种错误都不会报错，只会静默发生</strong>。所以要等 A 方案跑稳、有了完整回归用例之后再上 B。</p>
+<h4 id="密钥流预计算两个方案都适用">密钥流预计算（两个方案都适用）<a hidden class="anchor" aria-hidden="true" href="#密钥流预计算两个方案都适用">#</a></h4>
+<p>XTS/CTR 的密钥流（或 tweak 序列）<strong>只依赖位置，不依赖明文</strong>。所以可以让 walwriter 或一个辅助进程提前把未来 N 个页的密钥流算好，刷盘时临界区里只剩一次 XOR（≈ memcpy 速度）。</p>
+<p>注意：预计算出来的密钥流<strong>等价于密钥材料</strong>，必须 <code>mlock</code> 住、禁止进 core dump、时间线切换时立即作废。</p>
+<h3 id="42-读路径才是真正要盯的">4.2 读路径才是真正要盯的<a hidden class="anchor" aria-hidden="true" href="#42-读路径才是真正要盯的">#</a></h3>
+<p>挂载点只有两处：<code>XLogPageRead()</code>（恢复）和 <code>WALRead()</code>（walsender / pg_waldump）。解密进 <code>XLogReaderState.readBuf</code>，每 8KB 一次，正好和现有的按页读取对齐。</p>
+<p>但受影响最大的是崩溃恢复和备库重放：</p>
+<table>
+  <thead>
+      <tr>
+          <th>路径</th>
+          <th>加密开销</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>主库写 WAL</td>
+          <td>可并行、可预计算，影响小</td>
+      </tr>
+      <tr>
+          <td>walreceiver 落盘</td>
+          <td><strong>零开销</strong>（收到的就是密文，直接写）</td>
+      </tr>
+      <tr>
+          <td><strong>startup 进程重放</strong></td>
+          <td><strong>单线程串行解密，无法并行</strong></td>
+      </tr>
+  </tbody>
+</table>
+<p>恢复是单进程串行读 WAL 的。如果软件 SM4 只有 500 MB/s，而 NVMe 能吐 3 GB/s，恢复时间会被解密直接拖长数倍。</p>
+<blockquote>
+<p><strong>RTO 才是这个模块真正的性能风险点。</strong> 验收时必须单独测崩溃恢复耗时和备库 apply lag，而不是只看 pgbench TPS。</p>
+</blockquote>
+<h3 id="43-与-wal_compression-的顺序">4.3 与 wal_compression 的顺序<a hidden class="anchor" aria-hidden="true" href="#43-与-wal_compression-的顺序">#</a></h3>
+<p><code>wal_compression</code> 是在 <code>XLogRecordAssemble()</code> 里做的，加密在写盘时做，所以顺序天然是&quot;<strong>先压缩后加密</strong>&quot;，是对的 —— 反过来就完全压不动了。</p>
+<p>这个不用改，但值得在注释里写一句，防止后人调整层次时搞反。</p>
+<h2 id="5-密钥管理易用性主要体现在这里">5 密钥管理：易用性主要体现在这里<a hidden class="anchor" aria-hidden="true" href="#5-密钥管理易用性主要体现在这里">#</a></h2>
+<h3 id="51-密钥必须放在文件里不能放-catalog">5.1 密钥必须放在文件里，不能放 catalog<a hidden class="anchor" aria-hidden="true" href="#51-密钥必须放在文件里不能放-catalog">#</a></h3>
+<p>这是最容易设计错的一点。</p>
+<p>startup 进程开始重放 WAL 时，<strong>catalog 还不可读</strong>（catalog 本身要靠重放才能一致）。所以 WAL 密钥不能存在 <code>pg_key_data</code> 这类系统表里。</p>
+<p>放在一个独立文件，比如 <code>global/pg_wal_keys</code>，内容自包含：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-text" data-lang="text"><span class="line"><span class="cl">{ key_id, wrapped_wal_key, kms_ref / 密码卡容器标识, algo, start_lsn, kcv }
+</span></span></code></pre></div><p>这样 <code>pg_waldump</code>、<code>pg_rewind</code>、<code>pg_basebackup</code> 这些<strong>离线工具在没有 running server 的情况下也能拿到密钥</strong>（用主密钥解开即可）。这一条决定了整套工具链是否好用。</p>
+<h3 id="52-lsn-密钥映射表">5.2 LSN 密钥映射表<a hidden class="anchor" aria-hidden="true" href="#52-lsn-密钥映射表">#</a></h3>
+<p>文件里存的不是一个密钥，而是一张有序映射：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-text" data-lang="text"><span class="line"><span class="cl">LSN 0/00000000 → NONE       (加密启用前的历史段，保持明文)
+</span></span><span class="line"><span class="cl">LSN 3/A0000000 → key_id = 1
+</span></span><span class="line"><span class="cl">LSN 9/1C000000 → key_id = 2  (轮转)
+</span></span></code></pre></div><p><strong>按段边界切换</strong>，不要按任意 LSN 切 —— 一个段一把密钥，归档和 restore 的逻辑会简单一个量级。</p>
+<p>这张表带来两个很大的易用性收益：</p>
+<ol>
+<li><strong>在线轮转</strong>：生成新密钥 → 用主密钥包装 → 追加映射 → <code>pg_switch_wal()</code>。旧段依然可解密，旧密钥等归档过期后再退役。全程不停机。</li>
+<li><strong>存量集群可直接启用</strong>：不需要 <code>initdb</code>，也不需要重写任何东西。这和表级 TDE 必须重写表数据形成鲜明对比，是个很好卖的特性。</li>
+</ol>
+<h3 id="53-和表级-tde-共用主密钥">5.3 和表级 TDE 共用主密钥<a hidden class="anchor" aria-hidden="true" href="#53-和表级-tde-共用主密钥">#</a></h3>
+<p>WAL 密钥用同一个 MEK 包装，挂在已有的密钥层次下面。</p>
+<p>用户视角只有一个主密钥要轮转、一个 KMS 要配 —— 这是&quot;高易用性&quot;最实在的体现。</p>
+<h2 id="6-周边生态别让工具链崩掉">6 周边生态：别让工具链崩掉<a hidden class="anchor" aria-hidden="true" href="#6-周边生态别让工具链崩掉">#</a></h2>
+<table>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>设计</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><strong>物理复制</strong></td>
+          <td>walsender <strong>直接发密文</strong>。备库零解密开销，且不依赖 TLS 配置是否正确。代价是备库必须先有密钥文件 —— 由 <code>pg_basebackup</code> 带过去</td>
+      </tr>
+      <tr>
+          <td><strong>归档</strong></td>
+          <td><code>archive_command</code> 拷的就是密文，归档件天然加密，不需要额外做任何事</td>
+      </tr>
+      <tr>
+          <td><strong>逻辑复制</strong></td>
+          <td>解码时在 walsender 里解密成明文，再按逻辑格式发给订阅端。<strong>这条链路上的明文只能靠 TLS 保护</strong>，必须在文档里写清楚。另外解码要重复回读 WAL，解密开销比物理复制高，<code>readBuf</code> 级别的缓存能吃掉大部分</td>
+      </tr>
+      <tr>
+          <td><strong>pg_waldump</strong></td>
+          <td>加 <code>-D &lt;datadir&gt;</code> 让它能找到密钥文件；不带密钥时降级为只输出页结构</td>
+      </tr>
+      <tr>
+          <td><strong>pg_rewind</strong></td>
+          <td>要读 WAL 找分歧点，走同一套离线密钥加载</td>
+      </tr>
+      <tr>
+          <td><strong>pg_receivewal</strong></td>
+          <td>存密文即可，不需要密钥</td>
+      </tr>
+  </tbody>
+</table>
+<h2 id="7-失败模式这个模块最危险的地方">7 失败模式：这个模块最危险的地方<a hidden class="anchor" aria-hidden="true" href="#7-失败模式这个模块最危险的地方">#</a></h2>
+<h3 id="71-用错密钥--静默数据丢失">7.1 用错密钥 = 静默数据丢失<a hidden class="anchor" aria-hidden="true" href="#71-用错密钥--静默数据丢失">#</a></h3>
+<p>这个必须单独拿出来说。</p>
+<p>WAL 记录的完整性靠 CRC32C。密钥错了 → 解出乱码 → CRC 校验失败 → 恢复代码会把它当成 <strong>&ldquo;WAL 正常结束&rdquo;</strong> 然后停止重放。</p>
+<p>结果就是：数据库起来了，看着一切正常，实际上丢了最后一大段事务。</p>
+<p>必须堵住：</p>
+<ol>
+<li>页头（明文区）里存 <code>key_id</code>，读的时候比对；</li>
+<li>密钥文件里存 KCV（key check value，比如 <code>E_K(0)</code> 截断），<strong>加载密钥时就验证</strong>，而不是等到解密失败；</li>
+<li>恢复过程中，如果一条记录 CRC 失败、但它所在的页 <code>key_id</code> 指向一个我们<strong>有</strong>的密钥，就不能当作 end-of-WAL —— 要 <code>FATAL</code>，宁可起不来也不能悄悄丢数据。</li>
+</ol>
+<h3 id="72-完整性的坦白">7.2 完整性的坦白<a hidden class="anchor" aria-hidden="true" href="#72-完整性的坦白">#</a></h3>
+<p>CTR/XTS 只给机密性，不给完整性。WAL 的 CRC32C 不是密码学 MAC，改了 WAL 再重算 CRC 是完全可行的。</p>
+<p>要真正抗篡改就得上 AEAD（GCM / SM4-GCM），但每页 16 字节的 tag 没地方放（要么改页格式压缩可用载荷，要么搞 sidecar 文件），而且和&quot;页被反复重写&quot;叠加之后逻辑相当绕。</p>
+<p>建议 <strong>v1 明确只做机密性</strong>，在设计文档里把这个边界写死，别让评审或用户误以为它防篡改；抗篡改作为后续版本，或者交给存储层 / 文件系统。</p>
+<h2 id="8-落地与验收">8 落地与验收<a hidden class="anchor" aria-hidden="true" href="#8-落地与验收">#</a></h2>
+<h3 id="81-代码结构">8.1 代码结构<a hidden class="anchor" aria-hidden="true" href="#81-代码结构">#</a></h3>
+<p>控制在一个 <code>walcrypt.c</code> 里，对外只暴露两个函数：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">WALEncrypt</span><span class="p">(</span><span class="kt">char</span> <span class="o">*</span><span class="n">dst</span><span class="p">,</span> <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">src</span><span class="p">,</span> <span class="n">XLogRecPtr</span> <span class="n">startptr</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">                <span class="n">Size</span> <span class="n">nbytes</span><span class="p">,</span> <span class="n">TimeLineID</span> <span class="n">tli</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">WALDecrypt</span><span class="p">(</span><span class="kt">char</span> <span class="o">*</span><span class="n">buf</span><span class="p">,</span> <span class="n">XLogRecPtr</span> <span class="n">startptr</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">                <span class="n">Size</span> <span class="n">nbytes</span><span class="p">,</span> <span class="n">TimeLineID</span> <span class="n">tli</span><span class="p">);</span>
+</span></span></code></pre></div><p>调用点应该只有三处：</p>
+<ul>
+<li><code>XLogWrite()</code> —— 写</li>
+<li><code>XLogPageRead()</code> —— 恢复时读</li>
+<li><code>WALRead()</code> —— walsender / 工具读</li>
+</ul>
+<blockquote>
+<p>如果实现过程中发现需要往第四、第五个地方插钩子，说明抽象漏了，应该退回来重新想，而不是继续加钩子。这是判断设计是否还成立的标准。</p>
+</blockquote>
+<h3 id="82-验收指标">8.2 验收指标<a hidden class="anchor" aria-hidden="true" href="#82-验收指标">#</a></h3>
+<table>
+  <thead>
+      <tr>
+          <th>项</th>
+          <th>目标</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>pgbench TPS 回退</td>
+          <td>&lt; 3%</td>
+      </tr>
+      <tr>
+          <td>批量导入（WAL 密集）吞吐回退</td>
+          <td>&lt; 5%</td>
+      </tr>
+      <tr>
+          <td><strong>崩溃恢复耗时增加</strong></td>
+          <td><strong>&lt; 10%（重点）</strong></td>
+      </tr>
+      <tr>
+          <td>备库 apply lag 增加</td>
+          <td>基本为 0（密文传输）</td>
+      </tr>
+      <tr>
+          <td>密钥轮转</td>
+          <td>在线，无连接中断</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="83-最该覆盖的测试用例">8.3 最该覆盖的测试用例<a hidden class="anchor" aria-hidden="true" href="#83-最该覆盖的测试用例">#</a></h3>
+<p>都在&quot;反复重写&quot;的边界上：</p>
+<ol>
+<li>写了一半的页 + 崩溃 + 恢复 + 继续追加；</li>
+<li>时间线切换后，同一 LSN 区间写入不同内容；</li>
+<li>跨段边界的记录；</li>
+<li>密钥轮转恰好落在段中间；</li>
+<li>用错密钥启动（必须 <code>FATAL</code>，不能静默截断）。</li>
+</ol>
+<p>这几个用例写扎实了，模块基本就稳了。</p>
+<h2 id="9-待深挖">9 待深挖<a hidden class="anchor" aria-hidden="true" href="#9-待深挖">#</a></h2>
+<p>两块值得继续展开：</p>
+<ol>
+<li><strong>原地增量加密的并发证明</strong> —— 要论证 <code>encrypted_upto</code> 和 <code>WaitXLogInsertionsToFinish()</code> 的交互确实无隙；</li>
+<li><strong>逻辑解码路径上的解密开销</strong> —— 解码要反复回读 WAL，解密可能会把已有的逻辑复制性能优化吃掉一部分。</li>
+</ol>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/%E5%8A%A0%E5%AF%86/">加密</a></li><li><a href="http://localhost:1313/tags/postgresql/">PostgreSQL</a></li><li><a href="http://localhost:1313/tags/%E5%AD%98%E5%82%A8%E5%BC%95%E6%93%8E/">存储引擎</a></li><li><a href="http://localhost:1313/tags/%E8%AE%BE%E8%AE%A1%E6%96%87%E6%A1%A3/">设计文档</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/security/3-2-postgresql-tde/">数据库安全 0 postgresql表级透明加密</a></li><li><a href="/posts/projectdocs/13-design-tde/">海量 透明加密 设计</a></li><li><a href="/posts/projectdocs/3-requirement-pg-hba-encrypt/">海量 3 需求 pg_hba.conf加密</a></li><li><a href="/posts/projectdocs/1-design-oracle-crypto-func/">海量 1 设计 oracle加密函数</a></li><li><a href="/posts/postgresql/1-4-storage/">PostgreSQL 1-4 存储模块</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./安全</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

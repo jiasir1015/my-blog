@@ -1,0 +1,2340 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>PostgreSQL 3-13 Publication | Kernel Notes</title>
+<meta name="keywords" content="PostgreSQL, 逻辑复制">
+<meta name="description" content="1 逻辑复制背景
+1.1 逻辑复制场景
+在使用数据库时，为提高整个系统的可靠性，或实现不同部门数据同步等场景，很多客户的部署模型存在：一主多备、异构数据库等特点，在保证性能的前提下，常见部署模型如下：
+
+&#43;-------------&#43;    sql    &#43;---------------------&#43;    wal    &#43;--------------------&#43;
+| application | --------&gt; | postgresql (master) |  -------&gt; | postgresql (slave) |
+&#43;-------------&#43;           &#43;---------------------&#43;           &#43;--------------------&#43;
+                                    |
+                                    |
+                                    |   decoded-wal         &#43;--------------------&#43;
+                                    &#43;---------------------&gt; | mysql, oracle, ..  |
+                                                            &#43;--------------------&#43;
+1.2 逻辑复制功能
+1.3 逻辑复制基础
+首先，需自行了解一些存储的基本知识，包括事务特性、mvcc机制，表的物理存储格式：filenode、page、tuple等。
+此处，以一个例子，介绍什么wal日志的特点。需了解一些
+
+
+应用执行事务
+假设同一时间，有2个事务，事务id分别为10和11。
+
+  
+      
+          时间
+          应用1
+          应用2
+      
+  
+  
+      
+          0
+          CREATE TABLE t1 (c1 INT,c2 INT)
+          -
+      
+      
+          1
+          CREATE TABLE t2 (c1 INT,c2 INT)
+          -
+      
+      
+          2
+          BEGIN (xid=10)
+          -
+      
+      
+          3
+          INSERT INTO t1 VALUES(10, 1)
+          -
+      
+      
+          4
+          -
+          BEGIN (xid=11)
+      
+      
+          5
+          -
+          INSERT INTO t1 VALUES (11, 1)
+      
+      
+          6
+          INSERT INTO t2 VALUES (10, 2)
+          -
+      
+      
+          7
+          COMMIT
+          
+      
+      
+          8
+          -
+          DELETE FROM t1 WHERE c1 = 10
+      
+      
+          9
+          -
+          INSERT INTO t2 VALUES (11, 2)
+      
+      
+          10
+          -
+          COMMIT
+      
+  
+
+
+
+内核产生wal日志
+所有表的wal日志，按生成wal的顺序，组织在一起。上述示例中，产生的wal如下：（此处仅列举关键信息）">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/postgresql/3-13-publication/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/postgresql/3-13-publication/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/postgresql/3-13-publication/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="PostgreSQL 3-13 Publication">
+  <meta property="og:description" content="1 逻辑复制背景 1.1 逻辑复制场景 在使用数据库时，为提高整个系统的可靠性，或实现不同部门数据同步等场景，很多客户的部署模型存在：一主多备、异构数据库等特点，在保证性能的前提下，常见部署模型如下：
+&#43;-------------&#43; sql &#43;---------------------&#43; wal &#43;--------------------&#43; | application | --------&gt; | postgresql (master) | -------&gt; | postgresql (slave) | &#43;-------------&#43; &#43;---------------------&#43; &#43;--------------------&#43; | | | decoded-wal &#43;--------------------&#43; &#43;---------------------&gt; | mysql, oracle, .. | &#43;--------------------&#43; 1.2 逻辑复制功能 1.3 逻辑复制基础 首先，需自行了解一些存储的基本知识，包括事务特性、mvcc机制，表的物理存储格式：filenode、page、tuple等。
+此处，以一个例子，介绍什么wal日志的特点。需了解一些
+应用执行事务
+假设同一时间，有2个事务，事务id分别为10和11。
+时间 应用1 应用2 0 CREATE TABLE t1 (c1 INT,c2 INT) - 1 CREATE TABLE t2 (c1 INT,c2 INT) - 2 BEGIN (xid=10) - 3 INSERT INTO t1 VALUES(10, 1) - 4 - BEGIN (xid=11) 5 - INSERT INTO t1 VALUES (11, 1) 6 INSERT INTO t2 VALUES (10, 2) - 7 COMMIT 8 - DELETE FROM t1 WHERE c1 = 10 9 - INSERT INTO t2 VALUES (11, 2) 10 - COMMIT 内核产生wal日志
+所有表的wal日志，按生成wal的顺序，组织在一起。上述示例中，产生的wal如下：（此处仅列举关键信息）">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-08-28T16:18:00+08:00">
+    <meta property="article:modified_time" content="2026-08-14T17:47:31+08:00">
+    <meta property="article:tag" content="PostgreSQL">
+    <meta property="article:tag" content="逻辑复制">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="PostgreSQL 3-13 Publication">
+<meta name="twitter:description" content="1 逻辑复制背景
+1.1 逻辑复制场景
+在使用数据库时，为提高整个系统的可靠性，或实现不同部门数据同步等场景，很多客户的部署模型存在：一主多备、异构数据库等特点，在保证性能的前提下，常见部署模型如下：
+
+&#43;-------------&#43;    sql    &#43;---------------------&#43;    wal    &#43;--------------------&#43;
+| application | --------&gt; | postgresql (master) |  -------&gt; | postgresql (slave) |
+&#43;-------------&#43;           &#43;---------------------&#43;           &#43;--------------------&#43;
+                                    |
+                                    |
+                                    |   decoded-wal         &#43;--------------------&#43;
+                                    &#43;---------------------&gt; | mysql, oracle, ..  |
+                                                            &#43;--------------------&#43;
+1.2 逻辑复制功能
+1.3 逻辑复制基础
+首先，需自行了解一些存储的基本知识，包括事务特性、mvcc机制，表的物理存储格式：filenode、page、tuple等。
+此处，以一个例子，介绍什么wal日志的特点。需了解一些
+
+
+应用执行事务
+假设同一时间，有2个事务，事务id分别为10和11。
+
+  
+      
+          时间
+          应用1
+          应用2
+      
+  
+  
+      
+          0
+          CREATE TABLE t1 (c1 INT,c2 INT)
+          -
+      
+      
+          1
+          CREATE TABLE t2 (c1 INT,c2 INT)
+          -
+      
+      
+          2
+          BEGIN (xid=10)
+          -
+      
+      
+          3
+          INSERT INTO t1 VALUES(10, 1)
+          -
+      
+      
+          4
+          -
+          BEGIN (xid=11)
+      
+      
+          5
+          -
+          INSERT INTO t1 VALUES (11, 1)
+      
+      
+          6
+          INSERT INTO t2 VALUES (10, 2)
+          -
+      
+      
+          7
+          COMMIT
+          
+      
+      
+          8
+          -
+          DELETE FROM t1 WHERE c1 = 10
+      
+      
+          9
+          -
+          INSERT INTO t2 VALUES (11, 2)
+      
+      
+          10
+          -
+          COMMIT
+      
+  
+
+
+
+内核产生wal日志
+所有表的wal日志，按生成wal的顺序，组织在一起。上述示例中，产生的wal如下：（此处仅列举关键信息）">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "PostgreSQL 3-13 Publication",
+      "item": "http://localhost:1313/posts/postgresql/3-13-publication/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "PostgreSQL 3-13 Publication",
+  "name": "PostgreSQL 3-13 Publication",
+  "description": "1 逻辑复制背景 1.1 逻辑复制场景 在使用数据库时，为提高整个系统的可靠性，或实现不同部门数据同步等场景，很多客户的部署模型存在：一主多备、异构数据库等特点，在保证性能的前提下，常见部署模型如下：\n+-------------+ sql +---------------------+ wal +--------------------+ | application | --------\u0026gt; | postgresql (master) | -------\u0026gt; | postgresql (slave) | +-------------+ +---------------------+ +--------------------+ | | | decoded-wal +--------------------+ +---------------------\u0026gt; | mysql, oracle, .. | +--------------------+ 1.2 逻辑复制功能 1.3 逻辑复制基础 首先，需自行了解一些存储的基本知识，包括事务特性、mvcc机制，表的物理存储格式：filenode、page、tuple等。\n此处，以一个例子，介绍什么wal日志的特点。需了解一些\n应用执行事务\n假设同一时间，有2个事务，事务id分别为10和11。\n时间 应用1 应用2 0 CREATE TABLE t1 (c1 INT,c2 INT) - 1 CREATE TABLE t2 (c1 INT,c2 INT) - 2 BEGIN (xid=10) - 3 INSERT INTO t1 VALUES(10, 1) - 4 - BEGIN (xid=11) 5 - INSERT INTO t1 VALUES (11, 1) 6 INSERT INTO t2 VALUES (10, 2) - 7 COMMIT 8 - DELETE FROM t1 WHERE c1 = 10 9 - INSERT INTO t2 VALUES (11, 2) 10 - COMMIT 内核产生wal日志\n所有表的wal日志，按生成wal的顺序，组织在一起。上述示例中，产生的wal如下：（此处仅列举关键信息）\n",
+  "keywords": [
+    "PostgreSQL", "逻辑复制"
+  ],
+  "articleBody": "1 逻辑复制背景 1.1 逻辑复制场景 在使用数据库时，为提高整个系统的可靠性，或实现不同部门数据同步等场景，很多客户的部署模型存在：一主多备、异构数据库等特点，在保证性能的前提下，常见部署模型如下：\n+-------------+ sql +---------------------+ wal +--------------------+ | application | --------\u003e | postgresql (master) | -------\u003e | postgresql (slave) | +-------------+ +---------------------+ +--------------------+ | | | decoded-wal +--------------------+ +---------------------\u003e | mysql, oracle, .. | +--------------------+ 1.2 逻辑复制功能 1.3 逻辑复制基础 首先，需自行了解一些存储的基本知识，包括事务特性、mvcc机制，表的物理存储格式：filenode、page、tuple等。\n此处，以一个例子，介绍什么wal日志的特点。需了解一些\n应用执行事务\n假设同一时间，有2个事务，事务id分别为10和11。\n时间 应用1 应用2 0 CREATE TABLE t1 (c1 INT,c2 INT) - 1 CREATE TABLE t2 (c1 INT,c2 INT) - 2 BEGIN (xid=10) - 3 INSERT INTO t1 VALUES(10, 1) - 4 - BEGIN (xid=11) 5 - INSERT INTO t1 VALUES (11, 1) 6 INSERT INTO t2 VALUES (10, 2) - 7 COMMIT 8 - DELETE FROM t1 WHERE c1 = 10 9 - INSERT INTO t2 VALUES (11, 2) 10 - COMMIT 内核产生wal日志\n所有表的wal日志，按生成wal的顺序，组织在一起。上述示例中，产生的wal如下：（此处仅列举关键信息）\n顺序 type xid filenode offset data 1 insert 10 (t1) xx,xx ‘10,1’ 2 insert 11 (t1) xx,xx ‘11,1’ 3 insert 10 (t2) xx,xx ‘10,2’ 4 commit 10 - - - 5 delete 11 (t1) xx,xx - 6 insert 11 (t2) xx,xx ‘11,2’ 7 commit 11 - - - 1.4 物理复制区别 一、物理复制 在复制模型中，分为主节点、备节点。\n主节点 备节点：与主节点相比，数据库版本相同，表的数量相同，表的的物理信息相同，表中数据相同。回放wal日志时，可直接使用wal日志中的[filenode, offset]等信息。 用户执行SQL：INSERT INTO t1 VALUES(1, 'data1')时，wal的内容大概如下：\n[0, [1700, 1800], [8, 3], [10, '1 data1']] 解释： - 0 : insert - 1700 : directory name (database oid) - 1800 : file name (filenode) - 8 : page index number - 3 : tuple index number - 10 : transcation id 二、逻辑复制 在复制模型中，分为发布端、订阅端。\n发布端： 订阅端： 异构订阅端：数据库类型不同 同源订阅端：数据库类型相同，但是，以下内容可能存在差异： 数据库版本 表的数量 表的物理信息 表中数据 与物理复制相比，逻辑复制存在一些差异，包括：\n发布端：生成wal时，wal中信息更多一些 发布端：读取wal时，解码wal，生成decoded-wal 发布端：发送wal时，不按wal顺序发送decoded-wal，而是根据事务顺序，一次发送由同一事务生成的多条wal 订阅端：回放wal时，根据decoded-wal，获取操作、数据等信息，调用heapam接口，例如heap_insert, heap_delete等，重放decoded-wal，生成新的wal 2 使用逻辑复制 2.1 发布端 配置\n# pg14 echo \"wal_level=logical\" \u003e\u003e $PG_HOME/data/postgresql.conf echo \"max_replication_slots=4\" \u003e\u003e $PG_HOME/data/postgresql.conf echo \"max_wal_senders=4\" \u003e\u003e $PG_HOME/data/postgresql.conf echo \"max_worker_processes=8\" \u003e\u003e $PG_HOME/data/postgresql.conf echo \"max_logical_replication_workers=4\" \u003e\u003e $PG_HOME/data/postgresql.conf echo \"listen_addresses='*'\" \u003e\u003e $PG_HOME/data/postgresql.conf sed -i '1i host all all 0.0.0.0/0 md5\\n' $PG_HOME/data/pg_hba.conf # host all all 0.0.0.0/0 md5 psql -d postgres -c \"SELECT name,setting FROM pg_settings WHERE name in ('wal_level', 'max_replication_slots', 'max_wal_senders', 'max_worker_processes', 'max_logical_replication_workers')\" 创建基表\nCREATE DATABASE pubdb; \\c pubdb CREATE TABLE pt1(c1 INT,c2 TEXT); CREATE TABLE pt2(c1 INT, c2 TEXT); INSERT INTO pt1 VALUES (1,'data1-1'), (2,'data1-2'); INSERT INTO pt1 VALUES (1,'data2-1'), (2,'data2-2'); 创建发布信息\nCREATE PUBLICATION pub1 FOR TABLE pt1,pt2; -- SELECT * FROM pg_publication; -- SELECT * FROM pg_publication_rel; -- 设置发布状态 SELECT pg_create_logical_replication_slot('pslot1', 'pgoutput'); -- SELECT * FROM pg_replication_slots; -- SELECT * FROM pg_stat_replication_slots; -- 检查数据 -- SELECT * FROM pg_logical_slot_peek_changes('pslot1', NULL, NULL); -- 删除slot -- SELECT pg_drop_replication_slot('pslot1'); 创建发布用户\n-- 订阅端通过pu1用户来连接发布端，以接收数据 CREATE USER pu1 REPLICATION PASSWORD 'pu1.12345'; GRANT CONNECT ON DATABASE pubdb TO pu1; GRANT USAGE ON SCHEMA public TO pu1; GRANT ALL ON pt1,pt2 TO pu1; 验证\npsql -h 172.16.100.134 -p 5432 -d pubdb -U pu1 -W pu1.12345 其他参考语法\nALTER SUBSCRIPTION sub1 DISABLE; ALTER SUBSCRIPTION sub1 ENABLE; ALTER PUBlication pub1 ADD TABLE new_tbl; 2.2 订阅端 配置\n作为客户端访问发布端，无需配置任何guc参数\n# 如果发布端、订阅端在同一机器，确保二者端口不同 echo \"port=5433\" \u003e\u003e $PG_HOME/datas/postgresql.conf 创建基表，与发布端表定义一致\n-- psql -p 5433 -d postgres CREATE DATABASE subdb; \\c subdb CREATE TABLE pt1(c1 INT,c2 TEXT); CREATE TABLE pt2(c1 INT, c2 TEXT); 创建订阅信息\nCREATE SUBSCRIPTION sub1 CONNECTION 'host=127.0.0.1 port=5432 dbname=pubdb user=pu1 password=pu1.12345' PUBLICATION pub1 WITH (create_slot = false, slot_name = 'pslot1', copy_data = true); -- SELECT * FROM pg_subscription; -- SELECT * FROM pg_subscription_rel; -- SELECT * FROM pg_stat_subscription; 查看表数据\nSELECT * FROM pt1; -- 向发布端表写数据，订阅端也会收到数据 其他操作\n-- 暂停接受数据 ALTER SUBSCRIPTION sub1 DISABLE; 2.3 订阅端并行apply # pg17 echo \"max_parallel_apply_workers_per_subscription=4\" \u003e\u003e $PG_HOME/data/postgresql.conf ALTER SUBSCRIPTION sub1 SET (parallel_apply = true); 2.3 计算逻辑复制速度 计算xlog生成速度\n-- 测试前，获取xlog写入位置 DROP TABLE IF EXISTS tlsn; SELECT pg_current_wal_lsn() AS lsn1 INTO tlsn; -- 测试后，获取当前xlog写入位置，并计算xlog差值 SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), (SELECT lsn1 FROM tlsn)); -- 参考：转换为10进制 -- SELECT ('x' || lpad(replace(pg_current_wal_lsn()::text, '/', ''), 16, '0'))::bit(64)::bigint AS decimal_lsn; 插入数据\ntpcc写入\nALTER SYSTEM SET password_encryption='md5'; SELECT pg_reload_conf(); 3 逻辑复制原理 3.1 进程类型 以下是逻辑复制的进程模型与工作流程：\n# pg-17 [发布端] [订阅端] postmaster postgres wal-writer wal-sender wal-file postmaster apply-launch apply-worker +-------------------+------------------------------+------------+---------------------------+---+---------------------------+---------------------------+----------------------+ | 1 receive connect | | | | | | | | 2 fork postgres -\u003e| | | | | | | | | 3 receive sql | | | | | | | | delete .. t1 .. c1=10 | | | | | | | | 4 scan tuple from t1 | | | | | | | | 5 get tuple pointer | | | | | | | | 6 mark tuple deleted | | | | | | | | 7 generate wal | | | | | | | | type=delete,xid=11 | | | | | | | | filenode=1700,offset=8-3 | | | | | | | | data='10',column=1 | | | | | | | | 8 copy wal to wal-buffer ---\u003e| | | | | | | | 9 write wal---------------------------\u003e| | | | | | | | 10 startp | | | | | | 11 startup apply-launch -\u003e| | | | | | | 12 read suscription | | | | | | 13 calucate worker num | | | | | \u003c-------------------------| 14 register worker info | | | | | 15 read bgworker info | | | | | 16 startup apply-worker -----------------------------\u003e| | \u003c-------------------------------------------------------------+---------------------------+-----------------------------------------------------------| 17 ask publliction | 18 receive connect | | | | 19 fork postgres as wal-sender ------------------------------\u003e| | | | 20 read wal \u003c-------------| | | 21 decod to decode-wal | | 22 send decoded-wal -----------------------------------------------------------------\u003e| | 23 receive decoded-wal | 24 apply decoded-wal | (if is postgresql) | 25 scan tuple from t1 | 26 get tuple pointer | 27 mark tuple deleted | 28 generate wal 3.2 复制流程 application postgres wal-file wal-sender +-----------------------+---------------------------+-----------------------+ 1 begin (xid=10) ----\u003e | 2 insert t1 (10,1) ---\u003e | | 3 write wal | [10, insert '10,1'] --\u003e | | | | \u003c- | 4 read wal | | [10, insert '10,1'] | | 5 decode wal | 6 put to list (xid=10) 3 begin (xid=11) ------\u003e| （待继续补充） 4 逻辑复制源码 4.2 关键设计 一、流复制 # 发布端 @ pg-17 WalSndLoop for (;;) # 持续读取、解码、发送 xlog XLogSendLogical pq_sendbyte(\u0026output_message, 'w'); XLogReadRecord # 读取1条record，放入logical_decoding_ctx ReadPageInternal DecodeXLogRecord LogicalDecodingProcessRecord # 开始解码 ReorderBufferAssignChild rmgr.rm_decode # hook: RmgrTable [heap_decode, xact_decode] heap_decode ReorderBufferProcessXid ReorderBufferTXNByXid # 为事务申请链表 if XLOG_HEAP_INSERT: DecodeInsert ReorderBufferGetChange # 申请一个node DecodeXLogTuple ReorderBufferQueueChange # 将node放入list ReorderBufferTXNByXid dlist_push_tail ReorderBufferProcessPartialChange # 流复制 ReorderBufferStreamTXN ReorderBufferProcessTXN # 发送数据 ReorderBufferIterTXNNext stream_start stream_start_cb_wrapper stream_start_cb pgoutput_stream_start logicalrep_write_stream_start 'LOGICAL_REP_MSG_STREAM_START xid is_first_sedment' OutputPluginWrite write WalSndWriteData pq_flush_if_writable ReorderBufferApplyChange stream_change stream_change_cb_wrapper stream_change_cb pgoutput_change OutputPluginPrepareWrite # 数据头 prepare_write WalSndPrepareWrite pq_sendbyte(ctx-\u003eout, 'w') pgoutput_send_begin # 消息头 + 消息 logicalrep_write_begin 'LOGICAL_REP_MSG_BEGIN final_lsn commit_time xid' if REORDER_BUFFER_CHANGE_INSERT: logicalrep_write_insert 'LOGICAL_REP_MSG_INSERT xid relid N nattr len value' if REORDER_BUFFER_CHANGE_DELETE logicalrep_write_delete OutputPluginWrite (WalSndWriteDataHelper) write ReorderBufferIterTXNFinish stream_stop stream_stop_cb_wrapper stream_stop_cb pgoutput_stream_stop logicalrep_write_stream_stop 'LOGICAL_REP_MSG_STREAM_STOP' OutputPluginWrite write ReorderBufferSaveTXNSnapshot UpdateDecodingStats ReorderBufferCheckMemoryLimit elif XLOG_HEAP_DELETE: DecodeDelete ReorderBufferGetChange DecodeXLogTuple ReorderBufferQueueChange xact_decode if XLOG_XACT_COMMIT: DecodeCommit SnapBuildCommitTxn ReorderBufferCommit ReorderBufferTXNByXid ReorderBufferReplay ReorderBufferStreamCommit ReorderBufferStreamTXN stream_commit pgoutput_stream_commit logicalrep_write_stream_commit OutputPluginWrite UpdateDecodingStats # 订阅端 @ pg-17 ApplyWorkerMain SetupApplyOrSyncWorker GetSubscription run_apply_worker walrcv_connect walrcv_identify_system walrcv_startstreaming start_apply LogicalRepApplyLoop for (;;) walrcv_receive for (;;) if 'w' apply_dispatch if LOGICAL_REP_MSG_STREAM_START: 'S' apply_handle_stream_start logicalrep_read_stream_start pa_allocate_worker get_transaction_apply_action if TRANS_LEADER_SEND_TO_PARALLEL: pa_send_data elif LOGICAL_REP_MSG_INSERT: 'I' apply_handle_insert handle_streamed_transaction get_transaction_apply_action pa_find_worker if TRANS_LEADER_SEND_TO_PARALLEL: pa_send_data shm_mq_send elif LOGICAL_REP_MSG_STREAM_STOP: 'E' apply_handle_stream_stop get_transaction_apply_action pa_find_worker elif LOGICAL_REP_MSG_COMMIT: 'C' apply_handle_commit walrcv_receive walrcv_endstreaming # 订阅端 parallel-worker pa_allocate_worker pa_launch_parallel_worker ParallelApplyWorkerMain logicalrep_worker_attach LogicalParallelApplyLoop for (;;) shm_mq_receive apply_dispatch if LOGICAL_REP_MSG_INSERT: begin_replication_step logicalrep_read_insert logicalrep_rel_open apply_handle_insert_internal 4.1 完整流程 # 前置 ReplicationSlotCreate # Postmaster进程 StartupXLOG StartupReplicationSlots RestoreSlotFromDisk # 读取slot文件 OpenTransientFile memcpy(ReplicationSlotCtl) # postgres进程 INSERT heap_insert XLogInsert XLogRecordAssemble XLogInsertRecord CopyXLogRecordTowal # 订阅端 apply-worker @pg.14 # postmaster进程 PostmasterMain checkDatadir checkControlFile ApplyLauncherRegister RegisterBackgroundWorker('ApplyLauncherMain') slist_push_head # 加入全局list BackgroundWorkerList reset_shared SysLogger_Start maybe_start_bgworkers do_start_bgworker # 暂时不启动 ServerLoop for ;; ConnCreate BackendStartup BackendRun PostgresMain maybe_start_bgworkers do_start_bgworker InitPostmasterChild fork # fork 新进程 StartBackgroundWorker LookupBackgroundWorkerFunction # 获取回调函数 ApplyLauncherMain entrypt -\u003e ApplyLauncherMain # 新进程主函数：ApplyLauncherMain # apply-launch进程 ApplyLauncherMain for (;;) get_subscription_list # 从系统表中，获取所有subscription table_beginscan_catalog('pg_subscription') heap_getnext foreach logicalrep_worker_find logicalrep_worker_launch RegisterDynamicBackgroundWorker('ApplyWorkerMain') # 加入全局BackgroundWorkerData，postmaster进程在ServerLoop中检查该结构体 WaitForReplicationWorkerAttach # 等待postmaster进程fork apply-worker进程 # fork成功，自动调用 entrypt -\u003e ApplyWorkerMain # 订阅端 CREATE SUBSCRIPTION CreateSubscription CatalogTupleInsert('pg_subscription') replorigin_create CatalogTupleInsert('pg_replication_origin') check_publications # 与发布端通信，检查publication状态 check_publications_origin fetch_table_list # 读取发布端表基本信息 AddSubscriptionRelState CatalogTupleInsert('pg_subscription') # 系统表srsubstate= (copy_data ? 'i' : 'r') ApplyLauncherWakeupAtCommit # 启动apply-worker process_syncing_tables process_syncing_tables_for_apply process_syncing_tables_for_apply wait_for_relation_state_change GetSubscriptionRelState # 获取系统表 srsubstate logicalrep_worker_find # 查找与等待 sync 进程 apply-launch 只启动apply-worker类型进程 # apply-worker进程 ApplyWorkerMain GetSubscription SearchSysCache1('pg_subscription') if am_tablesync_worker LogicalRepSyncTableStart # 追赶？ GetSubscriptionRelState SearchSysCache1('pg_subscription' and 'pg_subscription_rel') LogicalRepApplyLoop for (;;) walrcv_receive # 接收发布端数据 for (;;) pq_getmsgbyte if 'w': apply_dispatch # 回放数据 pq_getmsgbyte if LOGICAL_REP_MSG_BEGIN: apply_handle_begin if LOGICAL_REP_MSG_COMMIT: apply_handle_commit if LOGICAL_REP_MSG_INSERT: apply_handle_insert logicalrep_read_insert logicalrep_rel_open create_edata_for_relation slot_store_data apply_handle_insert_internal ExecOpenIndices ExecSimpleRelationInsert simple_table_tuple_insert table_tuple_insert hook: tuple_insert heapam_tuple_insert heap_insert heap_prepare_insert RelationGetBufferForTuple RelationPutHeapTuple XLogInsert ExecInsertIndexTuples ExecCloseIndices elif 'k': send_feedback walrcv_receive send_feedback maybe_reread_subscription walrcv_endstreaming # 并行apply apply_dispatch(LOGICAL_REP_MSG_STREAM_START) apply_handle_stream_start pa_allocate_worker pa_launch_parallel_worker logicalrep_worker_launch if TRANS_LEADER_SEND_TO_PARALLEL pa_send_data shm_mq_send # 发布端（由订阅端触发） @pg.14 PostmasterMain ServerLoop BackendStartup BackendInitialize # 处理连接参数 ProcessStartupPacket if conn is 'replication': am_walsender = true BackendRun # 处理SQL语句 PostgresMain for (;;) ReadCommand if am_walsender: if exec_replication_command StartLogicalReplication CreateDecodingContext # 创建全局变量 logical_decoding_ctx，包括reader和re-order StartupDecodingContext hook: reorder.begin = begin_cb_wrapper hook: reorder.apply_change = change_cb_wrapper hook: write = WalSndWriteData WalSndLoop for (;;) # 持续读取、解码、发送 xlog XLogSendLogical XLogReadRecord # 读取1条record，放入logical_decoding_ctx ReadPageInternal DecodeXLogRecord LogicalDecodingProcessRecord # 开始解码 DecodeHeapOp DecodeInsert XLogRecGetBlockData DecodeXLogTuple ReorderBufferQueueChange ReorderBufferTXNByXid # 根据xid，获取buffer dlist_push_tail DecodeXactOp DecodeCommit ReorderBufferCommit ReorderBufferTXNByXid ReorderBufferReplay ReorderBufferProcessTXN while ReorderBufferIterTXNNext # 处理 INSERT ReorderBufferApplyChange hook: apply_change change_cb_wrapper hook: change_cb pgoutput_change # 暂存，不发送 logicalrep_write_insert logicalrep_write_tuple OutputPluginWrite hook: write WalSndWriteData pq_flush_if_writable socket_flush_if_writable .. send # 系统调用 send hook: commit # 处理 COMMIT commit_cb_wrapper hook: commit_cb pgoutput_commit_txn # 一起发送 logicalrep_write_commit OutputPluginWrite .. send else: exec_simple_query else: exec_simple_query # 发布端：流式复制 ReorderBufferReplay ReorderBufferStreamCommit ReorderBufferStreamTXN ReorderBufferProcessTXN stream_start_cb_wrapper hook: stream_start_cb _PG_output_plugin_init pgoutput_stream_start logicalrep_write_stream_start pq_sendbyte(LOGICAL_REP_MSG_STREAM_START) 4.3 并行解码 # @reader # read wal LogicalReadRecordMain while (true) XLogReadRecord # read record ParseProcessRecord # parse record ParseXactOp # parse xact if 'XLOG_XACT_COMMIT': ParseCommitXlog ParallelReorderBufferGetChange # alloc a change-item PutChangeQueue # send change-item ParseHeapOp # parse heap if 'XLOG_HEAP_INSERT': ParseInsertXlog ParallelReorderBufferGetChange # alloc a change-item DecodeXLogTuple # fill change-item (wal -\u003e change-itme) PutChangeQueue # send change-item LogicalQueuePut(decoder[x]-\u003echangeQueue) elif 'XLOG_HEAP_DELETE': ParseDeleteXlog # @decoder # decode change ParallelDecodeWorkerMain while (true) LogicalQueueTop # recv change-item ParallelDecodeChange # decode change-item if 'PARALLEL_REORDER_BUFFER_CHANGE_COMMIT': ParallelDecodeCommitOrAbort GetLogicalLog if 'PARALLEL_REORDER_BUFFER_CHANGE_INSERT': getIUDLogicalLog # make log (change-item -\u003e log) LogicalQueuePut(decoder-\u003eLogicalLogQueue) # put log to log-queue LogicalQueuePop # pop change-item, it's finished # @sender # send log WalSndLoop for (;;) XLogSendParallelLogical for (;; decoder.id++) # get decoder one by one LogicalQueueTop # recv log from current decoder LogicalLogHandle # if 'LOGICAL_LOG_DML': ParallelReorderBufferQueueChange ParallelReorderBufferTXNByXid # find txn-list from txn-pool dlist_push_tail # push log to txn-list ParallelReorderBufferUpdateMemory # check memory elif 'LOGICAL_LOG_COMMIT': LogicalLogHandleAbortOrCommit ParallelReorderBufferTXNByXid # find txn-list from txn-pool ParallelReorderBufferCommit # send all log in txn-list ParallelOutputBegin ParallelHandleBatch while (ParallelReorderBufferIterTXNNext) # get log one by one ParallelOutputBegin ParallelHandleBatch ParallelOutputCommit ParallelReorderBufferCleanupTXN # clean txn-list LogicalQueuePop # remove log 参考资料 逻辑复制架构：https://www.cnblogs.com/wy123/p/18946661 GaussDB并行逻辑解码：https://developer.huawei.com/consumer/cn/forum/topic/0201165508224221138 pg16并行回放：https://www.webkt.com/article/7715 openGauss并行解码测试：https://www.cnblogs.com/jerrywang1983/articles/18375212 ",
+  "wordCount" : "1673",
+  "inLanguage": "en",
+  "datePublished": "2025-08-28T16:18:00+08:00",
+  "dateModified": "2026-08-14T17:47:31+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/postgresql/3-13-publication/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      PostgreSQL 3-13 Publication
+    </h1>
+    <div class="post-meta">
+      <span title='2025-08-28 16:18:00 +0800 CST'>August 28, 2025</span>&nbsp;·&nbsp;<span>8 min</span>&nbsp;·&nbsp;<span>1673 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#1-%e9%80%bb%e8%be%91%e5%a4%8d%e5%88%b6%e8%83%8c%e6%99%af" aria-label="1 逻辑复制背景">1 逻辑复制背景</a><ul>
+                        
+                <li>
+                    <a href="#11-%e9%80%bb%e8%be%91%e5%a4%8d%e5%88%b6%e5%9c%ba%e6%99%af" aria-label="1.1 逻辑复制场景">1.1 逻辑复制场景</a></li>
+                <li>
+                    <a href="#12-%e9%80%bb%e8%be%91%e5%a4%8d%e5%88%b6%e5%8a%9f%e8%83%bd" aria-label="1.2 逻辑复制功能">1.2 逻辑复制功能</a></li>
+                <li>
+                    <a href="#13-%e9%80%bb%e8%be%91%e5%a4%8d%e5%88%b6%e5%9f%ba%e7%a1%80" aria-label="1.3 逻辑复制基础">1.3 逻辑复制基础</a></li>
+                <li>
+                    <a href="#14-%e7%89%a9%e7%90%86%e5%a4%8d%e5%88%b6%e5%8c%ba%e5%88%ab" aria-label="1.4 物理复制区别">1.4 物理复制区别</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e7%89%a9%e7%90%86%e5%a4%8d%e5%88%b6" aria-label="一、物理复制">一、物理复制</a></li>
+                <li>
+                    <a href="#%e4%ba%8c%e9%80%bb%e8%be%91%e5%a4%8d%e5%88%b6" aria-label="二、逻辑复制">二、逻辑复制</a></li></ul>
+                </li></ul>
+                </li>
+                <li>
+                    <a href="#2-%e4%bd%bf%e7%94%a8%e9%80%bb%e8%be%91%e5%a4%8d%e5%88%b6" aria-label="2 使用逻辑复制">2 使用逻辑复制</a><ul>
+                        
+                <li>
+                    <a href="#21-%e5%8f%91%e5%b8%83%e7%ab%af" aria-label="2.1 发布端">2.1 发布端</a></li>
+                <li>
+                    <a href="#22-%e8%ae%a2%e9%98%85%e7%ab%af" aria-label="2.2 订阅端">2.2 订阅端</a></li>
+                <li>
+                    <a href="#23-%e8%ae%a2%e9%98%85%e7%ab%af%e5%b9%b6%e8%a1%8capply" aria-label="2.3 订阅端并行apply">2.3 订阅端并行apply</a></li>
+                <li>
+                    <a href="#23-%e8%ae%a1%e7%ae%97%e9%80%bb%e8%be%91%e5%a4%8d%e5%88%b6%e9%80%9f%e5%ba%a6" aria-label="2.3 计算逻辑复制速度">2.3 计算逻辑复制速度</a></li></ul>
+                </li>
+                <li>
+                    <a href="#3-%e9%80%bb%e8%be%91%e5%a4%8d%e5%88%b6%e5%8e%9f%e7%90%86" aria-label="3 逻辑复制原理">3 逻辑复制原理</a><ul>
+                        
+                <li>
+                    <a href="#31-%e8%bf%9b%e7%a8%8b%e7%b1%bb%e5%9e%8b" aria-label="3.1 进程类型">3.1 进程类型</a></li>
+                <li>
+                    <a href="#32-%e5%a4%8d%e5%88%b6%e6%b5%81%e7%a8%8b" aria-label="3.2 复制流程">3.2 复制流程</a></li></ul>
+                </li>
+                <li>
+                    <a href="#4-%e9%80%bb%e8%be%91%e5%a4%8d%e5%88%b6%e6%ba%90%e7%a0%81" aria-label="4 逻辑复制源码">4 逻辑复制源码</a><ul>
+                        
+                <li>
+                    <a href="#42-%e5%85%b3%e9%94%ae%e8%ae%be%e8%ae%a1" aria-label="4.2 关键设计">4.2 关键设计</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e6%b5%81%e5%a4%8d%e5%88%b6" aria-label="一、流复制">一、流复制</a></li></ul>
+                </li>
+                <li>
+                    <a href="#41-%e5%ae%8c%e6%95%b4%e6%b5%81%e7%a8%8b" aria-label="4.1 完整流程">4.1 完整流程</a></li>
+                <li>
+                    <a href="#43-%e5%b9%b6%e8%a1%8c%e8%a7%a3%e7%a0%81" aria-label="4.3 并行解码">4.3 并行解码</a></li></ul>
+                </li>
+                <li>
+                    <a href="#%e5%8f%82%e8%80%83%e8%b5%84%e6%96%99" aria-label="参考资料">参考资料</a>
+                </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h1 id="1-逻辑复制背景">1 逻辑复制背景<a hidden class="anchor" aria-hidden="true" href="#1-逻辑复制背景">#</a></h1>
+<h2 id="11-逻辑复制场景">1.1 逻辑复制场景<a hidden class="anchor" aria-hidden="true" href="#11-逻辑复制场景">#</a></h2>
+<p>在使用数据库时，为提高整个系统的可靠性，或实现不同部门数据同步等场景，很多客户的部署模型存在：一主多备、异构数据库等特点，在保证性能的前提下，常见部署模型如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">+-------------+    sql    +---------------------+    wal    +--------------------+
+</span></span><span class="line"><span class="cl"><span class="p">|</span> application <span class="p">|</span> --------&gt; <span class="p">|</span> postgresql <span class="o">(</span>master<span class="o">)</span> <span class="p">|</span>  -------&gt; <span class="p">|</span> postgresql <span class="o">(</span>slave<span class="o">)</span> <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+-------------+           +---------------------+           +--------------------+
+</span></span><span class="line"><span class="cl">                                    <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                    <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                    <span class="p">|</span>   decoded-wal         +--------------------+
+</span></span><span class="line"><span class="cl">                                    +---------------------&gt; <span class="p">|</span> mysql, oracle, ..  <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                                            +--------------------+
+</span></span></code></pre></div><h2 id="12-逻辑复制功能">1.2 逻辑复制功能<a hidden class="anchor" aria-hidden="true" href="#12-逻辑复制功能">#</a></h2>
+<h2 id="13-逻辑复制基础">1.3 逻辑复制基础<a hidden class="anchor" aria-hidden="true" href="#13-逻辑复制基础">#</a></h2>
+<p>首先，需自行了解一些存储的基本知识，包括事务特性、mvcc机制，表的物理存储格式：filenode、page、tuple等。<br>
+此处，以一个例子，介绍什么wal日志的特点。需了解一些</p>
+<ol>
+<li>
+<p>应用执行事务<br>
+假设同一时间，有2个事务，事务id分别为10和11。</p>
+<table>
+  <thead>
+      <tr>
+          <th>时间</th>
+          <th>应用1</th>
+          <th>应用2</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>0</td>
+          <td>CREATE TABLE t1 (c1 INT,c2 INT)</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>1</td>
+          <td>CREATE TABLE t2 (c1 INT,c2 INT)</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td>BEGIN (xid=10)</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td>INSERT INTO t1 VALUES(10, 1)</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td>-</td>
+          <td>BEGIN (xid=11)</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td>-</td>
+          <td>INSERT INTO t1 VALUES (11, 1)</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td>INSERT INTO t2 VALUES (10, 2)</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td>COMMIT</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>8</td>
+          <td>-</td>
+          <td>DELETE FROM t1 WHERE c1 = 10</td>
+      </tr>
+      <tr>
+          <td>9</td>
+          <td>-</td>
+          <td>INSERT INTO t2 VALUES (11, 2)</td>
+      </tr>
+      <tr>
+          <td>10</td>
+          <td>-</td>
+          <td>COMMIT</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+<li>
+<p>内核产生wal日志<br>
+所有表的wal日志，按生成wal的顺序，组织在一起。上述示例中，产生的wal如下：（此处仅列举关键信息）</p>
+<table>
+  <thead>
+      <tr>
+          <th>顺序</th>
+          <th>type</th>
+          <th>xid</th>
+          <th>filenode</th>
+          <th>offset</th>
+          <th>data</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td>insert</td>
+          <td>10</td>
+          <td>(t1)</td>
+          <td>xx,xx</td>
+          <td>‘10,1’</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td>insert</td>
+          <td>11</td>
+          <td>(t1)</td>
+          <td>xx,xx</td>
+          <td>‘11,1’</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td>insert</td>
+          <td>10</td>
+          <td>(t2)</td>
+          <td>xx,xx</td>
+          <td>‘10,2’</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td>commit</td>
+          <td>10</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td>delete</td>
+          <td>11</td>
+          <td>(t1)</td>
+          <td>xx,xx</td>
+          <td>-</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td>insert</td>
+          <td>11</td>
+          <td>(t2)</td>
+          <td>xx,xx</td>
+          <td>‘11,2’</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td>commit</td>
+          <td>11</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+</ol>
+<h2 id="14-物理复制区别">1.4 物理复制区别<a hidden class="anchor" aria-hidden="true" href="#14-物理复制区别">#</a></h2>
+<h3 id="一物理复制">一、物理复制<a hidden class="anchor" aria-hidden="true" href="#一物理复制">#</a></h3>
+<p>在复制模型中，分为主节点、备节点。</p>
+<ul>
+<li>主节点</li>
+<li>备节点：与主节点相比，数据库版本相同，表的数量相同，表的的物理信息相同，表中数据相同。回放wal日志时，可直接使用wal日志中的[filenode, offset]等信息。</li>
+</ul>
+<p>用户执行SQL：<code>INSERT INTO t1 VALUES(1, 'data1')</code>时，wal的内容大概如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="o">[</span>0, <span class="o">[</span>1700, 1800<span class="o">]</span>, <span class="o">[</span>8, 3<span class="o">]</span>, <span class="o">[</span>10, <span class="s1">&#39;1 data1&#39;</span><span class="o">]]</span>
+</span></span><span class="line"><span class="cl">解释：
+</span></span><span class="line"><span class="cl">    - <span class="m">0</span>    : insert
+</span></span><span class="line"><span class="cl">    - <span class="m">1700</span> : directory name <span class="o">(</span>database oid<span class="o">)</span>
+</span></span><span class="line"><span class="cl">    - <span class="m">1800</span> : file name <span class="o">(</span>filenode<span class="o">)</span>
+</span></span><span class="line"><span class="cl">    - <span class="m">8</span>    : page index number
+</span></span><span class="line"><span class="cl">    - <span class="m">3</span>    : tuple index number
+</span></span><span class="line"><span class="cl">    - <span class="m">10</span>   : transcation id
+</span></span></code></pre></div><h3 id="二逻辑复制">二、逻辑复制<a hidden class="anchor" aria-hidden="true" href="#二逻辑复制">#</a></h3>
+<p>在复制模型中，分为发布端、订阅端。</p>
+<ul>
+<li>发布端：</li>
+<li>订阅端：
+<ul>
+<li>异构订阅端：数据库类型不同</li>
+<li>同源订阅端：数据库类型相同，但是，以下内容可能存在差异：
+<ul>
+<li>数据库版本</li>
+<li>表的数量</li>
+<li>表的物理信息</li>
+<li>表中数据</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p>与物理复制相比，逻辑复制存在一些差异，包括：</p>
+<ol>
+<li>发布端：生成wal时，wal中信息更多一些</li>
+<li>发布端：读取wal时，解码wal，生成decoded-wal</li>
+<li>发布端：发送wal时，不按wal顺序发送decoded-wal，而是根据事务顺序，一次发送由同一事务生成的多条wal</li>
+<li>订阅端：回放wal时，根据decoded-wal，获取操作、数据等信息，调用heapam接口，例如heap_insert, heap_delete等，重放decoded-wal，生成新的wal</li>
+</ol>
+<h1 id="2-使用逻辑复制">2 使用逻辑复制<a hidden class="anchor" aria-hidden="true" href="#2-使用逻辑复制">#</a></h1>
+<h2 id="21-发布端">2.1 发布端<a hidden class="anchor" aria-hidden="true" href="#21-发布端">#</a></h2>
+<ol>
+<li>
+<p>配置</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="c1"># pg14</span>
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;wal_level=logical&#34;</span> &gt;&gt; <span class="nv">$PG_HOME</span>/data/postgresql.conf
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;max_replication_slots=4&#34;</span> &gt;&gt; <span class="nv">$PG_HOME</span>/data/postgresql.conf
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;max_wal_senders=4&#34;</span> &gt;&gt; <span class="nv">$PG_HOME</span>/data/postgresql.conf
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;max_worker_processes=8&#34;</span> &gt;&gt; <span class="nv">$PG_HOME</span>/data/postgresql.conf
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;max_logical_replication_workers=4&#34;</span> &gt;&gt; <span class="nv">$PG_HOME</span>/data/postgresql.conf
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;listen_addresses=&#39;*&#39;&#34;</span> &gt;&gt; <span class="nv">$PG_HOME</span>/data/postgresql.conf
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">sed -i <span class="s1">&#39;1i host all all 0.0.0.0/0 md5\n&#39;</span> <span class="nv">$PG_HOME</span>/data/pg_hba.conf
+</span></span><span class="line"><span class="cl"><span class="c1"># host all all 0.0.0.0/0 md5</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">psql -d postgres -c <span class="s2">&#34;SELECT name,setting FROM pg_settings WHERE name in
+</span></span></span><span class="line"><span class="cl"><span class="s2">    (&#39;wal_level&#39;, &#39;max_replication_slots&#39;, &#39;max_wal_senders&#39;, &#39;max_worker_processes&#39;, &#39;max_logical_replication_workers&#39;)&#34;</span>
+</span></span></code></pre></div></li>
+<li>
+<p>创建基表</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">DATABASE</span><span class="w"> </span><span class="n">pubdb</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="err">\</span><span class="k">c</span><span class="w"> </span><span class="n">pubdb</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">pt1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">pt2</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">pt1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="s1">&#39;data1-1&#39;</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="s1">&#39;data1-2&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">pt1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="s1">&#39;data2-1&#39;</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="s1">&#39;data2-2&#39;</span><span class="p">);</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>创建发布信息</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">PUBLICATION</span><span class="w"> </span><span class="n">pub1</span><span class="w"> </span><span class="k">FOR</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">pt1</span><span class="p">,</span><span class="n">pt2</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- SELECT * FROM pg_publication;
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- SELECT * FROM pg_publication_rel;
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 设置发布状态
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">pg_create_logical_replication_slot</span><span class="p">(</span><span class="s1">&#39;pslot1&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;pgoutput&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- SELECT * FROM pg_replication_slots;
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- SELECT * FROM pg_stat_replication_slots;
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 检查数据
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- SELECT * FROM pg_logical_slot_peek_changes(&#39;pslot1&#39;, NULL, NULL);
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 删除slot
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- SELECT pg_drop_replication_slot(&#39;pslot1&#39;);
+</span></span></span></code></pre></div></li>
+<li>
+<p>创建发布用户</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 订阅端通过pu1用户来连接发布端，以接收数据
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">pu1</span><span class="w"> </span><span class="n">REPLICATION</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">&#39;pu1.12345&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">GRANT</span><span class="w"> </span><span class="k">CONNECT</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DATABASE</span><span class="w"> </span><span class="n">pubdb</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">pu1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">GRANT</span><span class="w"> </span><span class="k">USAGE</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">SCHEMA</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">pu1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">GRANT</span><span class="w"> </span><span class="k">ALL</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">pt1</span><span class="p">,</span><span class="n">pt2</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">pu1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>验证</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="n">psql</span><span class="w"> </span><span class="o">-</span><span class="n">h</span><span class="w"> </span><span class="mi">172</span><span class="p">.</span><span class="mi">16</span><span class="p">.</span><span class="mi">100</span><span class="p">.</span><span class="mi">134</span><span class="w"> </span><span class="o">-</span><span class="n">p</span><span class="w"> </span><span class="mi">5432</span><span class="w"> </span><span class="o">-</span><span class="n">d</span><span class="w"> </span><span class="n">pubdb</span><span class="w"> </span><span class="o">-</span><span class="n">U</span><span class="w"> </span><span class="n">pu1</span><span class="w"> </span><span class="o">-</span><span class="n">W</span><span class="w"> </span><span class="n">pu1</span><span class="p">.</span><span class="mi">12345</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>其他参考语法</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">SUBSCRIPTION</span><span class="w"> </span><span class="n">sub1</span><span class="w"> </span><span class="n">DISABLE</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">SUBSCRIPTION</span><span class="w"> </span><span class="n">sub1</span><span class="w"> </span><span class="n">ENABLE</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">PUBlication</span><span class="w"> </span><span class="n">pub1</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">new_tbl</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+</ol>
+<h2 id="22-订阅端">2.2 订阅端<a hidden class="anchor" aria-hidden="true" href="#22-订阅端">#</a></h2>
+<ol>
+<li>
+<p>配置<br>
+作为客户端访问发布端，无需配置任何guc参数</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="c1"># 如果发布端、订阅端在同一机器，确保二者端口不同</span>
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;port=5433&#34;</span> &gt;&gt; <span class="nv">$PG_HOME</span>/datas/postgresql.conf
+</span></span></code></pre></div></li>
+<li>
+<p>创建基表，与发布端表定义一致</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- psql -p 5433 -d postgres
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">DATABASE</span><span class="w"> </span><span class="n">subdb</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="err">\</span><span class="k">c</span><span class="w"> </span><span class="n">subdb</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">pt1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">pt2</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>创建订阅信息</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">SUBSCRIPTION</span><span class="w"> </span><span class="n">sub1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">CONNECTION</span><span class="w"> </span><span class="s1">&#39;host=127.0.0.1 port=5432 dbname=pubdb user=pu1 password=pu1.12345&#39;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">PUBLICATION</span><span class="w"> </span><span class="n">pub1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">WITH</span><span class="w"> </span><span class="p">(</span><span class="n">create_slot</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">false</span><span class="p">,</span><span class="w"> </span><span class="n">slot_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;pslot1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">copy_data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- SELECT * FROM pg_subscription;
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- SELECT * FROM pg_subscription_rel;
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- SELECT * FROM pg_stat_subscription;
+</span></span></span></code></pre></div></li>
+<li>
+<p>查看表数据</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pt1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 向发布端表写数据，订阅端也会收到数据
+</span></span></span></code></pre></div></li>
+<li>
+<p>其他操作</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 暂停接受数据
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">SUBSCRIPTION</span><span class="w"> </span><span class="n">sub1</span><span class="w"> </span><span class="n">DISABLE</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+</ol>
+<h2 id="23-订阅端并行apply">2.3 订阅端并行apply<a hidden class="anchor" aria-hidden="true" href="#23-订阅端并行apply">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="c1"># pg17</span>
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;max_parallel_apply_workers_per_subscription=4&#34;</span> &gt;&gt; <span class="nv">$PG_HOME</span>/data/postgresql.conf
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">SUBSCRIPTION</span><span class="w"> </span><span class="n">sub1</span><span class="w"> </span><span class="k">SET</span><span class="w"> </span><span class="p">(</span><span class="n">parallel_apply</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">);</span><span class="w">
+</span></span></span></code></pre></div><h2 id="23-计算逻辑复制速度">2.3 计算逻辑复制速度<a hidden class="anchor" aria-hidden="true" href="#23-计算逻辑复制速度">#</a></h2>
+<ol>
+<li>
+<p>计算xlog生成速度</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 测试前，获取xlog写入位置
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">tlsn</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">pg_current_wal_lsn</span><span class="p">()</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">lsn1</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">tlsn</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 测试后，获取当前xlog写入位置，并计算xlog差值
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">pg_wal_lsn_diff</span><span class="p">(</span><span class="n">pg_current_wal_lsn</span><span class="p">(),</span><span class="w"> </span><span class="p">(</span><span class="k">SELECT</span><span class="w"> </span><span class="n">lsn1</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">tlsn</span><span class="p">));</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 参考：转换为10进制
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- SELECT (&#39;x&#39; || lpad(replace(pg_current_wal_lsn()::text, &#39;/&#39;, &#39;&#39;), 16, &#39;0&#39;))::bit(64)::bigint AS decimal_lsn;
+</span></span></span></code></pre></div></li>
+<li>
+<p>插入数据<br>
+tpcc写入</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">SYSTEM</span><span class="w"> </span><span class="k">SET</span><span class="w"> </span><span class="n">password_encryption</span><span class="o">=</span><span class="s1">&#39;md5&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">pg_reload_conf</span><span class="p">();</span><span class="w">
+</span></span></span></code></pre></div></li>
+</ol>
+<h1 id="3-逻辑复制原理">3 逻辑复制原理<a hidden class="anchor" aria-hidden="true" href="#3-逻辑复制原理">#</a></h1>
+<h2 id="31-进程类型">3.1 进程类型<a hidden class="anchor" aria-hidden="true" href="#31-进程类型">#</a></h2>
+<p>以下是逻辑复制的进程模型与工作流程：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="c1"># pg-17</span>
+</span></span><span class="line"><span class="cl"><span class="o">[</span>发布端<span class="o">]</span>                                                                                        <span class="o">[</span>订阅端<span class="o">]</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">postmaster        postgres                     wal-writer    wal-sender              wal-file   postmaster             apply-launch                apply-worker
+</span></span><span class="line"><span class="cl">+-------------------+------------------------------+------------+---------------------------+---+---------------------------+---------------------------+----------------------+
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">1</span> receive connect <span class="p">|</span>                              <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">2</span> fork postgres -&gt;<span class="p">|</span>                              <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span> <span class="m">3</span> receive sql                <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span>   delete .. t1 .. <span class="nv">c1</span><span class="o">=</span><span class="m">10</span>      <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span> <span class="m">4</span> scan tuple from t1         <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span> <span class="m">5</span> get tuple pointer          <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span> <span class="m">6</span> mark tuple deleted         <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span> <span class="m">7</span> generate wal               <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span>   <span class="nv">type</span><span class="o">=</span>delete,xid<span class="o">=</span><span class="m">11</span>         <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span>   <span class="nv">filenode</span><span class="o">=</span>1700,offset<span class="o">=</span>8-3   <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span>   <span class="nv">data</span><span class="o">=</span><span class="s1">&#39;10&#39;</span>,column<span class="o">=</span><span class="m">1</span>         <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span> <span class="m">8</span> copy wal to wal-buffer ---&gt;<span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                  <span class="p">|</span> <span class="m">9</span> write wal---------------------------&gt;<span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span> <span class="m">10</span> startp                 <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span> <span class="m">11</span> startup apply-launch -&gt;<span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span> <span class="m">12</span> <span class="nb">read</span> suscription       <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span> <span class="m">13</span> calucate worker num    <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span> &lt;-------------------------<span class="p">|</span> <span class="m">14</span> register worker info   <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span> <span class="m">15</span> <span class="nb">read</span> bgworker info                                 <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span> <span class="m">16</span> startup apply-worker -----------------------------&gt;<span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> &lt;-------------------------------------------------------------+---------------------------+-----------------------------------------------------------<span class="p">|</span> <span class="m">17</span> ask publliction
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">18</span> receive connect                                            <span class="p">|</span>                           <span class="p">|</span>                                                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">19</span> fork postgres as wal-sender ------------------------------&gt;<span class="p">|</span>                           <span class="p">|</span>                                                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="p">|</span> <span class="m">20</span> <span class="nb">read</span> wal &lt;-------------<span class="p">|</span>                                                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="p">|</span> <span class="m">21</span> decod to decode-wal                                                                <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="p">|</span> <span class="m">22</span> send decoded-wal -----------------------------------------------------------------&gt;<span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="m">23</span> receive decoded-wal
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="m">24</span> apply decoded-wal
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="o">(</span><span class="k">if</span> is postgresql<span class="o">)</span>
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="m">25</span> scan tuple from t1
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="m">26</span> get tuple pointer
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="m">27</span> mark tuple deleted
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="m">28</span> generate wal
+</span></span></code></pre></div><h2 id="32-复制流程">3.2 复制流程<a hidden class="anchor" aria-hidden="true" href="#32-复制流程">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">application            postgres                 wal-file            wal-sender
+</span></span><span class="line"><span class="cl">+-----------------------+---------------------------+-----------------------+
+</span></span><span class="line"><span class="cl"><span class="m">1</span> begin <span class="o">(</span><span class="nv">xid</span><span class="o">=</span>10<span class="o">)</span>  ----&gt; <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="m">2</span> insert t1 <span class="o">(</span>10,1<span class="o">)</span> ---&gt; <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                        <span class="p">|</span> <span class="m">3</span> write wal
+</span></span><span class="line"><span class="cl">                        <span class="p">|</span>   <span class="o">[</span>10, insert <span class="s1">&#39;10,1&#39;</span><span class="o">]</span> --&gt; <span class="p">|</span>           <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                        <span class="p">|</span>                           <span class="p">|</span> &lt;-        <span class="p">|</span> <span class="m">4</span> <span class="nb">read</span> wal
+</span></span><span class="line"><span class="cl">                                                    <span class="p">|</span>           <span class="p">|</span>   <span class="o">[</span>10, insert <span class="s1">&#39;10,1&#39;</span><span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="p">|</span>           <span class="p">|</span> <span class="m">5</span> decode wal
+</span></span><span class="line"><span class="cl">                                                                <span class="p">|</span> <span class="m">6</span> put to list <span class="o">(</span><span class="nv">xid</span><span class="o">=</span>10<span class="o">)</span>
+</span></span><span class="line"><span class="cl"><span class="m">3</span> begin <span class="o">(</span><span class="nv">xid</span><span class="o">=</span>11<span class="o">)</span> ------&gt;<span class="p">|</span> （待继续补充）
+</span></span></code></pre></div><h1 id="4-逻辑复制源码">4 逻辑复制源码<a hidden class="anchor" aria-hidden="true" href="#4-逻辑复制源码">#</a></h1>
+<h2 id="42-关键设计">4.2 关键设计<a hidden class="anchor" aria-hidden="true" href="#42-关键设计">#</a></h2>
+<h3 id="一流复制">一、流复制<a hidden class="anchor" aria-hidden="true" href="#一流复制">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="c1"># 发布端 @ pg-17</span>
+</span></span><span class="line"><span class="cl"><span class="n">WalSndLoop</span>
+</span></span><span class="line"><span class="cl">    <span class="k">for</span> <span class="p">(;;)</span> <span class="c1"># 持续读取、解码、发送 xlog</span>
+</span></span><span class="line"><span class="cl">        <span class="n">XLogSendLogical</span>
+</span></span><span class="line"><span class="cl">            <span class="n">pq_sendbyte</span><span class="p">(</span><span class="o">&amp;</span><span class="n">output_message</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">            <span class="n">XLogReadRecord</span> <span class="c1"># 读取1条record，放入logical_decoding_ctx</span>
+</span></span><span class="line"><span class="cl">                <span class="n">ReadPageInternal</span>
+</span></span><span class="line"><span class="cl">                <span class="n">DecodeXLogRecord</span>
+</span></span><span class="line"><span class="cl">            <span class="n">LogicalDecodingProcessRecord</span> <span class="c1"># 开始解码</span>
+</span></span><span class="line"><span class="cl">                <span class="n">ReorderBufferAssignChild</span>
+</span></span><span class="line"><span class="cl">                <span class="n">rmgr</span><span class="o">.</span><span class="n">rm_decode</span>
+</span></span><span class="line"><span class="cl">                    <span class="c1"># hook: RmgrTable [heap_decode, xact_decode]</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">heap_decode</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">ReorderBufferProcessXid</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">ReorderBufferTXNByXid</span> <span class="c1"># 为事务申请链表</span>
+</span></span><span class="line"><span class="cl">                            <span class="k">if</span> <span class="n">XLOG_HEAP_INSERT</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">DecodeInsert</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">ReorderBufferGetChange</span> <span class="c1"># 申请一个node</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">DecodeXLogTuple</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">ReorderBufferQueueChange</span> <span class="c1"># 将node放入list</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">ReorderBufferTXNByXid</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">dlist_push_tail</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">ReorderBufferProcessPartialChange</span> <span class="c1"># 流复制</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">ReorderBufferStreamTXN</span>
+</span></span><span class="line"><span class="cl">                                                <span class="n">ReorderBufferProcessTXN</span> <span class="c1"># 发送数据</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">ReorderBufferIterTXNNext</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">stream_start</span>
+</span></span><span class="line"><span class="cl">                                                        <span class="n">stream_start_cb_wrapper</span>
+</span></span><span class="line"><span class="cl">                                                            <span class="n">stream_start_cb</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="n">pgoutput_stream_start</span>
+</span></span><span class="line"><span class="cl">                                                                    <span class="n">logicalrep_write_stream_start</span>
+</span></span><span class="line"><span class="cl">                                                                        <span class="s1">&#39;LOGICAL_REP_MSG_STREAM_START xid is_first_sedment&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                    <span class="n">OutputPluginWrite</span>
+</span></span><span class="line"><span class="cl">                                                                        <span class="n">write</span>
+</span></span><span class="line"><span class="cl">                                                                            <span class="n">WalSndWriteData</span>
+</span></span><span class="line"><span class="cl">                                                                                <span class="n">pq_flush_if_writable</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">ReorderBufferApplyChange</span>
+</span></span><span class="line"><span class="cl">                                                        <span class="n">stream_change</span>
+</span></span><span class="line"><span class="cl">                                                            <span class="n">stream_change_cb_wrapper</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="n">stream_change_cb</span>
+</span></span><span class="line"><span class="cl">                                                                    <span class="n">pgoutput_change</span>
+</span></span><span class="line"><span class="cl">                                                                        <span class="n">OutputPluginPrepareWrite</span> <span class="c1"># 数据头</span>
+</span></span><span class="line"><span class="cl">                                                                            <span class="n">prepare_write</span>
+</span></span><span class="line"><span class="cl">                                                                                <span class="n">WalSndPrepareWrite</span>
+</span></span><span class="line"><span class="cl">                                                                                    <span class="n">pq_sendbyte</span><span class="p">(</span><span class="n">ctx</span><span class="o">-&gt;</span><span class="n">out</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                                                                        <span class="n">pgoutput_send_begin</span> <span class="c1"># 消息头 + 消息</span>
+</span></span><span class="line"><span class="cl">                                                                            <span class="n">logicalrep_write_begin</span>
+</span></span><span class="line"><span class="cl">                                                                                <span class="s1">&#39;LOGICAL_REP_MSG_BEGIN final_lsn commit_time xid&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                        <span class="k">if</span> <span class="n">REORDER_BUFFER_CHANGE_INSERT</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                                                            <span class="n">logicalrep_write_insert</span>
+</span></span><span class="line"><span class="cl">                                                                                <span class="s1">&#39;LOGICAL_REP_MSG_INSERT xid relid N nattr len value&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                        <span class="k">if</span> <span class="n">REORDER_BUFFER_CHANGE_DELETE</span>
+</span></span><span class="line"><span class="cl">                                                                            <span class="n">logicalrep_write_delete</span>
+</span></span><span class="line"><span class="cl">                                                                        <span class="n">OutputPluginWrite</span>
+</span></span><span class="line"><span class="cl">                                                                            <span class="p">(</span><span class="n">WalSndWriteDataHelper</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                                                                            <span class="n">write</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">ReorderBufferIterTXNFinish</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">stream_stop</span>
+</span></span><span class="line"><span class="cl">                                                        <span class="n">stream_stop_cb_wrapper</span>
+</span></span><span class="line"><span class="cl">                                                            <span class="n">stream_stop_cb</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="n">pgoutput_stream_stop</span>
+</span></span><span class="line"><span class="cl">                                                                    <span class="n">logicalrep_write_stream_stop</span>
+</span></span><span class="line"><span class="cl">                                                                        <span class="s1">&#39;LOGICAL_REP_MSG_STREAM_STOP&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                    <span class="n">OutputPluginWrite</span>
+</span></span><span class="line"><span class="cl">                                                                        <span class="n">write</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">ReorderBufferSaveTXNSnapshot</span>
+</span></span><span class="line"><span class="cl">                                                <span class="n">UpdateDecodingStats</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">ReorderBufferCheckMemoryLimit</span>
+</span></span><span class="line"><span class="cl">                            <span class="k">elif</span> <span class="n">XLOG_HEAP_DELETE</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">DecodeDelete</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">ReorderBufferGetChange</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">DecodeXLogTuple</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">ReorderBufferQueueChange</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">xact_decode</span>
+</span></span><span class="line"><span class="cl">                            <span class="k">if</span> <span class="n">XLOG_XACT_COMMIT</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">DecodeCommit</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">SnapBuildCommitTxn</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">ReorderBufferCommit</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">ReorderBufferTXNByXid</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">ReorderBufferReplay</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">ReorderBufferStreamCommit</span>
+</span></span><span class="line"><span class="cl">                                                <span class="n">ReorderBufferStreamTXN</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">stream_commit</span>
+</span></span><span class="line"><span class="cl">                                                        <span class="n">pgoutput_stream_commit</span>
+</span></span><span class="line"><span class="cl">                                                            <span class="n">logicalrep_write_stream_commit</span>
+</span></span><span class="line"><span class="cl">                                                            <span class="n">OutputPluginWrite</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">UpdateDecodingStats</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 订阅端 @ pg-17</span>
+</span></span><span class="line"><span class="cl"><span class="n">ApplyWorkerMain</span>
+</span></span><span class="line"><span class="cl">    <span class="n">SetupApplyOrSyncWorker</span>
+</span></span><span class="line"><span class="cl">        <span class="n">GetSubscription</span>
+</span></span><span class="line"><span class="cl">    <span class="n">run_apply_worker</span>
+</span></span><span class="line"><span class="cl">        <span class="n">walrcv_connect</span>
+</span></span><span class="line"><span class="cl">        <span class="n">walrcv_identify_system</span>
+</span></span><span class="line"><span class="cl">        <span class="n">walrcv_startstreaming</span>
+</span></span><span class="line"><span class="cl">        <span class="n">start_apply</span>
+</span></span><span class="line"><span class="cl">            <span class="n">LogicalRepApplyLoop</span>
+</span></span><span class="line"><span class="cl">                <span class="k">for</span> <span class="p">(;;)</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">walrcv_receive</span>
+</span></span><span class="line"><span class="cl">                        <span class="k">for</span> <span class="p">(;;)</span>
+</span></span><span class="line"><span class="cl">                            <span class="k">if</span> <span class="s1">&#39;w&#39;</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">apply_dispatch</span>
+</span></span><span class="line"><span class="cl">                                    <span class="k">if</span> <span class="n">LOGICAL_REP_MSG_STREAM_START</span><span class="p">:</span> <span class="s1">&#39;S&#39;</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">apply_handle_stream_start</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">logicalrep_read_stream_start</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">pa_allocate_worker</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">get_transaction_apply_action</span>
+</span></span><span class="line"><span class="cl">                                            <span class="k">if</span> <span class="n">TRANS_LEADER_SEND_TO_PARALLEL</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                                <span class="n">pa_send_data</span>
+</span></span><span class="line"><span class="cl">                                    <span class="k">elif</span> <span class="n">LOGICAL_REP_MSG_INSERT</span><span class="p">:</span> <span class="s1">&#39;I&#39;</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">apply_handle_insert</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">handle_streamed_transaction</span>
+</span></span><span class="line"><span class="cl">                                                <span class="n">get_transaction_apply_action</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">pa_find_worker</span>
+</span></span><span class="line"><span class="cl">                                                <span class="k">if</span> <span class="n">TRANS_LEADER_SEND_TO_PARALLEL</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">pa_send_data</span>
+</span></span><span class="line"><span class="cl">                                                        <span class="n">shm_mq_send</span>
+</span></span><span class="line"><span class="cl">                                    <span class="k">elif</span> <span class="n">LOGICAL_REP_MSG_STREAM_STOP</span><span class="p">:</span> <span class="s1">&#39;E&#39;</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">apply_handle_stream_stop</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">get_transaction_apply_action</span>
+</span></span><span class="line"><span class="cl">                                                <span class="n">pa_find_worker</span>
+</span></span><span class="line"><span class="cl">                                    <span class="k">elif</span> <span class="n">LOGICAL_REP_MSG_COMMIT</span><span class="p">:</span> <span class="s1">&#39;C&#39;</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">apply_handle_commit</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">walrcv_receive</span>
+</span></span><span class="line"><span class="cl">                <span class="n">walrcv_endstreaming</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 订阅端 parallel-worker</span>
+</span></span><span class="line"><span class="cl"><span class="n">pa_allocate_worker</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pa_launch_parallel_worker</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">ParallelApplyWorkerMain</span>
+</span></span><span class="line"><span class="cl">    <span class="n">logicalrep_worker_attach</span>
+</span></span><span class="line"><span class="cl">    <span class="n">LogicalParallelApplyLoop</span>
+</span></span><span class="line"><span class="cl">        <span class="k">for</span> <span class="p">(;;)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">shm_mq_receive</span>
+</span></span><span class="line"><span class="cl">                <span class="n">apply_dispatch</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">if</span> <span class="n">LOGICAL_REP_MSG_INSERT</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">begin_replication_step</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">logicalrep_read_insert</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">logicalrep_rel_open</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">apply_handle_insert_internal</span>
+</span></span></code></pre></div><h2 id="41-完整流程">4.1 完整流程<a hidden class="anchor" aria-hidden="true" href="#41-完整流程">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="c1"># 前置</span>
+</span></span><span class="line"><span class="cl"><span class="n">ReplicationSlotCreate</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># Postmaster进程</span>
+</span></span><span class="line"><span class="cl"><span class="n">StartupXLOG</span>
+</span></span><span class="line"><span class="cl">    <span class="n">StartupReplicationSlots</span>
+</span></span><span class="line"><span class="cl">        <span class="n">RestoreSlotFromDisk</span> <span class="c1"># 读取slot文件</span>
+</span></span><span class="line"><span class="cl">            <span class="n">OpenTransientFile</span>
+</span></span><span class="line"><span class="cl">            <span class="n">memcpy</span><span class="p">(</span><span class="n">ReplicationSlotCtl</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># postgres进程  INSERT</span>
+</span></span><span class="line"><span class="cl"><span class="n">heap_insert</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogInsert</span>
+</span></span><span class="line"><span class="cl">        <span class="n">XLogRecordAssemble</span>
+</span></span><span class="line"><span class="cl">        <span class="n">XLogInsertRecord</span>
+</span></span><span class="line"><span class="cl">            <span class="n">CopyXLogRecordTowal</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 订阅端 apply-worker</span>
+</span></span><span class="line"><span class="cl"><span class="nd">@pg</span><span class="mf">.14</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># postmaster进程</span>
+</span></span><span class="line"><span class="cl"><span class="n">PostmasterMain</span>
+</span></span><span class="line"><span class="cl">    <span class="n">checkDatadir</span>
+</span></span><span class="line"><span class="cl">    <span class="n">checkControlFile</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ApplyLauncherRegister</span>
+</span></span><span class="line"><span class="cl">        <span class="n">RegisterBackgroundWorker</span><span class="p">(</span><span class="s1">&#39;ApplyLauncherMain&#39;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">slist_push_head</span> <span class="c1"># 加入全局list BackgroundWorkerList</span>
+</span></span><span class="line"><span class="cl">    <span class="n">reset_shared</span>
+</span></span><span class="line"><span class="cl">    <span class="n">SysLogger_Start</span>
+</span></span><span class="line"><span class="cl">    <span class="n">maybe_start_bgworkers</span>
+</span></span><span class="line"><span class="cl">        <span class="n">do_start_bgworker</span>
+</span></span><span class="line"><span class="cl">            <span class="c1"># 暂时不启动</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ServerLoop</span>
+</span></span><span class="line"><span class="cl">        <span class="k">for</span> <span class="p">;;</span>
+</span></span><span class="line"><span class="cl">            <span class="n">ConnCreate</span>
+</span></span><span class="line"><span class="cl">            <span class="n">BackendStartup</span>
+</span></span><span class="line"><span class="cl">                <span class="n">BackendRun</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">PostgresMain</span>
+</span></span><span class="line"><span class="cl">            <span class="n">maybe_start_bgworkers</span>
+</span></span><span class="line"><span class="cl">                <span class="n">do_start_bgworker</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">InitPostmasterChild</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">fork</span> <span class="c1"># fork 新进程</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">StartBackgroundWorker</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">LookupBackgroundWorkerFunction</span>
+</span></span><span class="line"><span class="cl">                                    <span class="c1"># 获取回调函数 ApplyLauncherMain</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">entrypt</span> <span class="o">-&gt;</span> <span class="n">ApplyLauncherMain</span> <span class="c1"># 新进程主函数：ApplyLauncherMain</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># apply-launch进程</span>
+</span></span><span class="line"><span class="cl"><span class="n">ApplyLauncherMain</span>
+</span></span><span class="line"><span class="cl">    <span class="k">for</span> <span class="p">(;;)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">get_subscription_list</span> <span class="c1"># 从系统表中，获取所有subscription</span>
+</span></span><span class="line"><span class="cl">            <span class="n">table_beginscan_catalog</span><span class="p">(</span><span class="s1">&#39;pg_subscription&#39;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">heap_getnext</span>
+</span></span><span class="line"><span class="cl">        <span class="n">foreach</span>
+</span></span><span class="line"><span class="cl">            <span class="n">logicalrep_worker_find</span>
+</span></span><span class="line"><span class="cl">            <span class="n">logicalrep_worker_launch</span>
+</span></span><span class="line"><span class="cl">                <span class="n">RegisterDynamicBackgroundWorker</span><span class="p">(</span><span class="s1">&#39;ApplyWorkerMain&#39;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                    <span class="c1"># 加入全局BackgroundWorkerData，postmaster进程在ServerLoop中检查该结构体</span>
+</span></span><span class="line"><span class="cl">                <span class="n">WaitForReplicationWorkerAttach</span>
+</span></span><span class="line"><span class="cl">                    <span class="c1"># 等待postmaster进程fork apply-worker进程</span>
+</span></span><span class="line"><span class="cl">                    <span class="c1"># fork成功，自动调用 entrypt -&gt; ApplyWorkerMain</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 订阅端 CREATE SUBSCRIPTION</span>
+</span></span><span class="line"><span class="cl"><span class="n">CreateSubscription</span>
+</span></span><span class="line"><span class="cl">    <span class="n">CatalogTupleInsert</span><span class="p">(</span><span class="s1">&#39;pg_subscription&#39;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">replorigin_create</span>
+</span></span><span class="line"><span class="cl">        <span class="n">CatalogTupleInsert</span><span class="p">(</span><span class="s1">&#39;pg_replication_origin&#39;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">check_publications</span> <span class="c1"># 与发布端通信，检查publication状态</span>
+</span></span><span class="line"><span class="cl">    <span class="n">check_publications_origin</span>
+</span></span><span class="line"><span class="cl">    <span class="n">fetch_table_list</span>   <span class="c1"># 读取发布端表基本信息</span>
+</span></span><span class="line"><span class="cl">    <span class="n">AddSubscriptionRelState</span>
+</span></span><span class="line"><span class="cl">        <span class="n">CatalogTupleInsert</span><span class="p">(</span><span class="s1">&#39;pg_subscription&#39;</span><span class="p">)</span> <span class="c1"># 系统表srsubstate= (copy_data ? &#39;i&#39; : &#39;r&#39;)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ApplyLauncherWakeupAtCommit</span> <span class="c1"># 启动apply-worker</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">process_syncing_tables</span>
+</span></span><span class="line"><span class="cl">    <span class="n">process_syncing_tables_for_apply</span>
+</span></span><span class="line"><span class="cl">        <span class="n">process_syncing_tables_for_apply</span>
+</span></span><span class="line"><span class="cl">            <span class="n">wait_for_relation_state_change</span>
+</span></span><span class="line"><span class="cl">                <span class="n">GetSubscriptionRelState</span> <span class="c1"># 获取系统表 srsubstate</span>
+</span></span><span class="line"><span class="cl">                <span class="n">logicalrep_worker_find</span> <span class="c1"># 查找与等待 sync 进程</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">apply</span><span class="o">-</span><span class="n">launch</span> <span class="n">只启动apply</span><span class="o">-</span><span class="n">worker类型进程</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># apply-worker进程</span>
+</span></span><span class="line"><span class="cl"><span class="n">ApplyWorkerMain</span>
+</span></span><span class="line"><span class="cl">    <span class="n">GetSubscription</span>
+</span></span><span class="line"><span class="cl">        <span class="n">SearchSysCache1</span><span class="p">(</span><span class="s1">&#39;pg_subscription&#39;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="n">am_tablesync_worker</span>
+</span></span><span class="line"><span class="cl">        <span class="n">LogicalRepSyncTableStart</span> <span class="c1"># 追赶？</span>
+</span></span><span class="line"><span class="cl">            <span class="n">GetSubscriptionRelState</span>
+</span></span><span class="line"><span class="cl">                <span class="n">SearchSysCache1</span><span class="p">(</span><span class="s1">&#39;pg_subscription&#39;</span> <span class="ow">and</span> <span class="s1">&#39;pg_subscription_rel&#39;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">LogicalRepApplyLoop</span>
+</span></span><span class="line"><span class="cl">        <span class="k">for</span> <span class="p">(;;)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">walrcv_receive</span> <span class="c1"># 接收发布端数据</span>
+</span></span><span class="line"><span class="cl">                <span class="k">for</span> <span class="p">(;;)</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">pq_getmsgbyte</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">if</span> <span class="s1">&#39;w&#39;</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                       <span class="n">apply_dispatch</span> <span class="c1"># 回放数据</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">pq_getmsgbyte</span>
+</span></span><span class="line"><span class="cl">                            <span class="k">if</span> <span class="n">LOGICAL_REP_MSG_BEGIN</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">apply_handle_begin</span>
+</span></span><span class="line"><span class="cl">                            <span class="k">if</span> <span class="n">LOGICAL_REP_MSG_COMMIT</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">apply_handle_commit</span>
+</span></span><span class="line"><span class="cl">                            <span class="k">if</span> <span class="n">LOGICAL_REP_MSG_INSERT</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">apply_handle_insert</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">logicalrep_read_insert</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">logicalrep_rel_open</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">create_edata_for_relation</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">slot_store_data</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">apply_handle_insert_internal</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">ExecOpenIndices</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">ExecSimpleRelationInsert</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">simple_table_tuple_insert</span>
+</span></span><span class="line"><span class="cl">                                                <span class="n">table_tuple_insert</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">hook</span><span class="p">:</span> <span class="n">tuple_insert</span>
+</span></span><span class="line"><span class="cl">                                                        <span class="n">heapam_tuple_insert</span>
+</span></span><span class="line"><span class="cl">                                                            <span class="n">heap_insert</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="n">heap_prepare_insert</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="n">RelationGetBufferForTuple</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="n">RelationPutHeapTuple</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="n">XLogInsert</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">ExecInsertIndexTuples</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">ExecCloseIndices</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">elif</span> <span class="s1">&#39;k&#39;</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">send_feedback</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">walrcv_receive</span>
+</span></span><span class="line"><span class="cl">                <span class="n">send_feedback</span>
+</span></span><span class="line"><span class="cl">                <span class="n">maybe_reread_subscription</span>
+</span></span><span class="line"><span class="cl">        <span class="n">walrcv_endstreaming</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 并行apply</span>
+</span></span><span class="line"><span class="cl"><span class="n">apply_dispatch</span><span class="p">(</span><span class="n">LOGICAL_REP_MSG_STREAM_START</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">apply_handle_stream_start</span>
+</span></span><span class="line"><span class="cl">        <span class="n">pa_allocate_worker</span>
+</span></span><span class="line"><span class="cl">            <span class="n">pa_launch_parallel_worker</span>
+</span></span><span class="line"><span class="cl">                <span class="n">logicalrep_worker_launch</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">if</span> <span class="n">TRANS_LEADER_SEND_TO_PARALLEL</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">pa_send_data</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">shm_mq_send</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 发布端（由订阅端触发）</span>
+</span></span><span class="line"><span class="cl"><span class="nd">@pg</span><span class="mf">.14</span>
+</span></span><span class="line"><span class="cl"><span class="n">PostmasterMain</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ServerLoop</span>
+</span></span><span class="line"><span class="cl">        <span class="n">BackendStartup</span>
+</span></span><span class="line"><span class="cl">            <span class="n">BackendInitialize</span> <span class="c1"># 处理连接参数</span>
+</span></span><span class="line"><span class="cl">                <span class="n">ProcessStartupPacket</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">if</span> <span class="n">conn</span> <span class="ow">is</span> <span class="s1">&#39;replication&#39;</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">am_walsender</span> <span class="o">=</span> <span class="n">true</span>
+</span></span><span class="line"><span class="cl">            <span class="n">BackendRun</span>        <span class="c1"># 处理SQL语句</span>
+</span></span><span class="line"><span class="cl">                <span class="n">PostgresMain</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">for</span> <span class="p">(;;)</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">ReadCommand</span>
+</span></span><span class="line"><span class="cl">                        <span class="k">if</span> <span class="n">am_walsender</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                            <span class="k">if</span> <span class="n">exec_replication_command</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">StartLogicalReplication</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">CreateDecodingContext</span> <span class="c1"># 创建全局变量 logical_decoding_ctx，包括reader和re-order</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">StartupDecodingContext</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">hook</span><span class="p">:</span> <span class="n">reorder</span><span class="o">.</span><span class="n">begin</span> <span class="o">=</span> <span class="n">begin_cb_wrapper</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">hook</span><span class="p">:</span> <span class="n">reorder</span><span class="o">.</span><span class="n">apply_change</span> <span class="o">=</span> <span class="n">change_cb_wrapper</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">hook</span><span class="p">:</span> <span class="n">write</span> <span class="o">=</span> <span class="n">WalSndWriteData</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">WalSndLoop</span>
+</span></span><span class="line"><span class="cl">                                        <span class="k">for</span> <span class="p">(;;)</span> <span class="c1"># 持续读取、解码、发送 xlog</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">XLogSendLogical</span>
+</span></span><span class="line"><span class="cl">                                                <span class="n">XLogReadRecord</span> <span class="c1"># 读取1条record，放入logical_decoding_ctx</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">ReadPageInternal</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">DecodeXLogRecord</span>
+</span></span><span class="line"><span class="cl">                                                <span class="n">LogicalDecodingProcessRecord</span> <span class="c1"># 开始解码</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">DecodeHeapOp</span>
+</span></span><span class="line"><span class="cl">                                                        <span class="n">DecodeInsert</span>
+</span></span><span class="line"><span class="cl">                                                            <span class="n">XLogRecGetBlockData</span>
+</span></span><span class="line"><span class="cl">                                                            <span class="n">DecodeXLogTuple</span>
+</span></span><span class="line"><span class="cl">                                                            <span class="n">ReorderBufferQueueChange</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="n">ReorderBufferTXNByXid</span> <span class="c1"># 根据xid，获取buffer</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="n">dlist_push_tail</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">DecodeXactOp</span>
+</span></span><span class="line"><span class="cl">                                                        <span class="n">DecodeCommit</span>
+</span></span><span class="line"><span class="cl">                                                            <span class="n">ReorderBufferCommit</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="n">ReorderBufferTXNByXid</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="n">ReorderBufferReplay</span>
+</span></span><span class="line"><span class="cl">                                                                    <span class="n">ReorderBufferProcessTXN</span>
+</span></span><span class="line"><span class="cl">                                                                        <span class="k">while</span> <span class="n">ReorderBufferIterTXNNext</span> <span class="c1"># 处理 INSERT</span>
+</span></span><span class="line"><span class="cl">                                                                            <span class="n">ReorderBufferApplyChange</span>
+</span></span><span class="line"><span class="cl">                                                                                <span class="n">hook</span><span class="p">:</span> <span class="n">apply_change</span>
+</span></span><span class="line"><span class="cl">                                                                                    <span class="n">change_cb_wrapper</span>
+</span></span><span class="line"><span class="cl">                                                                                        <span class="n">hook</span><span class="p">:</span> <span class="n">change_cb</span>
+</span></span><span class="line"><span class="cl">                                                                                            <span class="n">pgoutput_change</span> <span class="c1"># 暂存，不发送</span>
+</span></span><span class="line"><span class="cl">                                                                                                <span class="n">logicalrep_write_insert</span>
+</span></span><span class="line"><span class="cl">                                                                                                    <span class="n">logicalrep_write_tuple</span>
+</span></span><span class="line"><span class="cl">                                                                                                <span class="n">OutputPluginWrite</span>
+</span></span><span class="line"><span class="cl">                                                                                                    <span class="n">hook</span><span class="p">:</span> <span class="n">write</span>
+</span></span><span class="line"><span class="cl">                                                                                                        <span class="n">WalSndWriteData</span>
+</span></span><span class="line"><span class="cl">                                                                                                            <span class="n">pq_flush_if_writable</span>
+</span></span><span class="line"><span class="cl">                                                                                                                <span class="n">socket_flush_if_writable</span>
+</span></span><span class="line"><span class="cl">                                                                                                                    <span class="o">..</span>
+</span></span><span class="line"><span class="cl">                                                                                                                        <span class="n">send</span> <span class="c1"># 系统调用 send</span>
+</span></span><span class="line"><span class="cl">                                                                        <span class="n">hook</span><span class="p">:</span> <span class="n">commit</span>        <span class="c1"># 处理 COMMIT</span>
+</span></span><span class="line"><span class="cl">                                                                            <span class="n">commit_cb_wrapper</span>
+</span></span><span class="line"><span class="cl">                                                                                <span class="n">hook</span><span class="p">:</span> <span class="n">commit_cb</span>
+</span></span><span class="line"><span class="cl">                                                                                    <span class="n">pgoutput_commit_txn</span> <span class="c1"># 一起发送</span>
+</span></span><span class="line"><span class="cl">                                                                                        <span class="n">logicalrep_write_commit</span>
+</span></span><span class="line"><span class="cl">                                                                                        <span class="n">OutputPluginWrite</span>
+</span></span><span class="line"><span class="cl">                                                                                            <span class="o">..</span>
+</span></span><span class="line"><span class="cl">                                                                                                <span class="n">send</span>
+</span></span><span class="line"><span class="cl">            <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="n">exec_simple_query</span>
+</span></span><span class="line"><span class="cl">        <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">exec_simple_query</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 发布端：流式复制</span>
+</span></span><span class="line"><span class="cl"><span class="n">ReorderBufferReplay</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ReorderBufferStreamCommit</span>
+</span></span><span class="line"><span class="cl">        <span class="n">ReorderBufferStreamTXN</span>
+</span></span><span class="line"><span class="cl">            <span class="n">ReorderBufferProcessTXN</span>
+</span></span><span class="line"><span class="cl">                <span class="n">stream_start_cb_wrapper</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">hook</span><span class="p">:</span> <span class="n">stream_start_cb</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">_PG_output_plugin_init</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">pgoutput_stream_start</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">logicalrep_write_stream_start</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">pq_sendbyte</span><span class="p">(</span><span class="n">LOGICAL_REP_MSG_STREAM_START</span><span class="p">)</span>
+</span></span></code></pre></div><h2 id="43-并行解码">4.3 并行解码<a hidden class="anchor" aria-hidden="true" href="#43-并行解码">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="c1"># @reader</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># read wal</span>
+</span></span><span class="line"><span class="cl"><span class="n">LogicalReadRecordMain</span>
+</span></span><span class="line"><span class="cl">    <span class="k">while</span> <span class="p">(</span><span class="n">true</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">XLogReadRecord</span> <span class="c1"># read record</span>
+</span></span><span class="line"><span class="cl">        <span class="n">ParseProcessRecord</span> <span class="c1"># parse record</span>
+</span></span><span class="line"><span class="cl">            <span class="n">ParseXactOp</span> <span class="c1"># parse xact</span>
+</span></span><span class="line"><span class="cl">                <span class="k">if</span> <span class="s1">&#39;XLOG_XACT_COMMIT&#39;</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">ParseCommitXlog</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">ParallelReorderBufferGetChange</span> <span class="c1"># alloc a change-item</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">PutChangeQueue</span> <span class="c1"># send change-item</span>
+</span></span><span class="line"><span class="cl">            <span class="n">ParseHeapOp</span> <span class="c1"># parse heap</span>
+</span></span><span class="line"><span class="cl">                <span class="k">if</span> <span class="s1">&#39;XLOG_HEAP_INSERT&#39;</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">ParseInsertXlog</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">ParallelReorderBufferGetChange</span> <span class="c1"># alloc a change-item</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">DecodeXLogTuple</span> <span class="c1"># fill change-item (wal -&gt; change-itme)</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">PutChangeQueue</span>  <span class="c1"># send change-item</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">LogicalQueuePut</span><span class="p">(</span><span class="n">decoder</span><span class="p">[</span><span class="n">x</span><span class="p">]</span><span class="o">-&gt;</span><span class="n">changeQueue</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                <span class="k">elif</span> <span class="s1">&#39;XLOG_HEAP_DELETE&#39;</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">ParseDeleteXlog</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># @decoder</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># decode change</span>
+</span></span><span class="line"><span class="cl"><span class="n">ParallelDecodeWorkerMain</span>
+</span></span><span class="line"><span class="cl">    <span class="k">while</span> <span class="p">(</span><span class="n">true</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">LogicalQueueTop</span> <span class="c1"># recv change-item</span>
+</span></span><span class="line"><span class="cl">        <span class="n">ParallelDecodeChange</span> <span class="c1"># decode change-item</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="s1">&#39;PARALLEL_REORDER_BUFFER_CHANGE_COMMIT&#39;</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="n">ParallelDecodeCommitOrAbort</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">GetLogicalLog</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="s1">&#39;PARALLEL_REORDER_BUFFER_CHANGE_INSERT&#39;</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="n">getIUDLogicalLog</span> <span class="c1"># make log (change-item -&gt; log)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">LogicalQueuePut</span><span class="p">(</span><span class="n">decoder</span><span class="o">-&gt;</span><span class="n">LogicalLogQueue</span><span class="p">)</span> <span class="c1"># put log to log-queue</span>
+</span></span><span class="line"><span class="cl">        <span class="n">LogicalQueuePop</span> <span class="c1"># pop change-item, it&#39;s finished</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># @sender</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># send log</span>
+</span></span><span class="line"><span class="cl"><span class="n">WalSndLoop</span>
+</span></span><span class="line"><span class="cl">    <span class="k">for</span> <span class="p">(;;)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">XLogSendParallelLogical</span>
+</span></span><span class="line"><span class="cl">            <span class="k">for</span> <span class="p">(;;</span> <span class="n">decoder</span><span class="o">.</span><span class="n">id</span><span class="o">++</span><span class="p">)</span> <span class="c1"># get decoder one by one</span>
+</span></span><span class="line"><span class="cl">                <span class="n">LogicalQueueTop</span>   <span class="c1"># recv log from current decoder</span>
+</span></span><span class="line"><span class="cl">                <span class="n">LogicalLogHandle</span> <span class="c1">#</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">if</span> <span class="s1">&#39;LOGICAL_LOG_DML&#39;</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">ParallelReorderBufferQueueChange</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">ParallelReorderBufferTXNByXid</span> <span class="c1"># find txn-list from txn-pool</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">dlist_push_tail</span> <span class="c1"># push log to txn-list</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">ParallelReorderBufferUpdateMemory</span> <span class="c1"># check memory</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">elif</span> <span class="s1">&#39;LOGICAL_LOG_COMMIT&#39;</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">LogicalLogHandleAbortOrCommit</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">ParallelReorderBufferTXNByXid</span> <span class="c1"># find txn-list from txn-pool</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">ParallelReorderBufferCommit</span> <span class="c1"># send all log in txn-list</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">ParallelOutputBegin</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">ParallelHandleBatch</span>
+</span></span><span class="line"><span class="cl">                                <span class="k">while</span> <span class="p">(</span><span class="n">ParallelReorderBufferIterTXNNext</span><span class="p">)</span> <span class="c1"># get log one by one</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">ParallelOutputBegin</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">ParallelHandleBatch</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">ParallelOutputCommit</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">ParallelReorderBufferCleanupTXN</span> <span class="c1"># clean txn-list</span>
+</span></span><span class="line"><span class="cl">                <span class="n">LogicalQueuePop</span> <span class="c1"># remove log</span>
+</span></span></code></pre></div><h1 id="参考资料">参考资料<a hidden class="anchor" aria-hidden="true" href="#参考资料">#</a></h1>
+<ul>
+<li>逻辑复制架构：<a href="https://www.cnblogs.com/wy123/p/18946661">https://www.cnblogs.com/wy123/p/18946661</a></li>
+<li>GaussDB并行逻辑解码：<a href="https://developer.huawei.com/consumer/cn/forum/topic/0201165508224221138">https://developer.huawei.com/consumer/cn/forum/topic/0201165508224221138</a></li>
+<li>pg16并行回放：<a href="https://www.webkt.com/article/7715">https://www.webkt.com/article/7715</a></li>
+<li>openGauss并行解码测试：<a href="https://www.cnblogs.com/jerrywang1983/articles/18375212">https://www.cnblogs.com/jerrywang1983/articles/18375212</a></li>
+</ul>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/postgresql/">PostgreSQL</a></li><li><a href="http://localhost:1313/tags/%E9%80%BB%E8%BE%91%E5%A4%8D%E5%88%B6/">逻辑复制</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/postgresql/3-13-logical-replication-tuning/">PostgreSQL 3-13 逻辑复制原理与性能优化</a></li><li><a href="/posts/postgresql/3-13-vb-rep/">PostgreSQL 3-13 Vastbase 逻辑复制</a></li><li><a href="/posts/postgresql/3-13-replication/">PostgreSQL 3-13 逻辑复制性能优化</a></li><li><a href="/posts/postgresql/postgresinternal/">PostgresInternal</a></li><li><a href="/posts/postgresql/3-6-tans-ai/">PostgreSQL 3-2 Transation (v2)</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./PostgreSQL</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

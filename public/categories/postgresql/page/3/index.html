@@ -1,0 +1,1348 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>PostgreSQL | Kernel Notes</title>
+<meta name="keywords" content="">
+<meta name="description" content="">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/categories/postgresql/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" type="application/rss+xml" href="http://localhost:1313/categories/postgresql/index.xml" title="rss">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/categories/postgresql/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/categories/postgresql/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="PostgreSQL">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="PostgreSQL">
+<meta name="twitter:description" content="">
+
+</head>
+<body class="list" id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"> 
+<header class="page-header">
+  <h1>
+    PostgreSQL
+  </h1>
+</header>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 3-2 Transation (v2)
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>概述 假如，2个会话，并发写入数据：
+BEGIN; INSERT INTO t1 VALUES(1, &#39;data1&#39;); COMMIT; BEGIN; INSERT INTO t1 VALUES(1, &#39;data2&#39;); COMMIT; 加锁逻辑：
+exec_simple_query pg_parse_query pg_analyze_and_rewrite pg_plan_queries PortalStart PortalRun PortalRunMulti ProcessQuery ExecutorStart standard_ExecutorStart InitPlan ExecInitNode ExecInitModifyTable ExecInitResultRelation ExecGetRangeTableRelation table_open(relation, &#39;RowExclusiveLock&#39;) # 8级锁，行级排他锁 relation_open LockRelationOid LockAcquire ExecutorRun standard_ExecutorRun ExecutePlan ... ExecInsert table_tuple_insert heapam_tuple_insert heap_insert RelationGetBufferForTuple LockBuffer LWLockAcquire(buffer, &#39;LW_EXCLUSIVE&#39;) # 读写锁 RelationPutHeapTuple log_heap_insert 锁
+HWLock
+8级 relation, index, buffer 死锁检测 LWLocks buffer SpinLock
+PresicateLock
+HWLock 锁 取值 操作 AccessShareLock 1 SELECT RowShareLock 2 SELECT FOR UPDATE/SHARE RowExclusiveLock 3 INSERT/UPDATE/DELETE ShareUpdateExclusiveLock 4 VACUUM/ANALYZE/CRATE INDEX CONCURRENTLY ShareLock 5 CREATE INDEX ShareRowExclusiveLock 6 row share ExclusiveLock 7 block ROW SHARE/SELECT FOR UPDATE AccessExclusiveLock 8 ALTER TABLE/DROP TABLE/VACUUM FULL LockRelationOid LockAcquireExtended hash_search 所有进程共享
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2026-07-03 16:51:00 +0800 CST'>July 3, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>166 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 3-2 Transation (v2)" href="http://localhost:1313/posts/postgresql/3-6-tans-ai/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 3-2 Transation
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 事务的概念 1.1 事务的基本特性 事务的4个特性：
+原子性 Automicity 一致性 Consistency 隔离性 Isolation 持久性 Durability 1.2 事务的隔离性 不同隔离级别下，可能出现的异常如下：（T 表示可能）
+异常 读未提交 读已提交 可重复读 可串行化 解释 脏读 T . . . 读其他事务未提交数据 不可重复读 T T . . 2次读取数据不一致 幻读 T T T . 2次读取数据条数不一致 postgresql默认的隔离级别是读已提交
+-- 查看默认事务隔离级别 show default_transaction_isolation; default_transaction_isolation ------------------------------- read committed -- 查询当前的事务快照 pg 10 SELECT txid_current_snapshot(); txid_current_snapshot ----------------------- 1081:1081: -- 查询所有正在活跃的进程 SELECT * FROM pg_stat_activity; -- 1.3 事务的实现 为实现事务，有3种并发控制机制：
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>10 min</span>&nbsp;·&nbsp;<span>1944 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 3-2 Transation" href="http://localhost:1313/posts/postgresql/3-6-transaction/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 3-5 FSM
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 概述 1.1 思想 fsm结构
+用数组表示完全二叉树
+| 8 | | 4 | 8 | | 4 | 2 | 1 | 8 | 1.2 FSM涉及 物理页号
+&#43;-------&#43;-------&#43;-------&#43;-------&#43;-------&#43; FSMFile | 8k | 8k | 8k | 8k | ... | &#43;-------&#43;-------&#43;-------&#43;-------&#43;-------&#43; FSMBlock | 0 | 1 | 2 | 3 | ... | &#43;-------&#43;-------&#43;-------&#43;-------&#43;-------&#43; 逻辑页号
+第2层：1个FSMBlock
+第1层：4069个FSMBlock
+第0层：4069 * 4069个FSMBlock，每个FSM可映射4069个DataBlock
+FSMAddress: [层次，页号]，页号即FSMBlock号
+每个表最大容量是32T，只需3层也页面即可管理整个表的空闲空间
+# [FSMAddress.level, FSMAddress.logpageno, FSMBlockNum（1个page即1个FSMBlock）] [2,0,0] | &#43;---------------------------&#43;---------------------------&#43; | | | [1,0,1] [1,1,1*4070&#43;1] ... [1,4069,4069*4070&#43;1] 本层共4069个FSMBlock | &#43;----------&#43;------------&#43; | | | [2,0,1&#43;1] [2,1,1&#43;2] ... [2,2,1&#43;4069] ...... 本层共4069*4069个FSMBlock | （映射DataBlock 0 ~ 4065） 整体架构
+3层FSMBlock
+[8] [8 0] [8 0 0 0] [...] [8 0 0 0 0 ...] [8] [8 0] [8 0 0 0] [...] [8 0 0 0 0 ...] [8] [8 0] [8 0 0 0] [...] [8 0 0 0 0 ...] 测试
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>7 min</span>&nbsp;·&nbsp;<span>1396 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 3-5 FSM" href="http://localhost:1313/posts/postgresql/3-7-fsm/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 3-10 VM
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 概述 1.1 vm接口调用点 heap_insert() buffer = RelationGetBufferForTuple() RelationPutHeapTuple(buffer, heaptup) if PageIsAllVisible(buffer): PageClearAllVisible(buffer) visibilitymap_clear(ItemPointerGetBlockNumber(heaptup), vmbuffer) MarkBufferDirty(buffer) #define PageIsAllVisible(page) ((page)-&gt;pd_flags &amp; PD_ALL_VISIBLE) 1.2 vm模块对外接口 visibilitymap_clear(Relation rel, BlockNumber heapBlk, Buffer buf, uint8 flags) int mapByte = HEAPBLK_TO_MAPBYTE(heapBlk) LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE) char *map = PageGetContents(buf) if map[mapByte] 1.3 vmmap结构与定位 /* 8192 - 24 = 8168 */ #define MAPSIZE (BLCKSZ - MAXALIGN(SizeOfPageHeaderData)) /* 1字节 2bit表示1页 : | 00 00 00 00 | */ #define BITS_PER_BYTE 8 #define BITS_PER_HEAPBLOCK 2 /* 1字节 可映射4个heapblock */ #define HEAPBLOCKS_PER_BYTE (BITS_PER_BYTE / BITS_PER_HEAPBLOCK) /* 计算heapblock对应的vmblock, vmbyte, vmoffset的位置 */ /* 1vmblock可映射4 * 8168个datablock */ #define HEAPBLOCKS_PER_PAGE (MAPSIZE * HEAPBLOCKS_PER_BYTE) #define HEAPBLK_TO_MAPBLOCK(x) ((x) / HEAPBLOCKS_PER_PAGE) #define HEAPBLK_TO_MAPBYTE(x) (((x) % HEAPBLOCKS_PER_PAGE) / HEAPBLOCKS_PER_BYTE) #define HEAPBLK_TO_OFFSET(x) (((x) % HEAPBLOCKS_PER_BYTE) * BITS_PER_HEAPBLOCK) #define VISIBILITYMAP_ALL_VISIBLE	0x01 #define VISIBILITYMAP_ALL_FROZEN	0x02 #define VISIBILITYMAP_VALID_BITS	0x03 1.4 vmblock读写 vm_extend(Relation rel, BlockNumber vm_nblocks) PGAlignedBlock pg PageInit((Page) pg.data, BLCKSZ, 0) LockRelationForExtension(rel, ExclusiveLock) BlockNumber vm_nblocks_now = smgrnblocks（rel-&gt;rd_smgr, VISIBILITYMAP_FORKNUM） while vm_nblocks_now &lt; vm_nblocks： PageSetChecksumInplace((Page) pg.data, vm_nblocks_now) smgrextend(rel-&gt;rd_smgr, VISIBILITYMAP_FORKNUM, vm_nblocks_now, pg.data, false) vm_nblocks_now&#43;&#43; /* 让其他postgres进程smgrclose(rel) */ CacheInvalidateSmgr(rel-&gt;rd_smgr-&gt;smgr_rnode) { SharedInvalidationMessage msg msg.sm.id = SHAREDINVALSMGR_ID; msg.sm.backend_hi = rnode.backend &gt;&gt; 16; msg.sm.backend_lo = rnode.backend &amp; 0xffff; msg.sm.rnode = rnode.node; VALGRIND_MAKE_MEM_DEFINED(&amp;msg, sizeof(msg)) SendSharedInvalidMessages(&amp;msg, 1) } rel-&gt;rd_smgr-&gt;smgr_vm_nblocks = vm_nblocks_now UnlockRelationForExtension(rel, ExclusiveLock) Buffer vm_readbuf(Relation rel, BlockNumber blkno, bool extend) RelationOpenSmgr(rel) if blkno &gt;= rel-&gt;rd_smgr-&gt;smgr_vm_nblocks: if extend: vm_extend(rel, blkno &#43; 1) buf = ReadBufferExtended(rel , VISIBILITYMAP_FORKNUM, blkno,RBM_ZERO_ON_ERROR) if PageIsNew(buf): PageInit(buf, BLKSZ, 0) return buf 1.5 vm模块对外接口 void visibilitymap_set(Relation rel, BlockNumber heapBlk, Buffer heapBuf, XLogRecPtr recptr, Buffer vmBuf, TransactionId cutoff_xid, uint8 flags) uint8 visibilitymap_get_status(Relation rel, BlockNumber heapBlk, Buffer *vmbuf) bool visibilitymap_clear(Relation rel, BlockNumber heapBlk, Buffer vmbuf, uint8 flags) /* 每个heapblock有3种状态 */ uint8 visibilitymap_get_status(Relation rel, BlockNumber heapBlk, Buffer *buf) BlockNumber mapBlock = HEAPBLK_TO_MAPBLOCK(heapBlk) uint32 mapByte = HEAPBLK_TO_MAPBYTE(heapBlk) uint8 mapOffset = HEAPBLK_TO_OFFSET(heapBlk) /* 比较传入的buf和计算的mapblock是否为同一个 */ if BufferIsValid(*buf): if BufferGetBlockNumber(*buf) != mapBlock: *buf = InvalidBuffer if !BufferIsValid(*buf): *buf = vm_readbuf(rel, mapBlock, false) map = PageGetContents(BufferGetPage(*buf)) /* 每个heapbuf有01 10 11共3种状态 */ unit8 result = ((map[mapByte] &gt;&gt; mapOffset) &amp; VISIBILITYMAP_VALID_BITS) return uint8 void visibilitymap_set(Relation rel, BlockNumber heapBlk, Buffer heapBuf, XLogRecPtr recptr, Buffer vmBuf, TransactionId cutoff_xid, uint8 flags) ... </p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>330 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 3-10 VM" href="http://localhost:1313/posts/postgresql/3-9-vm/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 3-1 Heapam
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 heamp的简介 前置知识：Relation的基本概念，Tuple的基本概念
+1.1 heapam接口的功能 heapam是存储模块对上层提供的数据读写接口，这些接口通常是操作1个relation中的1个或多个tuple。
+本文介绍以下4个最常用的接口，即如何向1个relation中写入、删除、更新、读取1个Tuple，接口定义如下：
+/* 向relatiion中写入1条tuple */ heap_insert(Relation relation, HeapTuple tup, ...) /* 从relation中删除1条tuple */ heap_delete(Relation relation, ItemPointer tid, ...) /* 在relation中，将旧tuple标记删除，并写入1个新tuple */ heap_update(Relation relation, ItemPointer otid, HeapTuple newtup, ...) /* 从relation中读取数据，每次读取1条数据 */ HeapScanDesc heap_beginscan(Relation relation, ...) HeapTuple heap_getnext(HeapScanDesc scan) 1.2 调用heapam接口 /* * 此处，以4个常见的SQL为例，介绍数据库如何调用heapam接口 * 1. INSERT INTO t1 VALUES (1, &#39;data1&#39;); * 2. SELECT * FROM t1; * 3. DELETE FROM t1 WHERE c1 = 1; * 4. UPDATE t1 SET c2 = &#39;data2&#39; WHERE c1 = 1; */ exec_simple_query(&#34;SQL语句&#34;) /* 该函数是所有SQL语句的统一处理入口 */ PortalRun() PortalRunMulti() ProcessQuery() ExecutorRun() standard_ExecutorRun() ExecutePlan() ExecProcNode() /* 从这里开始分叉，不同类型的SQL语句，由不同函数处理 */ ExecModifyTable() ExecInsert() /* 处理：INSERT INTO t1 VALUES (1, &#39;data1&#39;) */ heap_insert(relation, tuple, ..) 1.3 heapam接口的使用场景 实际应用场景中，数据库的存储模块需满足以下关键需求：
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>3 min</span>&nbsp;·&nbsp;<span>449 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 3-1 Heapam" href="http://localhost:1313/posts/postgresql/3-10-heapam/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 3-8 Index
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p> 1 背景 1.1 数据检索 1 索引概述 1.1 概述 1.2 索引函数 1.2.1 调用索引函数 1.2.2 索引函数 2 索引实现 2.1 创建索引 ambuild 一、build整体流程 二、build插入tuple 2.2 索引写入数据 aminsert 3 operate 1 背景 1.1 数据检索 通常，应用会使用数据库存储大量数据，比如，单个表存储上百万、甚至上百亿条数据。此时，对表中数据进行某些查询时，将变得非常困难，比如等值查询、范围查询、模糊查询等。
+1 索引概述 1.1 概述 索引方式：postgresql共有5种索引
+唯一索引：不能出现重复的值
+主键索引：主键自动创建唯一索引
+多属性索引：多个列（最多32列）
+部分索引：WHERE过滤索引
+-- 示例 CREATE INDEX .. WHERE (c1 &gt; 10); 表达式索引：和部分索引没太大区别，都是额外调用1个函数
+-- 示例 CREATE INDEX .. WHERE (c1 = 10); 索引分类：postgresql有多种索引，本文见介绍以下4种
+btree hash gist gin 索引系统表
+pg_am：存储所有索引的方法
+SELECT * FROM pg_am; amname | amhandler | amtype -------&#43;-------------&#43;-------- btree | bthandler | i hash | hashhandler | i gist | gisthandler | i gin | ginhandler | i spgist | spghandler | i brin | brinhandler | i pg_index：存储所有索引，索引列的下标
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>7 min</span>&nbsp;·&nbsp;<span>1391 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 3-8 Index" href="http://localhost:1313/posts/postgresql/3-11-index/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 3-9 Vacuum
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 概述 select reltuples,relhasoids,oid from pg_class where relname = &#39;t1&#39;; -- reltuples = 0 select pg_relation_filepath(&#39;t1&#39;); -- oid = filepath = relfilenode vacuum full t1; select reltuples,relhasoids,oid from pg_class where relname = &#39;t1&#39;; -- oid 不变, reltuples = 0 -- oid != filepath = relfilenode != analyze t1; -- reltuples = 2，即有效tuple 启动autovacuum进程
+standard_ProcessUtility(Node *parsetree) case T_VacuumStmt: ExecVacuum(VacuumStmt *vacstmt) vacuum(RangeVar *relation, Oid relid, VacuumParams *params) ServerLoop(void) StartAutoVacLauncher(void) AutoVacLauncherMain() /* if fail: 发送信号重启aotuvacuum进程 */ SendPostmasterSignal(PMSIGNAL_START_AUTOVAC_WORKER) sigusr1_handler(SIGNAL_ARGS) if CheckPostmasterSignal(PMSIGNAL_START_AUTOVAC_WORKER): StartAutovacuumWorker(void) Backend *bn = malloc(); bn-&gt;pid = StartAutoVacWorker(void) AutoVacWorkerMain(int argc, char *argv[])() BaseInit(); InitPostgres(NULL, dbid, NULL, InvalidOid, dbname) do_autovacuum() autovacuum_do_vac_analyze(autovac_table *tab) vacuum(RangeVar *relation, Oid relid, VacuumParams *params) proc_exit(0) dlist_push_head(&amp;BackendList, &amp;bn-&gt;elem) 查找所有待vacuum的表 do_autovacuum(void) /* table-by-table */ StartTransactionCommand() /* 查询pg_database系统表 */ tuple = SearchSysCache1(DATABASEOID) /* 打开pg_class系统表 */ classRel = heap_open(RelationRelationId) pg_class_desc = CreateTupleDescCopy(RelationGetDescr(classRel)) /* 为toast表创建hash表 */ table_toast_map = hash_create() /* 遍历pg_class系统表，记录所有需要vacuum和analyze的普通表和系统表 */ relScan = heap_beginscan_catalog(classRel) while tuple = heap_getnext(relScan) != NULL: Form_pg_class classForm = (Form_pg_class) GETSTRUCT(tuple) relid = HeapTupleGetOid(tuple) relopts = extract_autovac_opts(tuple, pg_class_desc) tabentry = get_pgstat_tabentry_relid(relid, classForm-&gt;relisshared) /* 检查表是否需要被vacuum和analyze */ relation_needs_vacanalyze(relid, relopts, classForm, tabentry, &amp;dovacuum, &amp;doanalyze) if dovacuum || doanalyze: /* 普通表加入list中 */ table_oids = lappend_oid(table_oids, relid) /* toast表加入hash表中 */ if OidIsValid(classForm-&gt;reltoastrelid): hentry = hash_search(table_toast_map, &amp;classForm-&gt;reltoastrelid, HASH_ENTER) hentry-&gt;ar_relid = relid eap_endscan(relScan) /* 第二次遍历pg_class系统表 */ relScan = heap_beginscan_catalog(classRel) while tuple = heap_getnext(relScan) != NULL: Form_pg_class classForm = (Form_pg_class) GETSTRUCT(tuple) relid = HeapTupleGetOid(tuple) relopts = extract_autovac_opts(tuple, pg_class_desc) ... bstrategy = GetAccessStrategy(BAS_VACUUM) /* 开始遍历所有list中的表 */ foreach(cell, table_oids) Oid relid = lfirst_oid(cell) /* 再次检查是否仍需vacuum */ tab = table_recheck_autovac(relid, table_toast_map, pg_class_desc) if tab == NULL: continue MyWorkerInfo-&gt;wi_tableoid = relid autovac_balance_cost() AutoVacuumUpdateDelay() autovacuum_do_vac_analyze(tab, bstrategy) vac_update_datfrozenxid() CommitTransactionCommand() 对单个表进行vacuum
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>4 min</span>&nbsp;·&nbsp;<span>657 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 3-9 Vacuum" href="http://localhost:1313/posts/postgresql/3-12-vacuum/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 3-13 逻辑复制测试记录
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 本地自测 1.1 快速tpcc vkill rm -rf $GAUSSHOME/data* # cp -r ~/w100_t200/data $GAUSSHOME/data # cp -r ~/w100_t200/data1 $GAUSSHOME/ cp -r ~/w5/data $GAUSSHOME/data cp -r ~/w5/data1 $GAUSSHOME/ # cp -r ~/w100/data $GAUSSHOME/data # cp -r ~/w100/data1 $GAUSSHOME/ # vb_guc set -D $GAUSSHOME/data -c &#34;enable_ddl_logical_decode=on&#34; # vb_guc set -D $GAUSSHOME/data1 -c &#34;enable_ddl_logical_decode=on&#34; # vb_guc set -D $GAUSSHOME/data1 -c &#34;max_replication_slots=50&#34; # vb_guc set -D $GAUSSHOME/data1 -c &#34;max_background_workers=50&#34; # vb_guc set -D $GAUSSHOME/data1 -c &#34;max_logical_replication_workers=50&#34; vb_guc set -D $GAUSSHOME/data1 -c &#34;max_connections=4000&#34; vb_guc set -D $GAUSSHOME/data1 -c &#34;enable_audit=on&#34; vb_guc set -D $GAUSSHOME/data1 -c &#34;audit_buffer_size=262144&#34; vb_guc set -D $GAUSSHOME/data1 -c &#34;audit_directory_size=1073741824&#34; vb_ctl start -D $GAUSSHOME/data vb_ctl start -D $GAUSSHOME/data1 # 五、发布端（发布） vsql -d pubdb -p 64000 -c &#34;CREATE PUBLICATION pub1 FOR all tables WITH (ddl=&#39;all&#39;);&#34; vsql -d pubdb -p 64000 -c &#34; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;);&#34; # # 六、订阅端（订阅） gs_guc generate -S &#39;pu1.12345&#39; -D $GAUSSHOME/bin -o subscription vsql -d pubdb -p 65000 -c &#34;CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false, worker_number=220);&#34; # # vsql -d pubdb -p 65000 -r # \q # cd ~/tpcc # source envbm # ./toolbm run vpub # 换窗口查询 vsql -d pubdb -p 65000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; vsql -d pubdb -p 64000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; vsql -d pubdb -p 64000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; # 场景一：验证内存 vsql -d pubdb -p 64000 -c &#34;SELECT * FROM gs_thread_memory_context ORDER BY totalsize DESC limit 30;&#34; &gt; start_pub.mem vsql -d pubdb -p 64000 -c &#34;SELECT * FROM gs_shared_memory_detail ORDER BY totalsize DESC limit 30;;&#34; &gt;&gt; start_pub.mem vsql -d pubdb -p 65000 -c &#34;SELECT * FROM gs_thread_memory_context ORDER BY totalsize DESC limit 30;;&#34; &gt; start_sub.mem vsql -d pubdb -p 65000 -c &#34;SELECT * FROM gs_shared_memory_detail ORDER BY totalsize DESC limit 30;;&#34; &gt;&gt; start_sub.mem # 场景八：验证数据一致性 vsql -d pubdb -p 64000 -c &#34;DROP TABLE IF EXISTS tcnt&#34; vsql -d pubdb -p 64000 -c &#34;CREATE TABLE tcnt (c1 TEXT,c2 INT);&#34; vsql -d pubdb -p 65000 -c &#34;DROP TABLE IF EXISTS tcnt&#34; vsql -d pubdb -p 65000 -c &#34;CREATE TABLE tcnt (c1 TEXT,c2 INT);&#34; for t in bmsql_config bmsql_customer bmsql_district bmsql_history bmsql_item bmsql_new_order bmsql_oorder bmsql_order_line bmsql_stock bmsql_warehouse; do echo &#34;$t&#34; vsql -d pubdb -p 64000 -c &#34;INSERT INTO tcnt VALUES(&#39;$t&#39;, (SELECT count(1) FROM $t));&#34; done; for t in bmsql_config bmsql_customer bmsql_district bmsql_history bmsql_item bmsql_new_order bmsql_oorder bmsql_order_line bmsql_stock bmsql_warehouse; do echo &#34;$t&#34; vsql -d pubdb -p 65000 -c &#34;INSERT INTO tcnt VALUES(&#39;$t&#39;, (SELECT count(1) FROM $t));&#34; done; vsql -d pubdb -p 64000 -c &#34;SELECT * FROM tcnt&#34; vsql -d pubdb -p 65000 -c &#34;SELECT * FROM tcnt;&#34; # 场景一：重启订阅端（kill） for i in $(seq 0 10); do echo &#34;$i------------------------------------------------------------------------------------&#34; ps ux | grep &#39;vastbase.*-D.*/data1&#39; | grep -v grep | awk &#39;{print $2}&#39; | xargs kill -9 vb_ctl start -D $GAUSSHOME/data1 sleep 7 vsql -d pubdb -p 65000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; &gt;&gt; a.out done; # 场景二：重启订阅端(stop) for i in $(seq 0 10); do echo &#34;$i------------------------------------------------------------------------------------&#34; echo &#34;$i------------------------------------------------------------------------------------&#34; &gt;&gt; a.out vb_ctl stop -D $GAUSSHOME/data1 vb_ctl start -D $GAUSSHOME/data1 vsql -d pubdb -p 65000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; &gt;&gt; a.out sleep 7 vsql -d pubdb -p 65000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; &gt;&gt; a.out done; # 场景三：重启发布端 vsql -d pubdb -p 65000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; vb_ctl stop -D $GAUSSHOME/data sleep 5 vb_ctl start -D $GAUSSHOME/data vsql -d pubdb -p 65000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; vb_ctl restart -D $GAUSSHOME/data1 # 场景三：重建 subscription for i in $(seq 0 10); do echo &#34;$i------------------------------------------------------------------------------------&#34; echo &#34;$i------------------------------------------------------------------------------------&#34; &gt;&gt; a.out vsql -d pubdb -p 65000 -c &#34;DROP SUBSCRIPTION sub1;&#34; vsql -d pubdb -p 64000 -c &#34; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;);&#34; vsql -d pubdb -p 65000 -c &#34;CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false, worker_number=20);&#34; sleep 6 vsql -d pubdb -p 65000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; &gt;&gt; a.out done; vsql -d pubdb -p 65000 -c &#34;DROP SUBSCRIPTION sub1;&#34; vsql -d pubdb -p 64000 -c &#34; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;);&#34; vsql -d pubdb -p 65000 -c &#34;CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false, worker_number=20);&#34; vsql -d pubdb -p 65000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; vsql -d pubdb -p 65000 -c &#34;SELECT * FROM pg_subscription_rel&#34; vsql -d pubdb -p 64000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), &#39;0/0&#39;) / (1024 * 1024); # 场景五：ddl vsql -d pubdb -p 64000 -c &#34;\d&#34; vsql -d pubdb -p 65000 -c &#34;\d&#34; vsql -d pubdb -p 64000 -c &#34;DROP TABLE bmsql_warehouse&#34; vsql -d pubdb -p 64000 -c &#34;CREATE TABLE t3(c1 INT)&#34; vsql -d pubdb -p 64000 -c &#34;\d&#34; vsql -d pubdb -p 65000 -c &#34;\d&#34; # 场景六：多个发布订阅 vsql -d postgres -p 64000 -c &#34;CREATE DATABASE db3;&#34; vsql -d db3 -p 64000 -c &#34;CREATE TABLE t3(c1 INT PRIMARY KEY, c2 TEXT);&#34; vsql -d db3 -p 64000 -c &#34;CREATE PUBLICATION pub3 FOR all tables WITH (ddl=&#39;all&#39;);&#34; vsql -d db3 -p 64000 -c &#34; SELECT pg_create_logical_replication_slot(&#39;pslot3&#39;, &#39;pgoutput&#39;);&#34; vsql -d postgres -p 65000 -c &#34;CREATE DATABASE db3;&#34; vsql -d db3 -p 65000 -c &#34;CREATE TABLE t3(c1 INT PRIMARY KEY, c2 TEXT);&#34; vsql -d db3 -p 65000 -c &#34;CREATE SUBSCRIPTION sub3 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=db3 user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub3 WITH (create_slot=false, slot_name = &#39;pslot3&#39;, copy_data = false, worker_number=20);&#34; vsql -d pubdb -p 65000 -c &#34;DROP SUBSCRIPTION sub1;&#34; for i in $(seq 0 10); do vsql -d db3 -p 64000 -c &#34;BEGIN; INSERT INTO t3 VALUES($i,&#39;a&#39;); UPDATE t3 SET c2=&#39;b&#39; WHERE c1=$i-1; COMMIT;&#34; &amp; done; wait # 跑10分钟 ./toolbm run vpub vsql -d pubdb -p 65000 -c &#34;DROP SUBSCRIPTION sub1;&#34; # for t in bmsql_config bmsql_customer bmsql_district bmsql_history bmsql_item bmsql_new_order bmsql_oorder bmsql_order_line bmsql_stock bmsql_warehouse; do echo &#34;$t&#34; vsql -d pubdb -p 65000 -c &#34;TRUNCATE $t&#34; done; 续点重传 vkill rm -rf $GAUSSHOME/data* # cp -r ~/w5/data $GAUSSHOME/data # cp -r ~/w5/data1 $GAUSSHOME/ cp -r ~/w100/data $GAUSSHOME/data cp -r ~/w100/data1 $GAUSSHOME/ vb_guc set -D $GAUSSHOME/data1 -c &#34;max_connections=4000&#34; vb_ctl start -D $GAUSSHOME/data vb_ctl start -D $GAUSSHOME/data1 # 五、发布端（发布） vsql -d pubdb -p 64000 -c &#34;CREATE PUBLICATION pub1 FOR all tables WITH (ddl=&#39;all&#39;);&#34; vsql -d pubdb -p 64000 -c &#34; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;);&#34; # # 六、订阅端（订阅） gs_guc generate -S &#39;pu1.12345&#39; -D $GAUSSHOME/bin -o subscription vsql -d pubdb -p 65000 -c &#34;CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false, worker_number=220);&#34; # # vsql -d pubdb -p 65000 -r # \q vsql -d pubdb -p 65000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; vsql -d pubdb -p 64000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; # ./toolbm run vpub # 重启订阅端（kill） for i in $(seq 0 10); do echo &#34;$i------------------------------------------------------------------------------------&#34; ps ux | grep &#39;vastbase.*-D.*/data1&#39; | grep -v grep | awk &#39;{print $2}&#39; | xargs kill -9 vb_ctl start -D $GAUSSHOME/data1 sleep 7 vsql -d pubdb -p 65000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; &gt;&gt; a.out done; vsql -d pubdb -p 64000 -c &#34; SELECT * FROM pg_get_replication_slots(); &#34; vsql -d pubdb -p 64000 -c &#34; SELECT pg_current_wal_lsn();&#34; # 验证数据一致性 vsql -d pubdb -p 64000 -c &#34;DROP TABLE IF EXISTS tcnt&#34; vsql -d pubdb -p 64000 -c &#34;CREATE TABLE tcnt (c1 TEXT,c2 INT);&#34; vsql -d pubdb -p 65000 -c &#34;DROP TABLE IF EXISTS tcnt&#34; vsql -d pubdb -p 65000 -c &#34;CREATE TABLE tcnt (c1 TEXT,c2 INT);&#34; for t in bmsql_config bmsql_customer bmsql_district bmsql_history bmsql_item bmsql_new_order bmsql_oorder bmsql_order_line bmsql_stock bmsql_warehouse; do echo &#34;$t&#34; vsql -d pubdb -p 64000 -c &#34;INSERT INTO tcnt VALUES(&#39;$t&#39;, (SELECT count(1) FROM $t));&#34; done; for t in bmsql_config bmsql_customer bmsql_district bmsql_history bmsql_item bmsql_new_order bmsql_oorder bmsql_order_line bmsql_stock bmsql_warehouse; do echo &#34;$t&#34; vsql -d pubdb -p 65000 -c &#34;INSERT INTO tcnt VALUES(&#39;$t&#39;, (SELECT count(1) FROM $t));&#34; done; vsql -d pubdb -p 64000 -c &#34;SELECT * FROM tcnt&#34; vsql -d pubdb -p 65000 -c &#34;SELECT * FROM tcnt;&#34; -- ===================== worker_number ======================= CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false); DROP SUBSCRIPTION sub1; \! vsql -d pubdb -p 64000 -c &#34; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;);&#34; CREATE SUBSCRIPTION sub2 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false, worker_number=1); DROP SUBSCRIPTION sub2; \! vsql -d pubdb -p 64000 -c &#34; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;);&#34; CREATE SUBSCRIPTION sub3 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false, worker_number=2); DROP SUBSCRIPTION sub3; \! vsql -d pubdb -p 64000 -c &#34; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;);&#34; CREATE SUBSCRIPTION sub4 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false, worker_number=200); DROP SUBSCRIPTION sub4; \! vsql -d pubdb -p 64000 -c &#34; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;);&#34; CREATE SUBSCRIPTION sub5 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false, worker_number=400); DROP SUBSCRIPTION sub5; CREATE SUBSCRIPTION sub6 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false, worker_number=1000); DROP SUBSCRIPTION sub6; -- ===================== copy_data ======================= -- do truncate fist CREATE SUBSCRIPTION sub21 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = true, worker_number=50); SELECT * FROM pg_subscription_rel; DROP SUBSCRIPTION sub21; -- copy and stop -- ===================== cache file ======================= -- 1. drop subscription -- 2. kill progress -- ===================== 断点续传 ======================= vsql -d postgres -p 50000 -c &#34;DROP TABLE IF EXISTS t1&#34; vsql -d postgres -p 50000 -c &#34;CREATE TABLE t1(c1 INT, c2 TEXT)&#34; for i in $(seq 0 10); do vsql -d postgres -p 50000 -c &#34;BEGIN; INSERT INTO t1 VALUES($i,&#39;a&#39;); UPDATE t1 SET c2=&#39;b&#39; WHERE c1=$i-1; COMMIT;&#34; &amp; done vsql -d postgres -p 50000 -c &#34;SELECT * FROM t1 ORDER BY c1&#34; parallel_apply.source 1 自测 批量验证 初始化模板 export VDATA=~/g100/rep/data vb_guc set -D $VDATA -c &#34;port=64000&#34; vb_guc set -D $VDATA -c &#34;max_connection=2000&#34; vb_guc set -D $VDATA -c &#34;wal_level=logical&#34; vb_guc set -D $VDATA -c &#34;max_replication_slots=100&#34; vb_guc set -D $VDATA -c &#34;max_background_workers=100&#34; vb_guc set -D $VDATA -c &#34;max_logical_replication_workers=100&#34; sed -i &#39;1i host all all 0.0.0.0/0 sha256\n&#39; $VDATA/pg_hba.conf echo &#34;host replication all 0.0.0.0/0 sha256&#34; &gt;&gt; $VDATA/pg_hba.conf insert性能 export VDATA=~/g100/rep/data vkill rm -rf ~/g100/rep/data cp -r ~/g100/rep/temp ~/g100/rep/data vstart vsql -d postgres -p 64000 -r -- 3 create publicatioin \c postgres CREATE DATABASE pubdb; \c pubdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); CREATE PUBLICATION pub1 FOR all tables; CREATE USER pu1 REPLICATION SYSADMIN LOGIN ENCRYPTED PASSWORD &#39;pu1.12345&#39;; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;); -- sub CREATE DATABASE subdb; \c subdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); \! gs_guc generate -S &#39;pu1.12345&#39; -D $GAUSSHOME/bin -o subscription CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=127.0.0.1 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name=&#39;pslot1&#39;, copy_data=false, worker_number=80); SELECT count(1) FROM t1; SELECT * FROM vb_parallel_apply_stat(); \c pubdb truncate t1; \c subdb truncate t1; SELECT datname,state,length(query) FROM pg_stat_activity WHERE datname = &#39;pubdb&#39;; 多个发布订阅 vb_guc set -D ~/g100/rep/data -c &#34;max_replication_slots=256&#34; vb_guc set -D ~/g100/rep/data -c &#34;max_background_workers=256&#34; vb_guc set -D ~/g100/rep/data -c &#34;max_logical_replication_workers=256&#34; export VDATA=~/g100/rep/data vkill rm -rf ~/g100/rep/data cp -r ~/g100/rep/temp ~/g100/rep/data vb_guc set -D ~/g100/rep/data -c &#34;enable_ddl_logical_decode=on&#34; vb_guc set -D ~/g100/rep/data -c &#34;max_wal_senders=36&#34; vb_guc set -D ~/g100/rep/data -c &#34;max_replication_slots=256&#34; vb_guc set -D ~/g100/rep/data -c &#34;max_background_workers=256&#34; vb_guc set -D ~/g100/rep/data -c &#34;max_logical_replication_workers=256&#34; vb_guc set -D ~/g100/rep/data -c &#34;max_connections=1000&#34; vstart rm -rf ~/g100/rep/data1 vb_guc set -D ~/g100/rep/data1 -c &#34;port=65000&#34; cp -r ~/g100/rep/temp ~/g100/rep/data1 vb_ctl start -D ~/g100/rep/data1 # 发布 vsql -d postgres -p 64000 -c &#34;CREATE USER pu1 REPLICATION SYSADMIN LOGIN ENCRYPTED PASSWORD &#39;pu1.12345&#39;;&#34; for i in $(seq 0 11); do vsql -d postgres -p 64000 -c &#34;CREATE DATABASE pubdb$i;&#34; vsql -d pubdb$i -p 64000 -c &#34;CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT);&#34; vsql -d pubdb$i -p 64000 -c &#34;CREATE PUBLICATION pub$i FOR all tables;&#34; vsql -d pubdb$i -p 64000 -c &#34;SELECT pg_create_logical_replication_slot(&#39;pslot$i&#39;, &#39;pgoutput&#39;);&#34; done; # 5 load data for i in $(seq 0 11); do for j in $(seq 0 10); do vsql -d pubdb$i -p 64000 -c &#34;BEGIN; INSERT INTO t1 VALUES($j,&#39;a&#39;); UPDATE t1 SET c2=&#39;b&#39; WHERE c1=$j-1; COMMIT;&#34; &amp; done; sleep 2 done; wait # 订阅 gs_guc generate -S &#39;pu1.12345&#39; -D $GAUSSHOME/bin -o subscription for i in $(seq 0 11); do vsql -d postgres -p 65000 -c &#34;CREATE DATABASE subdb$i;&#34; vsql -d subdb$i -p 65000 -c &#34;CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT);&#34; vsql -d subdb$i -p 65000 -c &#34;CREATE SUBSCRIPTION sub$i CONNECTION &#39;host=127.0.0.1 port=64001 dbname=pubdb$i user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub$i WITH (create_slot=false, slot_name = &#39;pslot$i&#39;, copy_data = false, worker_number=30);&#34; done; sleep 5 # 6 check for i in $(seq 0 11); do vsql -d pubdb$i -p 64000 -c &#34;SELECT count(1) FROM t1&#34; done; for i in $(seq 0 11); do vsql -d subdb$i -p 65000 -c &#34;SELECT count(1) FROM t1&#34; done; vsql -d postgres -p 64000 -c &#34; SELECT * FROM pg_get_replication_slots();&#34; vsql -d postgres -p 65000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; # 7 cleanup DROP SUBSCRIPTION sub1; \c postgres DROP DATABASE IF EXISTS pubdb; DROP DATABASE IF EXISTS subdb; DROP USER pu1; copydata export VDATA=~/g100/rep/data vkill rm -rf ~/g100/rep/data cp -r ~/g100/rep/temp ~/g100/rep/data vstart rm -rf ~/g100/rep/data1 cp -r ~/g100/rep/temp ~/g100/rep/data1 vb_guc set -D ~/g100/rep/data1 -c &#34;port=65000&#34; vb_ctl start -D ~/g100/rep/data1 vsql -d postgres -p 64000 -r -- 3 create publicatioin -- pub \c postgres CREATE DATABASE pubdb; \c pubdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); CREATE PUBLICATION pub1 FOR all tables; -- CREATE PUBLICATION pub1 FOR TABLE t1,t2; CREATE USER pu1 REPLICATION SYSADMIN LOGIN ENCRYPTED PASSWORD &#39;pu1.12345&#39;; -- INSERT INTO t1 VALUES(1,&#39;a&#39;),(2,&#39;b&#39;),(3,&#39;c&#39;); -- INSERT INTO t1 (c1,c2) SELECT i,&#39;BASE_&#39; || i || &#39;_&#39; || repeat(&#39;X&#39;, 13000) FROM generate_series(1, 10000) AS i; \q -- for i in $(seq 0 1000); do vsql -d pubdb -p 64000 -c &#34;INSERT INTO t1 VALUES($i,&#39;a&#39;); &#34; ; done vsql -d postgres -p 65000 -r -- sub CREATE DATABASE subdb; \c subdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); \! gs_guc generate -S &#39;pu1.12345&#39; -D $GAUSSHOME/bin -o subscription CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=127.0.0.1 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (copy_data=false, worker_number=10); -- \! for i in $(seq 20000 20010); do vsql -d pubdb -p 64000 -c &#34;INSERT INTO t1 VALUES($i,&#39;a&#39;); &#34; ; done SELECT * FROM t1; SELECT * FROM vb_parallel_apply_stat(); vsql -d pubdb -p 64000 -c &#34;SELECT count(1) FROM t1&#34; vsql -d subdb -p 65000 -c &#34;SELECT count(1) FROM t1&#34; vsql -d subdb -p 65000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; SELECT * FROM pg_replication_slots; INSERT INTO t1 VALUES(4,&#39;a&#39;),(5,&#39;b&#39;),(6,&#39;c&#39;); ddl export VDATA=~/g100/rep/data vkill rm -rf ~/g100/rep/data cp -r ~/g100/rep/temp ~/g100/rep/data vb_guc set -D ~/g100/rep/data -c &#34;enable_ddl_logical_decode=on&#34; vstart rm -rf ~/g100/rep/data1 cp -r ~/g100/rep/temp ~/g100/rep/data1 vb_guc set -D ~/g100/rep/data1 -c &#34;port=65000&#34; vb_ctl start -D ~/g100/rep/data1 vsql -d postgres -p 64000 -r -- 3 create publicatioin -- pub \c postgres CREATE DATABASE pubdb; \c pubdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); CREATE PUBLICATION pub1 FOR all tables WITH (publish=&#39;insert,update,delete,truncate&#39;, ddl=&#39;all&#39;); -- CREATE PUBLICATION pub1 FOR TABLE t1,t2; CREATE USER pu1 REPLICATION SYSADMIN LOGIN ENCRYPTED PASSWORD &#39;pu1.12345&#39;; -- INSERT INTO t1 VALUES(1,&#39;a&#39;),(2,&#39;b&#39;),(3,&#39;c&#39;); \q vsql -d postgres -p 65000 -r -- sub CREATE DATABASE subdb; \c subdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); \! gs_guc generate -S &#39;pu1.12345&#39; -D $GAUSSHOME/bin -o subscription CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=127.0.0.1 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (copy_data=true, worker_number=4); SELECT * FROM t1; \! vsql -d pubdb -p 64000 -c &#34;TRUNCATE t1&#34; \! sleep 1 SELECT * FROM t1; \! vsql -d pubdb -p 64000 -c &#34;DROP TABLE t1&#34; \! sleep 1 SELECT * FROM t1; SELECT * FROM pg_replication_slots; INSERT INTO t1 VALUES(4,&#39;a&#39;),(5,&#39;b&#39;),(6,&#39;c&#39;); sub-txn &#43; ddl export VDATA=~/g100/rep/data vkill rm -rf ~/g100/rep/data cp -r ~/g100/rep/temp ~/g100/rep/data vb_guc set -D ~/g100/rep/data -c &#34;enable_ddl_logical_decode=on&#34; vstart rm -rf ~/g100/rep/data1 cp -r ~/g100/rep/temp ~/g100/rep/data1 vb_guc set -D ~/g100/rep/data1 -c &#34;port=65000&#34; vb_ctl start -D ~/g100/rep/data1 vsql -d postgres -p 64000 -r -- 3 create publicatioin -- pub \c postgres CREATE DATABASE pubdb; \c pubdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); CREATE PUBLICATION pub1 FOR all tables WITH (publish=&#39;insert,update,delete,truncate&#39;, ddl=&#39;all&#39;); -- CREATE PUBLICATION pub1 FOR TABLE t1,t2; CREATE USER pu1 REPLICATION SYSADMIN LOGIN ENCRYPTED PASSWORD &#39;pu1.12345&#39;; INSERT INTO t1 VALUES(1,&#39;a&#39;),(2,&#39;b&#39;),(3,&#39;c&#39;); \q vsql -d postgres -p 65000 -r -- sub CREATE DATABASE subdb; \c subdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); \! gs_guc generate -S &#39;pu1.12345&#39; -D $GAUSSHOME/bin -o subscription CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=127.0.0.1 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (copy_data=true, worker_number=4); SELECT * FROM t1; \! vsql -d pubdb -p 64000 -c &#34;TRUNCATE t1&#34; \! sleep 1 SELECT * FROM t1; \! vsql -d pubdb -p 64000 -c &#34;DROP TABLE t1&#34; \! sleep 1 SELECT * FROM t1; \! vsql -d pubdb -p 64000 -c &#34;BEGIN; CREATE TABLE t3(c1 int); SAVEPOINT sp1; INSERT INTO t3 VALUES(3); SAVEPOINT sp2; TRUNCATE t3; SAVEPOINT sp3; COMMIT;&#34; SELECT * FROM t3; DROP TABLE t3; SELECT * FROM pg_replication_slots; INSERT INTO t1 VALUES(4,&#39;a&#39;),(5,&#39;b&#39;),(6,&#39;c&#39;); disable export VDATA=~/g100/rep/data vkill rm -rf ~/g100/rep/data cp -r ~/g100/rep/temp ~/g100/rep/data vstart rm -rf ~/g100/rep/data1 cp -r ~/g100/rep/temp ~/g100/rep/data1 vb_guc set -D ~/g100/rep/data1 -c &#34;port=65000&#34; vb_ctl start -D ~/g100/rep/data1 vsql -d postgres -p 64000 -r -- 3 create publicatioin -- pub \c postgres CREATE DATABASE pubdb; \c pubdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); CREATE PUBLICATION pub1 FOR all tables WITH (ddl=&#39;all&#39;); -- CREATE PUBLICATION pub1 FOR TABLE t1,t2; CREATE USER pu1 REPLICATION SYSADMIN LOGIN ENCRYPTED PASSWORD &#39;pu1.12345&#39;; INSERT INTO t1 VALUES(1,&#39;a&#39;),(2,&#39;b&#39;),(3,&#39;c&#39;); \q vsql -d postgres -p 65000 -r -- sub CREATE DATABASE subdb; \c subdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); \! gs_guc generate -S &#39;pu1.12345&#39; -D $GAUSSHOME/bin -o subscription CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=127.0.0.1 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (copy_data=true, worker_number=4); SELECT * FROM t1; -- SELECT * FROM pg_replication_slots; SELECT * FROM pg_stat_subscription; ALTER SUBSCRIPTION sub1 DISABLE; \! vsql -d pubdb -p 64000 -c &#34;INSERT INTO t1 VALUES(4,&#39;a&#39;),(5,&#39;b&#39;),(6,&#39;c&#39;);&#34; SELECT * FROM t1; ALTER SUBSCRIPTION sub1 ENABLE; SELECT * FROM pg_replication_slots; 基础场景 vkill vinit -- 1 config vb_guc set -D $GAUSSHOME/data -c &#34;wal_level=logical&#34; vb_guc set -D $GAUSSHOME/data -c &#34;max_replication_slots=100&#34; vb_guc set -D $GAUSSHOME/data -c &#34;max_background_workers=100&#34; vb_guc set -D $GAUSSHOME/data -c &#34;max_logical_replication_workers=100&#34; sed -i &#39;1i host all all 0.0.0.0/0 sha256\n&#39; $GAUSSHOME/data/pg_hba.conf echo &#34;host replication all 0.0.0.0/0 sha256&#34; &gt;&gt; $GAUSSHOME/data/pg_hba.conf -- 2 startup vstart vsql -d postgres -p 50000 -r -- 3 create publicatioin \c postgres CREATE DATABASE pubdb; \c pubdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); CREATE PUBLICATION pub1 FOR all tables; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;); CREATE USER pu1 REPLICATION SYSADMIN LOGIN ENCRYPTED PASSWORD &#39;pu1.12345&#39;; -- 4 create subscription CREATE DATABASE subdb; \c subdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); \! gs_guc generate -S &#39;pu1.12345&#39; -D $GAUSSHOME/bin -o subscription \! vsql -d subdb -p 50000 -c &#34;CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=127.0.0.1 port=50001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false);&#34; -- , worker_number=30 -- 172.16.103.90 \c pubdb INSERT INTO t1 VALUES(1,&#39;a&#39;),(2,&#39;b&#39;),(3,&#39;c&#39;); UPDATE t1 SET c1 = 2 WHERE c2 = &#39;c&#39;; INSERT INTO t1 VALUES(4,&#39;d&#39;); BEGIN; INSERT INTO t1 VALUES(5,&#39;e&#39;); UPDATE t1 SET c1 = 1 WHERE c2 = &#39;b&#39;; INSERT INTO t1 VALUES(6,&#39;f&#39;); COMMIT; BEGIN; INSERT INTO t1 VALUES(7,&#39;d&#39;); UPDATE t1 SET c2 = &#39;a&#39; WHERE c1 = 2; COMMIT; -- 5 load data \! for i in $(seq 0 10); do vsql -d pubdb -p 50000 -c &#34;BEGIN; INSERT INTO t1 VALUES($i,&#39;a&#39;); UPDATE t1 SET c2=&#39;b&#39; WHERE c1=$i-1; COMMIT;&#34; &gt; /dev/null 2&gt;&amp;1 &amp; done; wait \! sleep 3 -- 5 check subscription \o pubdb.out \c pubdb SELECT * FROM t1 ORDER BY c1; \o \o subdb.out \c subdb SELECT * FROM t1 ORDER BY c1; \o \! grep -Irn &#34;rows&#34; pubdb.out \! grep -Irn &#34;rows&#34; subdb.out \! diff pubdb.out subdb.out \! cat subdb.out \! rm -f pubdb.out subdb.out -- 7 cleanup DROP SUBSCRIPTION sub1; \c postgres DROP DATABASE IF EXISTS pubdb; DROP DATABASE IF EXISTS subdb; DROP USER pu1; 空库feedback vkill rm -rf $GAUSSHOME/data* cp -r ~/w5/data $GAUSSHOME/data cp -r ~/w5/data1 $GAUSSHOME/ vb_guc set -D $GAUSSHOME/data1 -c &#34;max_connections=4000&#34; vb_ctl start -D $GAUSSHOME/data vb_ctl start -D $GAUSSHOME/data1 # 五、发布端（发布） vsql -d pubdb -p 64000 -c &#34;CREATE PUBLICATION pub1 FOR all tables WITH (ddl=&#39;all&#39;);&#34; vsql -d pubdb -p 64000 -c &#34; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;);&#34; vsql -d pubdb -p 64000 -c &#34;CREATE DATABASE db1&#34;; vsql -d pubdb -p 64000 -c &#34;CREATE DATABASE db2&#34;; vsql -d db1 -p 64000 -c &#34;CREATE PUBLICATION p1 FOR all tables WITH (ddl=&#39;all&#39;);&#34; vsql -d db1 -p 64000 -c &#34; SELECT pg_create_logical_replication_slot(&#39;ps1&#39;, &#39;pgoutput&#39;);&#34; vsql -d db2 -p 64000 -c &#34;CREATE PUBLICATION p2 FOR all tables WITH (ddl=&#39;all&#39;);&#34; vsql -d db2 -p 64000 -c &#34; SELECT pg_create_logical_replication_slot(&#39;ps2&#39;, &#39;pgoutput&#39;);&#34; # 六、订阅端（订阅） gs_guc generate -S &#39;pu1.12345&#39; -D $GAUSSHOME/bin -o subscription vsql -d pubdb -p 65000 -c &#34;CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false, worker_number=220);&#34; vsql -d pubdb -p 65000 -c &#34;CREATE DATABASE db1&#34;; vsql -d pubdb -p 65000 -c &#34;CREATE DATABASE db2&#34;; vsql -d db1 -p 65000 -c &#34;CREATE SUBSCRIPTION s1 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=db1 user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION p1 WITH (create_slot=false, slot_name = &#39;ps1&#39;, copy_data = false, worker_number=220);&#34; vsql -d db2 -p 65000 -c &#34;CREATE SUBSCRIPTION s2 CONNECTION &#39;host=172.16.103.90 port=64001 dbname=db2 user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION p2 WITH (create_slot=false, slot_name = &#39;ps2&#39;, copy_data = false, worker_number=220);&#34; vsql -d pubdb -p 64000 -c &#34;CREATE VIEW pstat AS SELECT slot_name,active,confirmed_flush, (pg_wal_lsn_diff(confirmed_flush, &#39;0/0&#39;) / (1024 * 1024))::int as confirmed_lsn FROM pg_get_replication_slots();&#34; # 查看复制进度 vsql -d pubdb -p 64000 -c &#34;SELECT * FROM pstat&#34; # 查看速度 vsql -d pubdb -p 64000 -c &#34;SELECT (pg_wal_lsn_diff(pg_current_wal_lsn(), &#39;0/0&#39;) / (1024 * 1024))::int as mb&#34; vsql -d pubdb -p 65000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; vsql -d pubdb -p 64000 -c &#34;SELECT * FROM vb_parallel_apply_stat()&#34; 子事务 1. 这是一个基于opengauss开发的数据 2. 我已经设置了一些alias命令。全量编译vcmake。增量编译：vrecmake。启动集群：vinit, vstart。强制停止集群：vkill。 3. core文件目录：/data/ 4. 并行逻辑复制关键代码：parallel_apply.cpp 5. $GAUSSHOME也就是install目录下，所有文件都是临时生成的，随便动 vkill vinit -- 1 config vb_guc set -D $GAUSSHOME/data -c &#34;wal_level=logical&#34; vb_guc set -D $GAUSSHOME/data -c &#34;max_replication_slots=100&#34; vb_guc set -D $GAUSSHOME/data -c &#34;max_background_workers=100&#34; vb_guc set -D $GAUSSHOME/data -c &#34;max_logical_replication_workers=100&#34; # vb_guc set -D $GAUSSHOME/data -c &#34;enable_audit=on&#34; # vb_guc set -D $GAUSSHOME/data -c &#34;audit_buffer_size=262144&#34; # vb_guc set -D $GAUSSHOME/data -c &#34;audit_directory_size=1073741824&#34; sed -i &#39;1i host all all 0.0.0.0/0 sha256\n&#39; $GAUSSHOME/data/pg_hba.conf echo &#34;host replication all 0.0.0.0/0 sha256&#34; &gt;&gt; $GAUSSHOME/data/pg_hba.conf -- 2 startup vstart vsql -d postgres -p 50000 -r -- 3 create publicatioin \c postgres CREATE DATABASE pubdb; \c pubdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); CREATE PUBLICATION pub1 FOR all tables; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;); CREATE USER pu1 REPLICATION SYSADMIN LOGIN ENCRYPTED PASSWORD &#39;pu1.12345&#39;; -- 4 create subscription CREATE DATABASE subdb; \c subdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); \! gs_guc generate -S &#39;pu1.12345&#39; -D $GAUSSHOME/bin -o subscription \! vsql -d subdb -p 50000 -c &#34;CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=127.0.0.1 port=50001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false, worker_number=20);&#34; -- , worker_number=30 -- 172.16.103.90 \c pubdb BEGIN; INSERT INTO t1 VALUES(1,&#39;111&#39;); -- 假如xid=1 SAVEPOINT s1; INSERT INTO t1 VALUES(2,&#39;222&#39;); -- 假如xid=2 [savepoint 2, xid:1-2] SAVEPOINT s2; INSERT INTO t1 VALUES(3,&#39;333&#39;); -- 假如xid=3 [savepoint 3, xid:1-2-3] SAVEPOINT s3; INSERT INTO t1 VALUES(4,&#39;444&#39;); -- 假如xid=4 [savepoint 4, xid:1-2-3-4] SAVEPOINT s4; INSERT INTO t1 VALUES(5,&#39;555&#39;); -- 假如xid=5 [savepoint 5, xid:1-2-3-4-5] ROLLBACK TO SAVEPOINT s2; INSERT INTO t1 VALUES(6,&#39;666&#39;); -- 假如xid=6 [rollback to 3: xid:1-2] SAVEPOINT s5; INSERT INTO t1 VALUES(7,&#39;777&#39;); -- 假如xid=7 RELEASE SAVEPOINT s2; -- 此时，xid=6和xid=7会归并到xid=2的事务中 INSERT INTO t1 VALUES(8,&#39;888&#39;); -- 假如xid=2（假设上面RELEASE到s1，则xid=1，和顶层事务一致） COMMIT; -- \! sleep 3 -- 5 check subscription \c pubdb SELECT xmin,* FROM t1 ORDER BY c1; \c subdb SELECT * FROM vb_parallel_apply_stat(); SELECT xmin,* FROM t1 ORDER BY c1; -- rollback to top \c pubdb BEGIN; INSERT INTO t2 VALUES(1,&#39;111&#39;); -- 假如xid=1 SAVEPOINT s1; INSERT INTO t2 VALUES(2,&#39;222&#39;); -- 假如xid=2 SAVEPOINT s2; INSERT INTO t2 VALUES(3,&#39;333&#39;); -- 假如xid=3 SAVEPOINT s3; INSERT INTO t2 VALUES(4,&#39;444&#39;); -- 假如xid=4 SAVEPOINT s4; INSERT INTO t2 VALUES(5,&#39;555&#39;); -- 假如xid=5 ROLLBACK TO SAVEPOINT s2; INSERT INTO t2 VALUES(6,&#39;666&#39;); -- 假如xid=6 SAVEPOINT s5; INSERT INTO t2 VALUES(7,&#39;777&#39;); -- 假如xid=7 RELEASE SAVEPOINT s1; -- 此时，xid=6和xid=7会归并到xid=2的事务中 INSERT INTO t2 VALUES(8,&#39;888&#39;); -- 假如xid=2（假设上面RELEASE到s1，则xid=1，和顶层事务一致） COMMIT; -- \! sleep 3 -- 5 check subscription \c pubdb SELECT xmin,* FROM t2 ORDER BY c1; \c subdb SELECT xmin,* FROM t2 ORDER BY c1; SELECT * FROM vb_parallel_apply_stat(); -- 延时检查 CREATE TABLE t3 (c1 INT, c2 TEXT ); ALTER TABLE t3 ADD CONSTRAINT t3_c1_unique UNIQUE (c1) DEFERRABLE; -- 事务1 -- 事务2 BEGIN; INSERT INTO t3 VALUES (1, &#39;a&#39;); BEGIN; SET CONSTRAINTS ALL DEFERRED; INSERT INTO t3 VALUES (1, &#39;a&#39;); COMMIT; COMMIT; -- 7 cleanup DROP SUBSCRIPTION sub1; \c postgres DROP DATABASE IF EXISTS pubdb; DROP DATABASE IF EXISTS subdb; DROP USER pu1; 子事务 &#43; 主键冲突 vkill vinit -- 1 config vb_guc set -D $GAUSSHOME/data -c &#34;wal_level=logical&#34; vb_guc set -D $GAUSSHOME/data -c &#34;max_replication_slots=100&#34; vb_guc set -D $GAUSSHOME/data -c &#34;max_background_workers=100&#34; vb_guc set -D $GAUSSHOME/data -c &#34;max_logical_replication_workers=100&#34; sed -i &#39;1i host all all 0.0.0.0/0 sha256\n&#39; $GAUSSHOME/data/pg_hba.conf echo &#34;host replication all 0.0.0.0/0 sha256&#34; &gt;&gt; $GAUSSHOME/data/pg_hba.conf -- 2 startup vstart vsql -d postgres -p 50000 -r -- 3 create publicatioin \c postgres CREATE DATABASE pubdb; \c pubdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); CREATE PUBLICATION pub1 FOR all tables; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;); CREATE USER pu1 REPLICATION SYSADMIN LOGIN ENCRYPTED PASSWORD &#39;pu1.12345&#39;; -- 4 create subscription CREATE DATABASE subdb; \c subdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); \! gs_guc generate -S &#39;pu1.12345&#39; -D $GAUSSHOME/bin -o subscription CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=127.0.0.1 port=50001 dbname=pubdb user=pu1 password=pu1.12345 sslmode=disable&#39; PUBLICATION pub1 WITH (create_slot=false, slot_name = &#39;pslot1&#39;, copy_data = false, worker_number=20); INSERT INTO t1 VALUES(3,&#39;old&#39;); \c pubdb BEGIN; INSERT INTO t1 VALUES(1,&#39;111&#39;); -- 假如xid=1 SAVEPOINT s1; INSERT INTO t1 VALUES(2,&#39;222&#39;); -- 假如xid=2 [savepoint 2, xid:1-2] SAVEPOINT s2; INSERT INTO t1 VALUES(3,&#39;333&#39;); -- 假如xid=3 [savepoint 3, xid:1-2-3] SAVEPOINT s3; INSERT INTO t1 VALUES(4,&#39;444&#39;); -- 假如xid=4 [savepoint 4, xid:1-2-3-4] SAVEPOINT s4; COMMIT; \c subdb SELECT * FROM t1; SELECT * FROM vb_parallel_apply_stat(); -- 7 cleanup DROP SUBSCRIPTION sub1; \c postgres DROP DATABASE IF EXISTS pubdb; DROP DATABASE IF EXISTS subdb; DROP USER pu1; 子事务开发 -- 子事务开发 CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); SELECT pg_current_wal_lsn(); -- 场景一：relase commit BEGIN; INSERT INTO t1 VALUES(1,&#39;111&#39;); -- 假如xid=1 SAVEPOINT s1; INSERT INTO t1 VALUES(2,&#39;222&#39;); -- 假如xid=2 SAVEPOINT s2; INSERT INTO t1 VALUES(3,&#39;333&#39;); -- 假如xid=3 SAVEPOINT s3; INSERT INTO t1 VALUES(4,&#39;444&#39;); -- 假如xid=4 SAVEPOINT s4; INSERT INTO t1 VALUES(5,&#39;555&#39;); -- 假如xid=5 ROLLBACK TO SAVEPOINT s2; INSERT INTO t1 VALUES(6,&#39;666&#39;); -- 假如xid=6 SAVEPOINT s5; INSERT INTO t1 VALUES(7,&#39;777&#39;); -- 假如xid=7 RELEASE SAVEPOINT s2; -- 此时，xid=6和xid=7会归并到xid=2的事务中 INSERT INTO t1 VALUES(8,&#39;888&#39;); -- 假如xid=2（假设上面RELEASE到s1，则xid=1，和顶层事务一致） COMMIT; SELECT xmin,* FROM t1 ORDER BY c1; \! pg_xlogdump -p $GAUSSHOME/data/pg_xlog -s xxx -x xid -- 场景二：release abort BEGIN; INSERT INTO t1 VALUES(1,&#39;111&#39;); -- 假如xid=1 SAVEPOINT s1; INSERT INTO t1 VALUES(2,&#39;222&#39;); -- 假如xid=2 SAVEPOINT s2; INSERT INTO t1 VALUES(3,&#39;333&#39;); -- 假如xid=3 SAVEPOINT s3; INSERT INTO t1 VALUES(4,&#39;444&#39;); -- 假如xid=4 SAVEPOINT s4; INSERT INTO t1 VALUES(5,&#39;555&#39;); -- 假如xid=5 ROLLBACK TO SAVEPOINT s2; INSERT INTO t1 VALUES(6,&#39;666&#39;); -- 假如xid=6 SAVEPOINT s5; INSERT INTO t1 VALUES(7,&#39;777&#39;); -- 假如xid=7 RELEASE SAVEPOINT s2; -- 此时，xid=6和xid=7会归并到xid=2的事务中 INSERT INTO t1 VALUES(8,&#39;888&#39;); -- 假如xid=2（假设上面RELEASE到s1，则xid=1，和顶层事务一致） ROLLBACK TO SAVEPOINT s1; COMMIT; SELECT xmin,* FROM t1 ORDER BY c1; -- pg 用例 echo &#34; wal_level=logical max_worker_processes=20 max_logical_replication_workers=20 max_parallel_apply_workers_per_subscription=10 &#34; &gt;&gt; $PG_HOME/data/postgresql.conf \c postgres CREATE DATABASE pubdb; CREATE DATABASE subdb; \c pubdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); CREATE PUBLICATION pub1 FOR ALL TABLES; CREATE USER pu1 REPLICATION LOGIN PASSWORD &#39;pu1.12345&#39;; SELECT pg_create_logical_replication_slot(&#39;pslot1&#39;, &#39;pgoutput&#39;); -- 2 create subscription \c subdb CREATE TABLE t1(c1 INT PRIMARY KEY, c2 TEXT); CREATE TABLE t2(c1 INT PRIMARY KEY, c2 TEXT); CREATE SUBSCRIPTION sub1 CONNECTION &#39;host=127.0.0.1 port=5432 dbname=pubdb user=pu1 password=pu1.12345 replication=database&#39; PUBLICATION pub1 WITH ( create_slot=false, slot_name=&#39;pslot1&#39;, copy_data=false, streaming=parallel ); -- 3 test transaction -- \c pubdb -- BEGIN; -- INSERT INTO t1 VALUES(1,&#39;111&#39;); -- top xid -- SAVEPOINT s1; -- INSERT INTO t1 VALUES(2,&#39;222&#39;); -- subxid 2 -- SAVEPOINT s2; -- INSERT INTO t1 VALUES(3,&#39;333&#39;); -- subxid 3 -- SAVEPOINT s3; -- INSERT INTO t1 VALUES(4,&#39;444&#39;); -- subxid 4 -- SAVEPOINT s4; -- INSERT INTO t1 VALUES(5,&#39;555&#39;); -- subxid 5 -- ROLLBACK TO SAVEPOINT s2; -- INSERT INTO t1 VALUES(6,&#39;666&#39;); -- subxid 6 -- SAVEPOINT s5; -- INSERT INTO t1 VALUES(7,&#39;777&#39;); -- subxid 7 -- RELEASE SAVEPOINT s2; -- INSERT INTO t1 VALUES(8,&#39;888&#39;); -- 回到s1对应事务上下文 -- COMMIT; \c pubdb BEGIN; INSERT INTO t1 VALUES(1,&#39;111&#39;); -- 假如xid=1 SAVEPOINT s1; INSERT INTO t1 VALUES(2,&#39;222&#39;); -- 假如xid=2 SAVEPOINT s2; INSERT INTO t1 VALUES(3,&#39;333&#39;); -- 假如xid=3 SAVEPOINT s3; INSERT INTO t1 VALUES(4,&#39;444&#39;); -- 假如xid=4 SAVEPOINT s4; INSERT INTO t1 VALUES(5,&#39;555&#39;); -- 假如xid=5 ROLLBACK TO SAVEPOINT s2; INSERT INTO t1 VALUES(6,&#39;666&#39;); -- 假如xid=6 SAVEPOINT s5; INSERT INTO t1 VALUES(7,&#39;777&#39;); -- 假如xid=7 RELEASE SAVEPOINT s2; -- 此时，xid=6和xid=7会归并到xid=2的事务中 INSERT INTO t1 VALUES(8,&#39;888&#39;); -- 假如xid=2（假设上面RELEASE到s1，则xid=1，和顶层事务一致） ROLLBACK TO SAVEPOINT s1; COMMIT; -- 4 check \c pubdb SELECT xmin,* FROM t1 ORDER BY c1; \c subdb SELECT * FROM pg_stat_subscription; SELECT xmin,* FROM t1 ORDER BY c1; # 发布端：2阶段处理 ReleaseSavepoint for loop: cur = CurrentTransactionState cur-&gt;blockState = TBLOCK_SUBRELEASE cur = cur-&gt;parent CommitTransactionCommand if CurrentTransactionState is TBLOCK_SUBRELEASE for loop: CommitSubTransaction AtSubCommit_childXids CurrentTransactionState-&gt;parent-&gt;childXids[cnt&#43;&#43;] = CurrentTransactionState-&gt;xid PopTransaction CurrentTransactionState = s-&gt;parent # 订阅端： pa_start_subtrans DefineSavepoint subxactlist = lappend_xid(subxactlist, current_xid) apply_handle_stream_commit pa_stream_abort for loop: curxid = subxactlist if curxid == subxid: RollbackToSavepoint 实现原理：
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2026-05-21 17:38:00 +0800 CST'>May 21, 2026</span>&nbsp;·&nbsp;<span>32 min</span>&nbsp;·&nbsp;<span>6745 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 3-13 逻辑复制测试记录" href="http://localhost:1313/posts/postgresql/3-13-replication-test/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 3-13 逻辑复制原理与性能优化
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>目录 目录 1 基本概念 1.1 业务场景 1.2 逻辑复制 1.3 实现思路 1.4 基本概念 2 使用方法 2.1 发布端：配置参数 2.2 发布端：创建发布 2.3 订阅端：创建订阅 3 核心设计 3.1 整体架构 3.2 工作流程 3.3 数据格式 4 实现源码 4.1 订阅端：apply-launch 4.2 订阅端：apply-worker 4.3 发布端：postmaster 4.4 发布端：wal-sender 5 性能优化 5.1 现状 5.2 优化方案 优化点一：发布端-流复制协议（逻辑数据） 优化点二：订阅段-并行回放机制（逻辑数据） 优化点三：发布端-并行解码机制 5.3 未来方案 一、计划优化点一：发布端-事务提交等待 5.4 方案分析 一、事务正确性 6 性能测试 参考资料 1 基本概念 1.1 业务场景 场景一：数据共享（异构数据库）
+1个公司，有2个部门：商品库存部门、商品成本部门。2个部门有不同技术栈，使用不同数据库产品:postgresql、mysql。2个部门需共享相同的表：商品信息表。
+场景二：数据容灾
+应用存储数据时，同时将数据存储至postgresql于mysql中，避免某款数据库出现无法恢复的数据损坏问题。
+场景三：版本升级
+从postgresql 13版本，升级到postgresql 16版本。
+场景四：数据迁移（异构数据库）
+从postgresql，将数据库迁移到mysql中。
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-12-29 20:38:00 +0800 CST'>December 29, 2025</span>&nbsp;·&nbsp;<span>4 min</span>&nbsp;·&nbsp;<span>727 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 3-13 逻辑复制原理与性能优化" href="http://localhost:1313/posts/postgresql/3-13-logical-replication-tuning/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">PostgreSQL 3-13 Vastbase 逻辑复制
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>2 使用 2.1 发布端 配置
+# vb echo &#34;wal_level=logical&#34; &gt;&gt; $GAUSSHOME/data/postgresql.conf echo &#34;max_replication_slots=4&#34; &gt;&gt; $GAUSSHOME/data/postgresql.conf echo &#34;max_wal_senders=4&#34; &gt;&gt; $GAUSSHOME/data/postgresql.conf # echo &#34;max_worker_processes=8&#34; &gt;&gt; $GAUSSHOME/data/postgresql.conf echo &#34;max_logical_replication_workers=32&#34; &gt;&gt; $GAUSSHOME/data/postgresql.conf echo &#34;listen_addresses=&#39;*&#39;&#34; &gt;&gt; $GAUSSHOME/data/postgresql.conf sed -i &#39;1i host all all 0.0.0.0/0 md5\n&#39; $GAUSSHOME/data/pg_hba.conf echo &#34;host replication all 0.0.0.0/0 md5&#34; &gt;&gt; $GAUSSHOME/data/pg_hba.conf # host all all 0.0.0.0/0 md5 psql -d postgres -c &#34;SELECT name,setting FROM pg_settings WHERE name in (&#39;wal_level&#39;, &#39;max_replication_slots&#39;, &#39;max_wal_senders&#39;, &#39;max_worker_processes&#39;, &#39;max_logical_replication_workers&#39;)&#34; 创建基表
+CREATE DATABASE pubdb; \c pubdb CREATE TABLE pt1(c1 INT,c2 TEXT); CREATE TABLE pt2(c1 INT, c2 TEXT); INSERT INTO pt1 VALUES (1,&#39;data1-1&#39;), (2,&#39;data1-2&#39;); INSERT INTO pt1 VALUES (1,&#39;data2-1&#39;), (2,&#39;data2-2&#39;); 创建发布用户
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-11-27 19:07:00 +0800 CST'>November 27, 2025</span>&nbsp;·&nbsp;<span>24 min</span>&nbsp;·&nbsp;<span>4975 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to PostgreSQL 3-13 Vastbase 逻辑复制" href="http://localhost:1313/posts/postgresql/3-13-vb-rep/"></a>
+</article>
+<footer class="page-footer">
+  <nav class="pagination">
+    <a class="prev" href="http://localhost:1313/categories/postgresql/page/2/">
+      «&nbsp;Prev&nbsp;
+    </a>
+    <a class="next" href="http://localhost:1313/categories/postgresql/page/4/">Next&nbsp;&nbsp;»
+    </a>
+  </nav>
+</footer>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

@@ -1,0 +1,2175 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>PostgreSQL 3-7 Xlog | Kernel Notes</title>
+<meta name="keywords" content="PostgreSQL">
+<meta name="description" content="5 wal落盘
+WalWriterMain
+    for ::
+        XLogBackgroundFlush
+            LWLockAcquire(LW_EXCLUSIVE)
+            XLogWrite
+            LWLockRelease()
+
+CommitTransaction
+    RecordTransactionCommit
+        BufmgrCommit
+        XactLogCommitRecord # xlog记录commit
+        TransactionTreeSetCommitTsData
+        XLogFlush(XactLastRecEnd)
+            for ::
+                WaitXLogInsertionsToFinish
+                XLogWrite
+                write
+    ResourceOwnerRelease
+    AtEOXact_Buffers
+    AtEOXact_RelationCache
+    ...
+1 概述
+1.1 背景
+https://zhmin.github.io/posts/postgresql-wal-format/
+wal机制解决的问题：持久性、原子性、性能、数据同步、恢复
+
+
+持久性需求：
+
+
+执行一次事务/事务块，例如INSERT语句，除了要写数据文件，还需要更新系统表、索引文件、fsm文件、vm文件、事务提交文件等
+
+
+为避免故障导致数据丢失，产生的数据写入磁盘才算事务成功
+应用                    数据库                  磁盘
+| 1. INSERT (5) --&gt;     |
+                        | 2. 读取数据页 &lt;--     |
+                        | 3. 将数据写入数据页
+                        | 4. 存储数据页  --&gt;    |
+                        | 5. 读取索引文件 --&gt;   |
+                        | 6...
+                        | 7. 读取fsm文件 --&gt;    |
+                        | 8...
+                        | 9. 读取vm文件 --&gt;     |
+                        | 10...
+| 11. INSERT 成功   &lt;-- |
+
+
+
+
+原子性需求：">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/postgresql/3-5-wal/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/postgresql/3-5-wal/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/postgresql/3-5-wal/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="PostgreSQL 3-7 Xlog">
+  <meta property="og:description" content="5 wal落盘 WalWriterMain for :: XLogBackgroundFlush LWLockAcquire(LW_EXCLUSIVE) XLogWrite LWLockRelease() CommitTransaction RecordTransactionCommit BufmgrCommit XactLogCommitRecord # xlog记录commit TransactionTreeSetCommitTsData XLogFlush(XactLastRecEnd) for :: WaitXLogInsertionsToFinish XLogWrite write ResourceOwnerRelease AtEOXact_Buffers AtEOXact_RelationCache ... 1 概述 1.1 背景 https://zhmin.github.io/posts/postgresql-wal-format/
+wal机制解决的问题：持久性、原子性、性能、数据同步、恢复
+持久性需求：
+执行一次事务/事务块，例如INSERT语句，除了要写数据文件，还需要更新系统表、索引文件、fsm文件、vm文件、事务提交文件等
+为避免故障导致数据丢失，产生的数据写入磁盘才算事务成功
+应用 数据库 磁盘 | 1. INSERT (5) --&gt; | | 2. 读取数据页 &lt;-- | | 3. 将数据写入数据页 | 4. 存储数据页 --&gt; | | 5. 读取索引文件 --&gt; | | 6... | 7. 读取fsm文件 --&gt; | | 8... | 9. 读取vm文件 --&gt; | | 10... | 11. INSERT 成功 &lt;-- | 原子性需求：">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-01-21T13:55:00+08:00">
+    <meta property="article:modified_time" content="2026-08-14T17:47:31+08:00">
+    <meta property="article:tag" content="PostgreSQL">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="PostgreSQL 3-7 Xlog">
+<meta name="twitter:description" content="5 wal落盘
+WalWriterMain
+    for ::
+        XLogBackgroundFlush
+            LWLockAcquire(LW_EXCLUSIVE)
+            XLogWrite
+            LWLockRelease()
+
+CommitTransaction
+    RecordTransactionCommit
+        BufmgrCommit
+        XactLogCommitRecord # xlog记录commit
+        TransactionTreeSetCommitTsData
+        XLogFlush(XactLastRecEnd)
+            for ::
+                WaitXLogInsertionsToFinish
+                XLogWrite
+                write
+    ResourceOwnerRelease
+    AtEOXact_Buffers
+    AtEOXact_RelationCache
+    ...
+1 概述
+1.1 背景
+https://zhmin.github.io/posts/postgresql-wal-format/
+wal机制解决的问题：持久性、原子性、性能、数据同步、恢复
+
+
+持久性需求：
+
+
+执行一次事务/事务块，例如INSERT语句，除了要写数据文件，还需要更新系统表、索引文件、fsm文件、vm文件、事务提交文件等
+
+
+为避免故障导致数据丢失，产生的数据写入磁盘才算事务成功
+应用                    数据库                  磁盘
+| 1. INSERT (5) --&gt;     |
+                        | 2. 读取数据页 &lt;--     |
+                        | 3. 将数据写入数据页
+                        | 4. 存储数据页  --&gt;    |
+                        | 5. 读取索引文件 --&gt;   |
+                        | 6...
+                        | 7. 读取fsm文件 --&gt;    |
+                        | 8...
+                        | 9. 读取vm文件 --&gt;     |
+                        | 10...
+| 11. INSERT 成功   &lt;-- |
+
+
+
+
+原子性需求：">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "PostgreSQL 3-7 Xlog",
+      "item": "http://localhost:1313/posts/postgresql/3-5-wal/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "PostgreSQL 3-7 Xlog",
+  "name": "PostgreSQL 3-7 Xlog",
+  "description": "5 wal落盘 WalWriterMain for :: XLogBackgroundFlush LWLockAcquire(LW_EXCLUSIVE) XLogWrite LWLockRelease() CommitTransaction RecordTransactionCommit BufmgrCommit XactLogCommitRecord # xlog记录commit TransactionTreeSetCommitTsData XLogFlush(XactLastRecEnd) for :: WaitXLogInsertionsToFinish XLogWrite write ResourceOwnerRelease AtEOXact_Buffers AtEOXact_RelationCache ... 1 概述 1.1 背景 https://zhmin.github.io/posts/postgresql-wal-format/\nwal机制解决的问题：持久性、原子性、性能、数据同步、恢复\n持久性需求：\n执行一次事务/事务块，例如INSERT语句，除了要写数据文件，还需要更新系统表、索引文件、fsm文件、vm文件、事务提交文件等\n为避免故障导致数据丢失，产生的数据写入磁盘才算事务成功\n应用 数据库 磁盘 | 1. INSERT (5) --\u0026gt; | | 2. 读取数据页 \u0026lt;-- | | 3. 将数据写入数据页 | 4. 存储数据页 --\u0026gt; | | 5. 读取索引文件 --\u0026gt; | | 6... | 7. 读取fsm文件 --\u0026gt; | | 8... | 9. 读取vm文件 --\u0026gt; | | 10... | 11. INSERT 成功 \u0026lt;-- | 原子性需求：\n",
+  "keywords": [
+    "PostgreSQL"
+  ],
+  "articleBody": "5 wal落盘 WalWriterMain for :: XLogBackgroundFlush LWLockAcquire(LW_EXCLUSIVE) XLogWrite LWLockRelease() CommitTransaction RecordTransactionCommit BufmgrCommit XactLogCommitRecord # xlog记录commit TransactionTreeSetCommitTsData XLogFlush(XactLastRecEnd) for :: WaitXLogInsertionsToFinish XLogWrite write ResourceOwnerRelease AtEOXact_Buffers AtEOXact_RelationCache ... 1 概述 1.1 背景 https://zhmin.github.io/posts/postgresql-wal-format/\nwal机制解决的问题：持久性、原子性、性能、数据同步、恢复\n持久性需求：\n执行一次事务/事务块，例如INSERT语句，除了要写数据文件，还需要更新系统表、索引文件、fsm文件、vm文件、事务提交文件等\n为避免故障导致数据丢失，产生的数据写入磁盘才算事务成功\n应用 数据库 磁盘 | 1. INSERT (5) --\u003e | | 2. 读取数据页 \u003c-- | | 3. 将数据写入数据页 | 4. 存储数据页 --\u003e | | 5. 读取索引文件 --\u003e | | 6... | 7. 读取fsm文件 --\u003e | | 8... | 9. 读取vm文件 --\u003e | | 10... | 11. INSERT 成功 \u003c-- | 原子性需求：\n大量连续读写可能会失败，如果中途失败，无法恢复现场 性能需求：\n首先，执行一次事务或事务块，涉及大量IO操作，且都是随机读写 数据同步：\n主机和备机之间数据同步问题 恢复\n故障恢复 时间点恢复 1.2 解决方案 lsn\n-- 查看当前lsn SELECT pg_current_wal_lsn(); -- 查看当前lsn的文件名 SELECT pg_walfile_namae(pg_current_wal_lsn()); SELECT pg_walfile_name_offset(pg_current_wal_lsn()); -- 查看你page的lsn SELECT lsn FROM page_header(get_raw_page('t1', 0)); wal文件命令：24个字符，每个字符为16进制\n00000000 00000000 00000000 时间线 逻辑id 物理id http://dbaselife.com/doc/1955/\n1.1 格式 通用的xlog记录格式 (pg 9.5+)\n+---------------------------------+ | XLogRecord | +---------------------------------+ 设置对应flag则有BlockHeader，否则没有 | XlogRecordBlockHeader | 设置flag | XLogRecordBlockImageHeader | - if BKPBLOCK_HAS_IMAGE | XLogRecordBlockCompressHeader | - if BKPBLOCK_HAS_HOLE \u0026 BKPIMAGE_IS_COMPRESSED | RelFileNode | - if not BKPBLOCK_SAME_REL | XlogRecordBlockHeader | | ... | +---------------------------------+ | XlogRecordDataHeader | Short/Long (判断条件：长度 \u003c 256 bytes) +---------------------------------+ | block data | | block data | | ... | | data | +---------------------------------+ 各字段结构体定义\n/* 1 */ typedef struct { uint32 xl_tot_len; /* 本条xlgo记录全部长度 */ TransactionId xl_xid; XLogRecPtr xl_prev; /* 上一条xlog记录的位置 */ uint8\txl_info; /* 资管管理器使用，判断调用哪个重放函数 */ RmgrId\txl_rmid; /* 资源管理器 */ pg_crc32c\txl_crc;\t/* 本条xlog记录的crc */ } XLogRecord; /* 2 */ typedef struct { uint8\tid;\t/* block reference id */ uint8\tfork_flags; uint16\tdata_length; /* 数据实际长度，不包括image */ /* If BKPBLOCK_HAS_IMAGE, an XLogRecordBlockImageHeader struct follows */ /* If BKPBLOCK_SAME_REL is not set, a RelFileNode follows */ /* BlockNumber follows */ } XLogRecordBlockHeader; /* 其中，根据fork_flags，判断是否有其他BlockHeader */ #define BKPBLOCK_HAS_IMAGE\t0x10\t/* block data is an XLogRecordBlockImage */ #define BKPBLOCK_HAS_DATA\t0x20 #define BKPBLOCK_WILL_INIT\t0x40\t/* redo will re-init the page */ #define BKPBLOCK_SAME_REL\t0x80\t/* RelFileNode omitted, same as previous */ typedef struct { uint16\tlength;\t/* number of page image bytes */ uint16\thole_offset;\t/* number of bytes before \"hole\" */ uint8\tbimg_info;\t/* flag bits, see below */ } XLogRecordBlockImageHeader; typedef struct { uint16\thole_length; /* number of bytes in \"hole\" : page中没有数据的tup就是孔 */ } XLogRecordBlockCompressHeader; /* 3 */ typedef struct { uint8\tid;\t/* XLR_BLOCK_ID_DATA_SHORT */ uint8\tdata_length;\t/* number of payload bytes */ } XLogRecordDataHeaderShort; typedef struct { uint8\tid;\t/* XLR_BLOCK_ID_DATA_LONG */ } XLogRecordDataHeaderLong; /* 其中，id的取值包括 */ #define XLR_MAX_BLOCK_ID\t32 #define XLR_BLOCK_ID_DATA_SHORT\t255 #define XLR_BLOCK_ID_DATA_LONG\t254 #define XLR_BLOCK_ID_ORIGIN\t253 1.2 插入顺序 XLogBeginInsert() /* 检查受否在故障恢复 */ XLogRegisterData(data, datasz) /* */ XLogRecPtr XLogInsert(RmgrId rmid, uint8 info) XLogFlush(XLogRecPtr record) heap_insert\n/* 结构体：输入 */ typedef struct { uint32 t_len; ItemPointerData t_self; Oid t_tableOid; HeapTupleHeader t_data; } HeapTuple; /* 输出 */ typedef struct { OffsetNumber offnum; uint8 flags; } xl_heap_insert; typedef struct { uint16 t_infomask2; uint16 t_infomask uint8 t_hoff; } xl_heap_header; /* 执行流程 */ HeapTuple tup; xl_heap_insert xlrec; xl_heap_header xlhdr; uint8 info = XLOG_HEAP_INSERT; int bufflags = 0; XLogRecPtr recptr; xlrec.offnum = tup.t_self.offset; xlrec.flag = 0; /* if page XLH_INSERT_ALL_VISIBLE_CLEARED XLH_INSERT_IS_SPECULATIVE */ xlhdr.t_infomask2 = tup-\u003et_data-\u003et_infomask2; xlhdr.t_infomask = tup-\u003et_data-\u003et_infomask; xlhdr.t_hoff = tup-\u003et_data-\u003et_hoff; XLogBeginInsert() /* put tup place */ XLogRegisterData(\u0026xlrec, sizeof(xlrec)); /* put buffer where tup come from */ XLogRegisterBuffer(0, buffer, bufflags | REGBUF_STANDARD); /* put tup */ XLogRegisterBufData(0, \u0026xlhdr, sizeof(xlhdr)); XLogRegisterBufData(0, tup-\u003et_data + sizeof(HeapTupleHeader), tup-\u003et_len - sizeof(HeapTupleHeader)); XLogIncludeOrigin(); recptr = XLogInsert(RM_HEAP_ID, info); PageSetLSN(page, recptr); 内部实现：\ntypedef struct XlogRecData { struct XlogRecData *next; char *data; uint32 len; } XLogRecData; /* 进程级全局变量： +-------------+-------------+-------------+ | XLogRecData | XLogRecData | ... | +-------------+-------------+-------------+ ^ last */ XLogRecData *rdatas; /* XLogRecData 数组, len = 20 */ int num_rdatas; int max_rdatas; XLogRecData *mainrdata_head; XLogRecData *mainrdata_last; uint32 mainrdata_len; /* chain中的数据总长度 */ XLogRegisterData(data, len) XLogRecData *rdata = rdatas[num_rdatas++]; /* global arr */ rdata-\u003edata = data; rdata-\u003elen = len; mainrdata_last-\u003enext = rdata; mainrdata_last = rdata; mainrdata_len += len; typedef struct { bool in_use; uint8 flags; RelFileNode rnode; ForkNumber\tforkno; BlockNumber block; Page\tpage; uint32\trdata_len; /* total length of data in rdata chain */ XLogRecData *rdata_head; XLogRecData *rdata_tail; XLogRecData bkp_rdatas[2]; /* temporary rdatas */ char compressed_page[8192 + 4]; } registered_buffer; /* 进程级全局变量： +-------------------+-------------------+-------------+ | registered_buffer | registered_buffer | ... | +-------------------+-------------------+-------------+ |-\u003e rdata -\u003e rdata |-\u003e ... */ registered_buffer *registered_buffers; /* len = 4 + 1, may realloc */ int max_registered_buffers; int max_registered_block_id = 4 + 1; XLogRegisterBuffer(block_id, buffer, flags) /* block_id = 0 */ max_registered_block_id += (block_id \u003e= max_registered_block_id) ? 1 : 0; registered_buffer regbuf = \u0026registered_buffers[block_id]; /* global arr */ BufferGetTag(buffer, \u0026regbuf-\u003ernode, \u0026regbuf-\u003eforkno, \u0026regbuf-\u003eblock); regbuf-\u003epage = BufferGetPage(buffer); regbuf-\u003eflags = flags; regbuf-\u003erdata_tail = (XLogRecData *) \u0026regbuf-\u003erdata_head; regbuf-\u003erdata_len = 0; regbuf-\u003ein_use = true; XLogRegisterBufData(block_id, data, len) XLogRecData *rdata = \u0026rdatas[num_rdatas++]; /* global arr */ rdata-\u003edata = data; rdata-\u003elen = len; registered_buffer *regbuf = \u0026registered_buffers[block_id]; /* global arr */ regbuf-\u003erdata_tail-\u003enext = rdata; regbuf-\u003erdata_tail = rdata; regbuf-\u003erdata_len += len; typedef uint64 XLogRecPtr; /* 进程全局变量 */ XLogRecPtr RedoRecPtr; bool doPageWrites; /* 1 */ XLogInsert(rmid, info) XLogRecPtr\tfpw_lsn; XLogRecData rdt = XLogRecordAssemble(rmid, info, RedoRecPtr, doPageWrites, \u0026fpw_lsn) /* 封装头部 */ XLogRecPtr EndPos = XLogInsertRecord(rdt, fpw_lsn); /* 封装数据 */ return EndPos; /* 即 page lsn */ XLogRecData hdr_rdt; /* 把所有buffer里和buffer外的所有list merge在一起 */ char *hdr_scratch = NULL; /* 把所有buffer里和buffer外的所有数据拼接在一起 */ /* 1.1 */ XLogRecData *XLogRecordAssemble(rmid, info, RedoRecPtr, doPageWrites, fpw_lsn) char\t*scratch = hdr_scratch; XLogRecord *rechdr = (XLogRecord)scratch; scratch += sizeof(XLogRecord); hdr_rdt.next = NULL; XLogRecData *rdt_datas_last = \u0026hdr_rdt; hdr_rdt.data = hdr_scratch; /* 处理buffer */ registered_buffer *prev_regbuf = NULL; for (block_id = 0; block_id \u003c max_registered_block_id; block_id++) { registered_buffer *regbuf = \u0026registered_buffers[block_id] if !regbuf-\u003ein_use: continue; if regbuf-\u003eflags \u0026 REGBUF_FORCE_IMAGE： needs_backup = true else： XLogRecPtr\tpage_lsn = PageGetLSN(regbuf-\u003epage); if *fpw_lsn == InvalidXLogRecPtr || page_lsn \u003c *fpw_lsn: *fpw_lsn = page_lsn; if regbuf-\u003erdata_len == 0: needs_data = false; XLogRecordBlockHeader bkpb; bkpb.id = block_id; bkpb.fork_flags = regbuf-\u003eforkno; bkpb.data_length = 0; if regbuf-\u003eflags \u0026 REGBUF_WILL_INIT: bkpb.fork_flags |= BKPBLOCK_WILL_INIT; if needs_backup: TODO if needs_data: bkpb.fork_flags |= BKPBLOCK_HAS_DATA; bkpb.data_length = regbuf-\u003erdata_len; total_len += regbuf-\u003erdata_len; rdt_datas_last-\u003enext = regbuf-\u003erdata_head; rdt_datas_last = regbuf-\u003erdata_tail; if prev_regbuf \u0026\u0026 regbuf-\u003ernode == prev_regbuf-\u003ernode: samerel = true; bkpb.fork_flags |= BKPBLOCK_SAME_REL; else: samerel = false; prev_regbuf = regbuf; memcpy(scratch, \u0026bkpb, sizeof(XLogRecordBlockHeader)); scratch += sizeof(XLogRecordBlockHeader); if (!samerel): memcpy(scratch, \u0026regbuf-\u003ernode, sizeof(RelFileNode)); scratch += sizeof(RelFileNode); memcpy(scratch, \u0026regbuf-\u003eblock, sizeof(BlockNumber)); scratch += sizeof(BlockNumber); } if (mainrdata_len \u003e 0) if (mainrdata_len \u003e 255) *(scratch++) = XLR_BLOCK_ID_DATA_LONG; /* 255 */ memcpy(scratch, \u0026mainrdata_len, sizeof(uint32)); scratch += sizeof(uint32); else: *(scratch++) = XLR_BLOCK_ID_DATA_SHORT; /* 254 */ *(scratch++) = (uint8) mainrdata_len; rdt_datas_last-\u003enext = mainrdata_head; rdt_datas_last = mainrdata_last; total_len += mainrdata_len; rdt_datas_last-\u003enext = NULL; hdr_rdt.len = (scratch - hdr_scratch); total_len += hdr_rdt.len; COMP_CRC32C(rdata_crc, hdr_scratch + sizeof(XLogRecord), hdr_rdt.len - sizeof(XLogRecord)); for (rdt = hdr_rdt.next; rdt != NULL; rdt = rdt-\u003enext) COMP_CRC32C(rdata_crc, rdt-\u003edata, rdt-\u003elen); rechdr-\u003exl_xid = GetCurrentTransactionIdIfAny(); rechdr-\u003exl_tot_len = total_len; rechdr-\u003exl_info = info; rechdr-\u003exl_rmid = rmid; rechdr-\u003exl_prev = InvalidXLogRecPtr; rechdr-\u003exl_crc = rdata_crc; return \u0026hdr_rdt; /* 1.2 */ XLogRecPtr XLogInsertRecord(XLogRecData rdata, XLogRecPtr fpw_lsn) XLogCtlInsert *Insert = \u0026XLogCtl-\u003eInsert; XLogRecord *rechdr = (XLogRecord *) rdata-\u003edata; isLogSwitch = rechdr-\u003exl_rmid == RM_XLOG_ID \u0026\u0026 rechdr-\u003exl_info == XLOG_SWITCH if isLogSwitch: WALInsertLockAcquireExclusive() else: WALInsertLockAcquire() if RedoRecPtr != Insert-\u003eRedoRecPtr: RedoRecPtr = Insert-\u003eRedoRecPtr; doPageWrites = Insert-\u003efullPageWrites || Insert-\u003eforcePageWrites; XLogRecPtr\tStartPos; XLogRecPtr\tEndPos; if isLogSwitch: insert = ReserveXLogSwitch(\u0026StartPos, \u0026EndPos, \u0026rechdr-\u003exl_prev) else: ReserveXLogInsertLocation(rechdr-\u003exl_tot_len, \u0026StartPos, \u0026EndPos, \u0026rechdr-\u003exl_prev) inserted = true if inserted: CopyXLogRecordToWAL(rechdr-\u003exl_tot_len, isLogSwitch, rdata, StartPos, EndPos) /* 封装实际数据 */ WALInsertLockRelease(); MarkCurrentTransactionIdLoggedIfAny(); /* Update shared LogwrtRqst.Write, if we crossed page boundary */ if StartPos / XLOG_BLCKSZ != EndPos / XLOG_BLCKSZ: if XLogCtl-\u003eLogwrtRqst.Write \u003c EndPos: XLogCtl-\u003eLogwrtRqst.Write = EndPos; /* 更新所有进程的xlog写入位置 */ LogwrtResult = XLogCtl-\u003eLogwrtResult; if isLogSwitch: XLogFlush(EndPos) TODO ProcLastRecPtr = StartPos; XactLastRecEnd = EndPos; /* 1.2.1 */ CopyXLogRecordToWAL(int write_len, XLogRecData *rdata, XLogRecPtr StartPos, XLogRecPtr EndPos) char *currpos = StartPos currpos = GetXLogBuffer(CurrPos) freespace = INSERT_FREESPACE(CurrPos) while (rdata != NULL) char *rdata_data = rdata-\u003edata int rdata_len = rdata-\u003elen while (rdata_len \u003e freespace) memcpy(currpos, rdata_data, freespace) rdata_data += freespace rdata_len -= freespace written += freespace CurrPos += freespace currpos = GetXLogBuffer(CurrPos) ... memcpy(currpos, rdata_data, rdata_len) ... if isLogSwitch while (CurrPos \u003c EndPos) WALInsertLockUpdateInsertingAt(CurrPos) AdvanceXLInsertBuffer(CurrPos) 1.4 log page log_newpage_buffer() 2 xlog重放 XLogReaderState *xlogreader = XLogReaderAllocate(); XLogRecord record = ReadRecord(xlogreader); do { RmgrTable[record-\u003exl_rmid].rm_redo(xlogreader); record = ReadRecord(xlogreader); } heap_redo(XLogReaderState *record) uint8 info = XLogRecGetInfo(record) \u0026 ~XLR_INFO_MASK; switch info \u0026 XLOG_HEAP_OPMASK: case XLOG_HEAP_INSERT: heap_xlog_insert(record) case XLOG_HEAP_DELETE: TODO heap_xlog_insert(XLogReaderState *record) XLogRecPtr\tlsn = record-\u003eEndRecPtr; RelFileNode target_node; XLogRecGetBlockTag(record, 0, \u0026target_node, NULL, \u0026blkno); /* set tup's offset */ ItemPointerData target_tid; ItemPointerSetBlockNumber(\u0026target_tid, blkno); ItemPointerSetOffsetNumber(\u0026target_tid, xlrec-\u003eoffnum); xl_heap_insert *xlrec = (xl_heap_insert *) XLogRecGetData(record); if XLogRecGetInfo(record) = XLOG_HEAP_INIT_PAGE buffer = XLogInitBufferForRedo(record) page = BufferGetPage(buffer) PageInit(page) else action = XLogReadBufferForRedo(record, \u0026buffer) // 1 插入阶段 heap_insert() LogBeginInsert() XLogRegisterData(data, datasz) XLogRegisterBuffer(0, buffer, bufflags) XLogRegisterBufData0(0, data, datasz) XLogRegisterBufData(o, data, datasz) XLogIncludeOrigin() XLogRecPtr = XLogInsert(RM_HEAP_ID, XLOG_HEAP_INSERT | XLOG_HEAP_INIT_PAGE) // 2 组装阶段 - 调用assemble XLogInsert() XLogRecPtr RedoRecPtr XLogRecPtr fpw_lsn GetFullPageWriteInfo(\u0026RedoRecPtr) XLogRecData *tdt = XLogRecordAssemble(rmid, info, doPageWrites, \u0026fpw_lsn) XLogRecPtr EndPos = XLogInsertRecord(rdt, fpw_lsn) // assemble 返回值 typedef struct XLogRecData { struct XLogRecData *next; char *data; uint32 len; } XLogRecData; /* 物理xlog：header + main的list */ typedef uint64 XLogRecPtr; // 物理xlog的头部 typedef struct XLogRecord { uint32 xl_tot_len; TransactionId xl_xid; XLogRecPtr xl_prev; /* 前一条物理xlog */ uint8 xl_info; RmgrId xl_rmid; pg_crc32c xl_crc; } XLogRecord; // 2.1 assemble 组装 XLogRecData *XLogRecordAssemble(rmid, info, doPageWrites) /* RM_HEAP_ID, XLOG_HEAP_INSERT | XLOG_HEAP_INIT_PAGE */ for (block_id = 0; block_id \u003c max_registered_block_id; block_id++) { // 1 依次获取 block / buffer registered_buffer *regbuf = \u0026registered_buffers[block_id] // 2 判断是否写 full-page if : ... else: XLogRecPtr page_lsn = PageGetLSN(regbuf-\u003epage) needs_backup = (page_lsn \u003c= RedoRecPtr) // page的lsn小于xlog的lsn // 3 构造 BlockHeader XLogRecordBlockHeader bkpb bkpb.id = block_id bkpb.fork_flags = regbuf-\u003eforkno if regbuf-\u003eflags \u0026 REGBUF_WILL_INIT: bkpb.fork_flags |= BKPBLOCK_WILL_INIT // 4 拼接 page image if needs_backup: // header后紧跟page imge Page page = regbuf-\u003epage if regbuf-\u003eflags \u0026 REGBUF_STANDARD: // 计算孔洞 bimg.hole_offset = lower cbimg.hole_length = upper - lower if wal_compression: // 压缩page is_compressed = XLogCompressBackupBlock(page, bimg.hole_offset, cbimg.hole_length, regbuf-\u003ecompressed_page, \u0026compressed_len) bkpb.fork_flags |= BKPBLOCK_HAS_IMAGE if is_compressed: // 物理数据 | XLogRecord--BlockNumber | regbuf-\u003ecompressed_page else: bimg.length = BLCKSZ - cbimg.hole_length if cbimg.hole_length == 0 // 物理数据 | XLogRecord--BlockNumber | regbuf-\u003epage rdt_datas_last-\u003edata = page rdt_datas_last-\u003elen = BLCKSZ else: // page分成两部分存：page起始到hole起始，hole结束到page结束 // 物理数据 | XLogRecord--BlockNumber | regbuf-\u003epage--hole_offset | regbuf-\u003epage--hole_offset--hole_length | // 5 拼接 tuple data if needs_data: // // 物理数据 | XLogRecord--BlockNumber | regbuf-\u003epage | data1 | data2 | ... | bkpb.fork_flags |= BKPBLOCK_HAS_DATA bkpb.data_length = regbuf-\u003erdata_len rdt_datas_last-\u003enext = regbuf-\u003erdata_head rdt_datas_last = regbuf-\u003erdata_tail // 6 继续填充 BlockHeader if prev_regbuf \u0026\u0026 RelFileNodeEquals(regbuf-\u003ernode, prev_regbuf-\u003ernode): samerel = true bkpb.fork_flags |= BKPBLOCK_SAME_REL prev_regbuf = regbuf // 物理数据：| XLogRecord XLogRecordBlockHeader | regbuf-\u003epage | ... memcpy(scratch, \u0026bkpb, sizeof(XLogRecordBlockHeader)) // 7 继续填充 if needs_backup: // 物理数据：| XLogRecord XLogRecordBlockHeader XLogRecordBlockImageHeader | regbuf-\u003epage | ... memcpy(scratch, \u0026bimg, sizeof(XLogRecordBlockImageHeader)) if cbimg.hole_length != 0 \u0026\u0026 is_compressed: // 物理数据：| XLogRecord XLogRecordBlockHeader XLogRecordBlockImageHeader XLogRecordBlockCompressHeader | regbuf-\u003epage | ... memcpy(scratch, \u0026cbimg, sizeof(XLogRecordBlockCompressHeader)) if samerel: // 物理数据：| XLogRecord XLogRecordBlockHeader XLogRecordBlockImageHeader XLogRecordBlockCompressHeader RelFileNode | regbuf-\u003epage | ... memcpy(scratch, \u0026regbuf-\u003ernode, sizeof(RelFileNode)) /* * 物理数据：（list的第一个node） * | XLogRecord * | XLogRecordBlockHeader -----------+ 可能重复多次 * | XLogRecordBlockImageHeader | * | XLogRecordBlockCompressHeader | * | RelFileNode | * | BlockNumber ----------------------+ * | ... 重复 */ memcpy(scratch, \u0026regbuf-\u003eblock, sizeof(BlockNumber)) } // 结束遍历 Block /* * 物理数据：（list的第一个node） * | XLogRecord * | XLogRecordBlockHeader -----------+ 可能重复多次 * | XLogRecordBlockImageHeader | * | XLogRecordBlockCompressHeader | * | RelFileNode | * | BlockNumber ----------------------+ * | ... 重复 * | XLR_BLOCK_ID_ORIGIN * | replorigin_session_origin (uint16) * | XLR_BLOCK_ID_DATA_SHORT * | mainrdata_len */ if include_origin \u0026\u0026 replorigin_session_origin: *(scratch++) = XLR_BLOCK_ID_ORIGIN memcpy(scratch, \u0026replorigin_session_origin, sizeof(replorigin_session_origin)) // 4 拼接 maindata /* * [XLogRecord-...-BlockNumber] -\u003e [page1] -\u003e [page2]-\u003e [page1 data1] -\u003e [page2 data2] -\u003e [maindata] -\u003e [maindata] -\u003e [...] */ if mainrdata_len \u003e 0 : *(scratch++) = XLR_BLOCK_ID_DATA_LONG / XLR_BLOCK_ID_DATA_SHORT memcpy(scratch, \u0026mainrdata_len, sizeof(uint32)) rdt_datas_last-\u003enext = mainrdata_head rdt_datas_last = mainrdata_last xlog完整格式\n# 物理xlog | list 节点 | 是否必选 描述 +-------------------------------+---+----------------------------------------------------------------- | XLogRecord | Y | | \u003c\u003c loop start \u003e\u003e | - | | XLogRecordBlockHeader | N | 有page时 {id, fork_flags, data_length} : INIT_PAGE HAS_IMAGE HAS_DATA | XLogRecordBlockImageHeader | N | 有page时，写入full-page镜像 | XLogRecordBlockCompressHeader | N | 有page时，写入full-page镜像，开启压缩 | RelFileNode | N | 有page时 | BlockNumber | N | 有page时 | \u003c\u003c loop end \u003e\u003e | - | | XLR_BLOCK_ID_ORIGIN | N | | replorigin_session_origin | N | | XLR_BLOCK_ID_DATA_SHORT/LONG | N | 有maindata时（可能有误） | mainrdata_len | N | 有maindata时 +-------------------------------|---|----------------------------------------------------------------- | page start -- hole start | N | 有page时，写入full-page镜像 +-------------------------------|---|----------------------------------------------------------------- | hole end -- page end | N | +-------------------------------|---|----------------------------------------------------------------- | block1_data1 | N | xl_heap_header {t_infomask2, t_infomask, t_hoff} : 记录tuple信息 +-------------------------------|---|----------------------------------------------------------------- | block1_data2 | N | tuple-\u003et_data : 记录tuple数据 +-------------------------------|---|----------------------------------------------------------------- | block2_data1 | N | +-------------------------------|---|----------------------------------------------------------------- | block... | N | +-------------------------------|---|----------------------------------------------------------------- | maindata1 | N | xl_heap_insert {OffsetNumber, flags} ： 记录tuple位置 +-------------------------------|---|----------------------------------------------------------------- | maindata2 | N | +-------------------------------|---|----------------------------------------------------------------- | maindata... | N | +-------------------------------|---|----------------------------------------------------------------- /* symbol name, textual name, redo, desc, identify, startup, cleanup */ PG_RMGR(RM_XLOG_ID, \"XLOG\", xlog_redo, xlog_desc, xlog_identify, NULL, NULL) PG_RMGR(RM_XACT_ID, \"Transaction\", xact_redo, xact_desc, xact_identify, NULL, NULL) PG_RMGR(RM_SMGR_ID, \"Storage\", smgr_redo, smgr_desc, smgr_identify, NULL, NULL) PG_RMGR(RM_CLOG_ID, \"CLOG\", clog_redo, clog_desc, clog_identify, NULL, NULL) PG_RMGR(RM_DBASE_ID, \"Database\", dbase_redo, dbase_desc, dbase_identify, NULL, NULL) PG_RMGR(RM_TBLSPC_ID, \"Tablespace\", tblspc_redo, tblspc_desc, tblspc_identify, NULL, NULL) PG_RMGR(RM_MULTIXACT_ID, \"MultiXact\", multixact_redo, multixact_desc, multixact_identify, NULL, NULL) PG_RMGR(RM_RELMAP_ID, \"RelMap\", relmap_redo, relmap_desc, relmap_identify, NULL, NULL) PG_RMGR(RM_STANDBY_ID, \"Standby\", standby_redo, standby_desc, standby_identify, NULL, NULL) PG_RMGR(RM_HEAP2_ID, \"Heap2\", heap2_redo, heap2_desc, heap2_identify, NULL, NULL) PG_RMGR(RM_HEAP_ID, \"Heap\", heap_redo, heap_desc, heap_identify, NULL, NULL) PG_RMGR(RM_BTREE_ID, \"Btree\", btree_redo, btree_desc, btree_identify, NULL, NULL) PG_RMGR(RM_HASH_ID, \"Hash\", hash_redo, hash_desc, hash_identify, NULL, NULL) PG_RMGR(RM_GIN_ID, \"Gin\", gin_redo, gin_desc, gin_identify, gin_xlog_startup, gin_xlog_cleanup) PG_RMGR(RM_GIST_ID, \"Gist\", gist_redo, gist_desc, gist_identify, gist_xlog_startup, gist_xlog_cleanup) PG_RMGR(RM_SEQ_ID, \"Sequence\", seq_redo, seq_desc, seq_identify, NULL, NULL) PG_RMGR(RM_SPGIST_ID, \"SPGist\", spg_redo, spg_desc, spg_identify, spg_xlog_startup, spg_xlog_cleanup) PG_RMGR(RM_BRIN_ID, \"BRIN\", brin_redo, brin_desc, brin_identify, NULL, NULL) PG_RMGR(RM_COMMIT_TS_ID, \"CommitTs\", commit_ts_redo, commit_ts_desc, commit_ts_identify, NULL, NULL) PG_RMGR(RM_REPLORIGIN_ID, \"ReplicationOrigin\", replorigin_redo, replorigin_desc, replorigin_identify, NULL, NULL) 2.1 HEAP #define XLOG_HEAP_INSERT\t0x00 #define XLOG_HEAP_DELETE\t0x10 #define XLOG_HEAP_UPDATE\t0x20 /* 0x030 is free, was XLOG_HEAP_MOVE */ #define XLOG_HEAP_HOT_UPDATE\t0x40 #define XLOG_HEAP_CONFIRM\t0x50 #define XLOG_HEAP_LOCK\t0x60 #define XLOG_HEAP_INPLACE\t0x70 #define XLOG_HEAP_OPMASK\t0x70 #define XLOG_HEAP_INIT_PAGE\t0x80 2.2 HEAP2 #define XLOG_HEAP2_REWRITE\t0x00 #define XLOG_HEAP2_CLEAN\t0x10 #define XLOG_HEAP2_FREEZE_PAGE\t0x20 #define XLOG_HEAP2_CLEANUP_INFO 0x30 #define XLOG_HEAP2_VISIBLE\t0x40 #define XLOG_HEAP2_MULTI_INSERT 0x50 #define XLOG_HEAP2_LOCK_UPDATED 0x60 #define XLOG_HEAP2_NEW_CID\t0x70 2.3 XLOG #define XLOG_CHECKPOINT_SHUTDOWN\t0x00 #define XLOG_CHECKPOINT_ONLINE\t0x10 #define XLOG_NOOP\t0x20 #define XLOG_NEXTOID\t0x30 #define XLOG_SWITCH\t0x40 #define XLOG_BACKUP_END\t0x50 #define XLOG_PARAMETER_CHANGE\t0x60 #define XLOG_RESTORE_POINT\t0x70 #define XLOG_FPW_CHANGE\t0x80 #define XLOG_END_OF_RECOVERY\t0x90 #define XLOG_FPI_FOR_HINT\t0xA0 #define XLOG_FPI\t0xB0 2.4 RM_SMGR_ID ```c\n#define XLOG_SMGR_CREATE 0x10\n#define XLOG_SMGR_TRUNCATE 0x20\n``\n2.5 ",
+  "wordCount" : "2275",
+  "inLanguage": "en",
+  "datePublished": "2025-01-21T13:55:00+08:00",
+  "dateModified": "2026-08-14T17:47:31+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/postgresql/3-5-wal/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      PostgreSQL 3-7 Xlog
+    </h1>
+    <div class="post-meta">
+      <span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>11 min</span>&nbsp;·&nbsp;<span>2275 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#5-wal%e8%90%bd%e7%9b%98" aria-label="5 wal落盘">5 wal落盘</a></li>
+                <li>
+                    <a href="#1-%e6%a6%82%e8%bf%b0" aria-label="1 概述">1 概述</a><ul>
+                        
+                <li>
+                    <a href="#11-%e8%83%8c%e6%99%af" aria-label="1.1 背景">1.1 背景</a></li>
+                <li>
+                    <a href="#12-%e8%a7%a3%e5%86%b3%e6%96%b9%e6%a1%88" aria-label="1.2 解决方案">1.2 解决方案</a></li>
+                <li>
+                    <a href="#11-%e6%a0%bc%e5%bc%8f" aria-label="1.1 格式">1.1 格式</a></li>
+                <li>
+                    <a href="#12-%e6%8f%92%e5%85%a5%e9%a1%ba%e5%ba%8f" aria-label="1.2 插入顺序">1.2 插入顺序</a></li>
+                <li>
+                    <a href="#14-log-page" aria-label="1.4 log page">1.4 log page</a></li></ul>
+                </li>
+                <li>
+                    <a href="#2-xlog%e9%87%8d%e6%94%be" aria-label="2 xlog重放">2 xlog重放</a><ul>
+                        
+                <li>
+                    <a href="#21-heap" aria-label="2.1 HEAP">2.1 HEAP</a></li>
+                <li>
+                    <a href="#22-heap2" aria-label="2.2 HEAP2">2.2 HEAP2</a></li>
+                <li>
+                    <a href="#23-xlog" aria-label="2.3 XLOG">2.3 XLOG</a></li>
+                <li>
+                    <a href="#24-rm_smgr_id" aria-label="2.4 RM_SMGR_ID">2.4 RM_SMGR_ID</a></li>
+                <li>
+                    <a href="#25" aria-label="2.5">2.5</a>
+                </li>
+            </ul>
+            </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h1 id="5-wal落盘">5 wal落盘<a hidden class="anchor" aria-hidden="true" href="#5-wal落盘">#</a></h1>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">WalWriterMain</span>
+</span></span><span class="line"><span class="cl">    <span class="k">for</span> <span class="p">::</span>
+</span></span><span class="line"><span class="cl">        <span class="n">XLogBackgroundFlush</span>
+</span></span><span class="line"><span class="cl">            <span class="n">LWLockAcquire</span><span class="p">(</span><span class="n">LW_EXCLUSIVE</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">XLogWrite</span>
+</span></span><span class="line"><span class="cl">            <span class="n">LWLockRelease</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">CommitTransaction</span>
+</span></span><span class="line"><span class="cl">    <span class="n">RecordTransactionCommit</span>
+</span></span><span class="line"><span class="cl">        <span class="n">BufmgrCommit</span>
+</span></span><span class="line"><span class="cl">        <span class="n">XactLogCommitRecord</span> <span class="c1"># xlog记录commit</span>
+</span></span><span class="line"><span class="cl">        <span class="n">TransactionTreeSetCommitTsData</span>
+</span></span><span class="line"><span class="cl">        <span class="n">XLogFlush</span><span class="p">(</span><span class="n">XactLastRecEnd</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="k">for</span> <span class="p">::</span>
+</span></span><span class="line"><span class="cl">                <span class="n">WaitXLogInsertionsToFinish</span>
+</span></span><span class="line"><span class="cl">                <span class="n">XLogWrite</span>
+</span></span><span class="line"><span class="cl">                <span class="n">write</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ResourceOwnerRelease</span>
+</span></span><span class="line"><span class="cl">    <span class="n">AtEOXact_Buffers</span>
+</span></span><span class="line"><span class="cl">    <span class="n">AtEOXact_RelationCache</span>
+</span></span><span class="line"><span class="cl">    <span class="o">...</span>
+</span></span></code></pre></div><h1 id="1-概述">1 概述<a hidden class="anchor" aria-hidden="true" href="#1-概述">#</a></h1>
+<h2 id="11-背景">1.1 背景<a hidden class="anchor" aria-hidden="true" href="#11-背景">#</a></h2>
+<p><a href="https://zhmin.github.io/posts/postgresql-wal-format/">https://zhmin.github.io/posts/postgresql-wal-format/</a><br>
+wal机制解决的问题：持久性、原子性、性能、数据同步、恢复</p>
+<ul>
+<li>
+<p>持久性需求：</p>
+<ul>
+<li>
+<p>执行一次事务/事务块，例如INSERT语句，除了要写数据文件，还需要更新系统表、索引文件、fsm文件、vm文件、事务提交文件等</p>
+</li>
+<li>
+<p>为避免故障导致数据丢失，产生的数据写入磁盘才算事务成功</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">应用                    数据库                  磁盘
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 1. INSERT <span class="o">(</span>5<span class="o">)</span> --&gt;     <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                        <span class="p">|</span> 2. 读取数据页 &lt;--     <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                        <span class="p">|</span> 3. 将数据写入数据页
+</span></span><span class="line"><span class="cl">                        <span class="p">|</span> 4. 存储数据页  --&gt;    <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                        <span class="p">|</span> 5. 读取索引文件 --&gt;   <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                        <span class="p">|</span> 6...
+</span></span><span class="line"><span class="cl">                        <span class="p">|</span> 7. 读取fsm文件 --&gt;    <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                        <span class="p">|</span> 8...
+</span></span><span class="line"><span class="cl">                        <span class="p">|</span> 9. 读取vm文件 --&gt;     <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                        <span class="p">|</span> 10...
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 11. INSERT 成功   &lt;-- <span class="p">|</span>
+</span></span></code></pre></div></li>
+</ul>
+</li>
+<li>
+<p>原子性需求：</p>
+<ul>
+<li>大量连续读写可能会失败，如果中途失败，无法恢复现场</li>
+</ul>
+</li>
+<li>
+<p>性能需求：</p>
+<ul>
+<li>首先，执行一次事务或事务块，涉及大量IO操作，且都是随机读写</li>
+</ul>
+</li>
+<li>
+<p>数据同步：</p>
+<ul>
+<li>主机和备机之间数据同步问题</li>
+</ul>
+</li>
+<li>
+<p>恢复</p>
+<ul>
+<li>故障恢复</li>
+<li>时间点恢复</li>
+</ul>
+</li>
+</ul>
+<h2 id="12-解决方案">1.2 解决方案<a hidden class="anchor" aria-hidden="true" href="#12-解决方案">#</a></h2>
+<p>lsn</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 查看当前lsn
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">pg_current_wal_lsn</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 查看当前lsn的文件名
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">pg_walfile_namae</span><span class="p">(</span><span class="n">pg_current_wal_lsn</span><span class="p">());</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">pg_walfile_name_offset</span><span class="p">(</span><span class="n">pg_current_wal_lsn</span><span class="p">());</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 查看你page的lsn
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">lsn</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">page_header</span><span class="p">(</span><span class="n">get_raw_page</span><span class="p">(</span><span class="s1">&#39;t1&#39;</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">));</span><span class="w">
+</span></span></span></code></pre></div><p>wal文件命令：24个字符，每个字符为16进制</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="mo">00000000</span> <span class="mo">00000000</span> <span class="mo">00000000</span>
+</span></span><span class="line"><span class="cl"> <span class="err">时间线</span>    <span class="err">逻辑</span><span class="n">id</span>   <span class="err">物理</span><span class="n">id</span>
+</span></span></code></pre></div><p><a href="http://dbaselife.com/doc/1955/">http://dbaselife.com/doc/1955/</a></p>
+<h2 id="11-格式">1.1 格式<a hidden class="anchor" aria-hidden="true" href="#11-格式">#</a></h2>
+<p>通用的xlog记录格式 (pg 9.5+)</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">+---------------------------------+
+</span></span><span class="line"><span class="cl"><span class="p">|</span> XLogRecord                      <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+---------------------------------+ 设置对应flag则有BlockHeader，否则没有
+</span></span><span class="line"><span class="cl"><span class="p">|</span> XlogRecordBlockHeader           <span class="p">|</span> 设置flag
+</span></span><span class="line"><span class="cl"><span class="p">|</span>   XLogRecordBlockImageHeader    <span class="p">|</span> - <span class="k">if</span> BKPBLOCK_HAS_IMAGE
+</span></span><span class="line"><span class="cl"><span class="p">|</span>   XLogRecordBlockCompressHeader <span class="p">|</span> - <span class="k">if</span> BKPBLOCK_HAS_HOLE <span class="p">&amp;</span> BKPIMAGE_IS_COMPRESSED
+</span></span><span class="line"><span class="cl"><span class="p">|</span>   RelFileNode                   <span class="p">|</span> - <span class="k">if</span> not BKPBLOCK_SAME_REL
+</span></span><span class="line"><span class="cl"><span class="p">|</span> XlogRecordBlockHeader           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> ...                             <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+---------------------------------+
+</span></span><span class="line"><span class="cl"><span class="p">|</span> XlogRecordDataHeader            <span class="p">|</span> Short/Long <span class="o">(</span>判断条件：长度 &lt; <span class="m">256</span> bytes<span class="o">)</span>
+</span></span><span class="line"><span class="cl">+---------------------------------+
+</span></span><span class="line"><span class="cl"><span class="p">|</span> block data                      <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> block data                      <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> ...                             <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> data                            <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+---------------------------------+
+</span></span></code></pre></div><p>各字段结构体定义</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="cm">/* 1 */</span>
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint32</span>          <span class="n">xl_tot_len</span><span class="p">;</span> <span class="cm">/* 本条xlgo记录全部长度 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">TransactionId</span>   <span class="n">xl_xid</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecPtr</span>      <span class="n">xl_prev</span><span class="p">;</span>    <span class="cm">/* 上一条xlog记录的位置 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint8</span>		    <span class="n">xl_info</span><span class="p">;</span>    <span class="cm">/* 资管管理器使用，判断调用哪个重放函数 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">RmgrId</span>		    <span class="n">xl_rmid</span><span class="p">;</span>    <span class="cm">/* 资源管理器 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_crc32c</span>	    <span class="n">xl_crc</span><span class="p">;</span>		<span class="cm">/* 本条xlog记录的crc */</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">XLogRecord</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 2 */</span>
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint8</span>		<span class="n">id</span><span class="p">;</span>	         <span class="cm">/* block reference id */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint8</span>		<span class="n">fork_flags</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint16</span>		<span class="n">data_length</span><span class="p">;</span> <span class="cm">/* 数据实际长度，不包括image */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">	<span class="cm">/* If BKPBLOCK_HAS_IMAGE, an XLogRecordBlockImageHeader struct follows */</span>
+</span></span><span class="line"><span class="cl">	<span class="cm">/* If BKPBLOCK_SAME_REL is not set, a RelFileNode follows */</span>
+</span></span><span class="line"><span class="cl">	<span class="cm">/* BlockNumber follows */</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">XLogRecordBlockHeader</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 其中，根据fork_flags，判断是否有其他BlockHeader */</span>
+</span></span><span class="line"><span class="cl"><span class="cp">#define BKPBLOCK_HAS_IMAGE	0x10	</span><span class="cm">/* block data is an XLogRecordBlockImage */</span><span class="cp">
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define BKPBLOCK_HAS_DATA	0x20
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define BKPBLOCK_WILL_INIT	0x40	</span><span class="cm">/* redo will re-init the page */</span><span class="cp">
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define BKPBLOCK_SAME_REL	0x80	</span><span class="cm">/* RelFileNode omitted, same as previous */</span><span class="cp">
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="n">uint16</span>		<span class="n">length</span><span class="p">;</span>			<span class="cm">/* number of page image bytes */</span>
+</span></span><span class="line"><span class="cl">	<span class="n">uint16</span>		<span class="n">hole_offset</span><span class="p">;</span>	<span class="cm">/* number of bytes before &#34;hole&#34; */</span>
+</span></span><span class="line"><span class="cl">	<span class="n">uint8</span>		<span class="n">bimg_info</span><span class="p">;</span>		<span class="cm">/* flag bits, see below */</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">XLogRecordBlockImageHeader</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint16</span>		<span class="n">hole_length</span><span class="p">;</span> <span class="cm">/* number of bytes in &#34;hole&#34; : page中没有数据的tup就是孔 */</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">XLogRecordBlockCompressHeader</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 3 */</span>
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="n">uint8</span>		<span class="n">id</span><span class="p">;</span>				<span class="cm">/* XLR_BLOCK_ID_DATA_SHORT */</span>
+</span></span><span class="line"><span class="cl">	<span class="n">uint8</span>		<span class="n">data_length</span><span class="p">;</span>	<span class="cm">/* number of payload bytes */</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">XLogRecordDataHeaderShort</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="n">uint8</span>		<span class="n">id</span><span class="p">;</span>				<span class="cm">/* XLR_BLOCK_ID_DATA_LONG */</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">XLogRecordDataHeaderLong</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 其中，id的取值包括 */</span>
+</span></span><span class="line"><span class="cl"><span class="cp">#define XLR_MAX_BLOCK_ID			32
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLR_BLOCK_ID_DATA_SHORT		255
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLR_BLOCK_ID_DATA_LONG		254
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLR_BLOCK_ID_ORIGIN			253
+</span></span></span></code></pre></div><h2 id="12-插入顺序">1.2 插入顺序<a hidden class="anchor" aria-hidden="true" href="#12-插入顺序">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="nf">XLogBeginInsert</span><span class="p">()</span> <span class="cm">/* 检查受否在故障恢复 */</span>
+</span></span><span class="line"><span class="cl"><span class="nf">XLogRegisterData</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">datasz</span><span class="p">)</span> <span class="cm">/*  */</span>
+</span></span><span class="line"><span class="cl"><span class="n">XLogRecPtr</span> <span class="nf">XLogInsert</span><span class="p">(</span><span class="n">RmgrId</span> <span class="n">rmid</span><span class="p">,</span> <span class="n">uint8</span> <span class="n">info</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">XLogFlush</span><span class="p">(</span><span class="n">XLogRecPtr</span> <span class="n">record</span><span class="p">)</span>
+</span></span></code></pre></div><p>heap_insert</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="cm">/* 结构体：输入 */</span>
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint32</span> <span class="n">t_len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ItemPointerData</span> <span class="n">t_self</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">Oid</span> <span class="n">t_tableOid</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">HeapTupleHeader</span> <span class="n">t_data</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">HeapTuple</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 输出 */</span>
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">OffsetNumber</span> <span class="n">offnum</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint8</span>        <span class="n">flags</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">xl_heap_insert</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint16</span> <span class="n">t_infomask2</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint16</span> <span class="n">t_infomask</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint8</span>  <span class="n">t_hoff</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">xl_heap_header</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 执行流程 */</span>
+</span></span><span class="line"><span class="cl"><span class="n">HeapTuple</span> <span class="n">tup</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">xl_heap_insert</span> <span class="n">xlrec</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="n">xl_heap_header</span> <span class="n">xlhdr</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="n">uint8</span> <span class="n">info</span> <span class="o">=</span> <span class="n">XLOG_HEAP_INSERT</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="n">bufflags</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="n">XLogRecPtr</span> <span class="n">recptr</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">xlrec</span><span class="p">.</span><span class="n">offnum</span> <span class="o">=</span> <span class="n">tup</span><span class="p">.</span><span class="n">t_self</span><span class="p">.</span><span class="n">offset</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="n">xlrec</span><span class="p">.</span><span class="n">flag</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="cm">/* if page XLH_INSERT_ALL_VISIBLE_CLEARED XLH_INSERT_IS_SPECULATIVE */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">xlhdr</span><span class="p">.</span><span class="n">t_infomask2</span> <span class="o">=</span> <span class="n">tup</span><span class="o">-&gt;</span><span class="n">t_data</span><span class="o">-&gt;</span><span class="n">t_infomask2</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="n">xlhdr</span><span class="p">.</span><span class="n">t_infomask</span> <span class="o">=</span> <span class="n">tup</span><span class="o">-&gt;</span><span class="n">t_data</span><span class="o">-&gt;</span><span class="n">t_infomask</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="n">xlhdr</span><span class="p">.</span><span class="n">t_hoff</span> <span class="o">=</span> <span class="n">tup</span><span class="o">-&gt;</span><span class="n">t_data</span><span class="o">-&gt;</span><span class="n">t_hoff</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">XLogBeginInsert</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl"><span class="cm">/* put tup place */</span>
+</span></span><span class="line"><span class="cl"><span class="nf">XLogRegisterData</span><span class="p">(</span><span class="o">&amp;</span><span class="n">xlrec</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">xlrec</span><span class="p">));</span>
+</span></span><span class="line"><span class="cl"><span class="cm">/* put buffer where tup come from */</span>
+</span></span><span class="line"><span class="cl"><span class="nf">XLogRegisterBuffer</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">buffer</span><span class="p">,</span> <span class="n">bufflags</span> <span class="o">|</span> <span class="n">REGBUF_STANDARD</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="cm">/* put tup */</span>
+</span></span><span class="line"><span class="cl"><span class="nf">XLogRegisterBufData</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">xlhdr</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">xlhdr</span><span class="p">));</span>
+</span></span><span class="line"><span class="cl"><span class="nf">XLogRegisterBufData</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">tup</span><span class="o">-&gt;</span><span class="n">t_data</span> <span class="o">+</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">HeapTupleHeader</span><span class="p">),</span> <span class="n">tup</span><span class="o">-&gt;</span><span class="n">t_len</span> <span class="o">-</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">HeapTupleHeader</span><span class="p">));</span>
+</span></span><span class="line"><span class="cl"><span class="nf">XLogIncludeOrigin</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl"><span class="n">recptr</span> <span class="o">=</span> <span class="nf">XLogInsert</span><span class="p">(</span><span class="n">RM_HEAP_ID</span><span class="p">,</span> <span class="n">info</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">PageSetLSN</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">recptr</span><span class="p">);</span>
+</span></span></code></pre></div><p>内部实现：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="n">XlogRecData</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="k">struct</span> <span class="n">XlogRecData</span> <span class="o">*</span><span class="n">next</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">char</span> <span class="o">*</span><span class="n">data</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint32</span> <span class="n">len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">XLogRecData</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 进程级全局变量：
+</span></span></span><span class="line"><span class="cl"><span class="cm">
+</span></span></span><span class="line"><span class="cl"><span class="cm">+-------------+-------------+-------------+
+</span></span></span><span class="line"><span class="cl"><span class="cm">| XLogRecData | XLogRecData | ...         |
+</span></span></span><span class="line"><span class="cl"><span class="cm">+-------------+-------------+-------------+
+</span></span></span><span class="line"><span class="cl"><span class="cm">              ^ last
+</span></span></span><span class="line"><span class="cl"><span class="cm">*/</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">XLogRecData</span> <span class="o">*</span><span class="n">rdatas</span><span class="p">;</span> <span class="cm">/* XLogRecData 数组, len = 20 */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="n">num_rdatas</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="n">max_rdatas</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">XLogRecData</span> <span class="o">*</span><span class="n">mainrdata_head</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="n">XLogRecData</span> <span class="o">*</span><span class="n">mainrdata_last</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="n">uint32</span> <span class="n">mainrdata_len</span><span class="p">;</span> <span class="cm">/* chain中的数据总长度 */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">XLogRegisterData</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">len</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecData</span> <span class="o">*</span><span class="n">rdata</span> <span class="o">=</span> <span class="n">rdatas</span><span class="p">[</span><span class="n">num_rdatas</span><span class="o">++</span><span class="p">];</span> <span class="cm">/* global arr */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">rdata</span><span class="o">-&gt;</span><span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">rdata</span><span class="o">-&gt;</span><span class="n">len</span> <span class="o">=</span> <span class="n">len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">mainrdata_last</span><span class="o">-&gt;</span><span class="n">next</span> <span class="o">=</span> <span class="n">rdata</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">mainrdata_last</span> <span class="o">=</span> <span class="n">rdata</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">mainrdata_len</span> <span class="o">+=</span> <span class="n">len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">bool</span>        <span class="n">in_use</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint8</span>       <span class="n">flags</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">RelFileNode</span> <span class="n">rnode</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ForkNumber</span>	<span class="n">forkno</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">BlockNumber</span> <span class="n">block</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">Page</span>		<span class="n">page</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">uint32</span>		<span class="n">rdata_len</span><span class="p">;</span> <span class="cm">/* total length of data in rdata chain */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecData</span> <span class="o">*</span><span class="n">rdata_head</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecData</span> <span class="o">*</span><span class="n">rdata_tail</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecData</span> <span class="n">bkp_rdatas</span><span class="p">[</span><span class="mi">2</span><span class="p">];</span> <span class="cm">/* temporary rdatas */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="kt">char</span> <span class="n">compressed_page</span><span class="p">[</span><span class="mi">8192</span> <span class="o">+</span> <span class="mi">4</span><span class="p">];</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">registered_buffer</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 进程级全局变量：
+</span></span></span><span class="line"><span class="cl"><span class="cm">
+</span></span></span><span class="line"><span class="cl"><span class="cm">+-------------------+-------------------+-------------+
+</span></span></span><span class="line"><span class="cl"><span class="cm">| registered_buffer | registered_buffer | ...         |
+</span></span></span><span class="line"><span class="cl"><span class="cm">+-------------------+-------------------+-------------+
+</span></span></span><span class="line"><span class="cl"><span class="cm">|-&gt; rdata -&gt; rdata  |-&gt; ...
+</span></span></span><span class="line"><span class="cl"><span class="cm">*/</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">registered_buffer</span> <span class="o">*</span><span class="n">registered_buffers</span><span class="p">;</span> <span class="cm">/* len = 4 + 1, may realloc */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="n">max_registered_buffers</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="n">max_registered_block_id</span> <span class="o">=</span> <span class="mi">4</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">XLogRegisterBuffer</span><span class="p">(</span><span class="n">block_id</span><span class="p">,</span> <span class="n">buffer</span><span class="p">,</span> <span class="n">flags</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="cm">/* block_id = 0 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">max_registered_block_id</span> <span class="o">+=</span> <span class="p">(</span><span class="n">block_id</span> <span class="o">&gt;=</span> <span class="n">max_registered_block_id</span><span class="p">)</span> <span class="o">?</span> <span class="mi">1</span> <span class="o">:</span> <span class="mi">0</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">registered_buffer</span> <span class="n">regbuf</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">registered_buffers</span><span class="p">[</span><span class="n">block_id</span><span class="p">];</span> <span class="cm">/* global arr */</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">BufferGetTag</span><span class="p">(</span><span class="n">buffer</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rnode</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">forkno</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">block</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">	<span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">page</span> <span class="o">=</span> <span class="nf">BufferGetPage</span><span class="p">(</span><span class="n">buffer</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">	<span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">=</span> <span class="n">flags</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">	<span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_tail</span> <span class="o">=</span> <span class="p">(</span><span class="n">XLogRecData</span> <span class="o">*</span><span class="p">)</span> <span class="o">&amp;</span><span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_head</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">	<span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_len</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">in_use</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">XLogRegisterBufData</span><span class="p">(</span><span class="n">block_id</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">len</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecData</span> <span class="o">*</span><span class="n">rdata</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">rdatas</span><span class="p">[</span><span class="n">num_rdatas</span><span class="o">++</span><span class="p">];</span> <span class="cm">/* global arr */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">rdata</span><span class="o">-&gt;</span><span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">rdata</span><span class="o">-&gt;</span><span class="n">len</span> <span class="o">=</span> <span class="n">len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">registered_buffer</span> <span class="o">*</span><span class="n">regbuf</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">registered_buffers</span><span class="p">[</span><span class="n">block_id</span><span class="p">];</span> <span class="cm">/* global arr */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_tail</span><span class="o">-&gt;</span><span class="n">next</span> <span class="o">=</span> <span class="n">rdata</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_tail</span> <span class="o">=</span> <span class="n">rdata</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_len</span> <span class="o">+=</span> <span class="n">len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="n">uint64</span> <span class="n">XLogRecPtr</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 进程全局变量 */</span>
+</span></span><span class="line"><span class="cl"><span class="n">XLogRecPtr</span> <span class="n">RedoRecPtr</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="kt">bool</span> <span class="n">doPageWrites</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 1 */</span>
+</span></span><span class="line"><span class="cl"><span class="nf">XLogInsert</span><span class="p">(</span><span class="n">rmid</span><span class="p">,</span> <span class="n">info</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecPtr</span>	<span class="n">fpw_lsn</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecData</span> <span class="n">rdt</span> <span class="o">=</span> <span class="nf">XLogRecordAssemble</span><span class="p">(</span><span class="n">rmid</span><span class="p">,</span> <span class="n">info</span><span class="p">,</span> <span class="n">RedoRecPtr</span><span class="p">,</span> <span class="n">doPageWrites</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">fpw_lsn</span><span class="p">)</span> <span class="cm">/* 封装头部 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecPtr</span> <span class="n">EndPos</span> <span class="o">=</span> <span class="nf">XLogInsertRecord</span><span class="p">(</span><span class="n">rdt</span><span class="p">,</span> <span class="n">fpw_lsn</span><span class="p">);</span> <span class="cm">/* 封装数据 */</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="n">EndPos</span><span class="p">;</span> <span class="cm">/* 即 page lsn */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">XLogRecData</span> <span class="n">hdr_rdt</span><span class="p">;</span> <span class="cm">/* 把所有buffer里和buffer外的所有list merge在一起 */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">char</span> <span class="o">*</span><span class="n">hdr_scratch</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span> <span class="cm">/* 把所有buffer里和buffer外的所有数据拼接在一起 */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 1.1 */</span>
+</span></span><span class="line"><span class="cl"><span class="n">XLogRecData</span> <span class="o">*</span><span class="nf">XLogRecordAssemble</span><span class="p">(</span><span class="n">rmid</span><span class="p">,</span> <span class="n">info</span><span class="p">,</span> <span class="n">RedoRecPtr</span><span class="p">,</span> <span class="n">doPageWrites</span><span class="p">,</span> <span class="n">fpw_lsn</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">char</span>	   <span class="o">*</span><span class="n">scratch</span> <span class="o">=</span> <span class="n">hdr_scratch</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecord</span> <span class="o">*</span><span class="n">rechdr</span> <span class="o">=</span> <span class="p">(</span><span class="n">XLogRecord</span><span class="p">)</span><span class="n">scratch</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">scratch</span> <span class="o">+=</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">XLogRecord</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">hdr_rdt</span><span class="p">.</span><span class="n">next</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">	<span class="n">XLogRecData</span> <span class="o">*</span><span class="n">rdt_datas_last</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">hdr_rdt</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">	<span class="n">hdr_rdt</span><span class="p">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">hdr_scratch</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 处理buffer */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">registered_buffer</span> <span class="o">*</span><span class="n">prev_regbuf</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="k">for</span> <span class="p">(</span><span class="n">block_id</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">block_id</span> <span class="o">&lt;</span> <span class="n">max_registered_block_id</span><span class="p">;</span> <span class="n">block_id</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">        <span class="n">registered_buffer</span> <span class="o">*</span><span class="n">regbuf</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">registered_buffers</span><span class="p">[</span><span class="n">block_id</span><span class="p">]</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="o">!</span><span class="n">regbuf</span><span class="o">-&gt;</span><span class="nl">in_use</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="k">continue</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">REGBUF_FORCE_IMAGE</span><span class="err">：</span>
+</span></span><span class="line"><span class="cl">            <span class="n">needs_backup</span> <span class="o">=</span> <span class="nb">true</span>
+</span></span><span class="line"><span class="cl">        <span class="k">else</span><span class="err">：</span>
+</span></span><span class="line"><span class="cl">            <span class="n">XLogRecPtr</span>	<span class="n">page_lsn</span> <span class="o">=</span> <span class="nf">PageGetLSN</span><span class="p">(</span><span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">page</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="o">*</span><span class="n">fpw_lsn</span> <span class="o">==</span> <span class="n">InvalidXLogRecPtr</span> <span class="o">||</span> <span class="n">page_lsn</span> <span class="o">&lt;</span> <span class="o">*</span><span class="nl">fpw_lsn</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="o">*</span><span class="n">fpw_lsn</span> <span class="o">=</span> <span class="n">page_lsn</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_len</span> <span class="o">==</span> <span class="mi">0</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">needs_data</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="n">XLogRecordBlockHeader</span> <span class="n">bkpb</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">		<span class="n">bkpb</span><span class="p">.</span><span class="n">id</span> <span class="o">=</span> <span class="n">block_id</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">		<span class="n">bkpb</span><span class="p">.</span><span class="n">fork_flags</span> <span class="o">=</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">forkno</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">		<span class="n">bkpb</span><span class="p">.</span><span class="n">data_length</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="nl">REGBUF_WILL_INIT</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">bkpb</span><span class="p">.</span><span class="n">fork_flags</span> <span class="o">|=</span> <span class="n">BKPBLOCK_WILL_INIT</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="nl">needs_backup</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">TODO</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="nl">needs_data</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">			<span class="n">bkpb</span><span class="p">.</span><span class="n">fork_flags</span> <span class="o">|=</span> <span class="n">BKPBLOCK_HAS_DATA</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">			<span class="n">bkpb</span><span class="p">.</span><span class="n">data_length</span> <span class="o">=</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">			<span class="n">total_len</span> <span class="o">+=</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">			<span class="n">rdt_datas_last</span><span class="o">-&gt;</span><span class="n">next</span> <span class="o">=</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_head</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">			<span class="n">rdt_datas_last</span> <span class="o">=</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_tail</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">prev_regbuf</span> <span class="o">&amp;&amp;</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rnode</span> <span class="o">==</span> <span class="n">prev_regbuf</span><span class="o">-&gt;</span><span class="nl">rnode</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">samerel</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">            <span class="n">bkpb</span><span class="p">.</span><span class="n">fork_flags</span> <span class="o">|=</span> <span class="n">BKPBLOCK_SAME_REL</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">        <span class="k">else</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">samerel</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">        <span class="n">prev_regbuf</span> <span class="o">=</span> <span class="n">regbuf</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="nf">memcpy</span><span class="p">(</span><span class="n">scratch</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">bkpb</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">XLogRecordBlockHeader</span><span class="p">));</span>
+</span></span><span class="line"><span class="cl">        <span class="n">scratch</span> <span class="o">+=</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">XLogRecordBlockHeader</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">samerel</span><span class="p">)</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">            <span class="nf">memcpy</span><span class="p">(</span><span class="n">scratch</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rnode</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">RelFileNode</span><span class="p">));</span>
+</span></span><span class="line"><span class="cl">            <span class="n">scratch</span> <span class="o">+=</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">RelFileNode</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">        <span class="nf">memcpy</span><span class="p">(</span><span class="n">scratch</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">block</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">BlockNumber</span><span class="p">));</span>
+</span></span><span class="line"><span class="cl">        <span class="n">scratch</span> <span class="o">+=</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">BlockNumber</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="p">(</span><span class="n">mainrdata_len</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="p">(</span><span class="n">mainrdata_len</span> <span class="o">&gt;</span> <span class="mi">255</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="o">*</span><span class="p">(</span><span class="n">scratch</span><span class="o">++</span><span class="p">)</span> <span class="o">=</span> <span class="n">XLR_BLOCK_ID_DATA_LONG</span><span class="p">;</span> <span class="cm">/* 255 */</span>
+</span></span><span class="line"><span class="cl">            <span class="nf">memcpy</span><span class="p">(</span><span class="n">scratch</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">mainrdata_len</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">uint32</span><span class="p">));</span>
+</span></span><span class="line"><span class="cl">            <span class="n">scratch</span> <span class="o">+=</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">uint32</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">        <span class="k">else</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">            <span class="o">*</span><span class="p">(</span><span class="n">scratch</span><span class="o">++</span><span class="p">)</span> <span class="o">=</span> <span class="n">XLR_BLOCK_ID_DATA_SHORT</span><span class="p">;</span> <span class="cm">/* 254 */</span>
+</span></span><span class="line"><span class="cl">            <span class="o">*</span><span class="p">(</span><span class="n">scratch</span><span class="o">++</span><span class="p">)</span> <span class="o">=</span> <span class="p">(</span><span class="n">uint8</span><span class="p">)</span> <span class="n">mainrdata_len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="n">rdt_datas_last</span><span class="o">-&gt;</span><span class="n">next</span> <span class="o">=</span> <span class="n">mainrdata_head</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">		<span class="n">rdt_datas_last</span> <span class="o">=</span> <span class="n">mainrdata_last</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">		<span class="n">total_len</span> <span class="o">+=</span> <span class="n">mainrdata_len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">rdt_datas_last</span><span class="o">-&gt;</span><span class="n">next</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">hdr_rdt</span><span class="p">.</span><span class="n">len</span> <span class="o">=</span> <span class="p">(</span><span class="n">scratch</span> <span class="o">-</span> <span class="n">hdr_scratch</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="n">total_len</span> <span class="o">+=</span> <span class="n">hdr_rdt</span><span class="p">.</span><span class="n">len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="nf">COMP_CRC32C</span><span class="p">(</span><span class="n">rdata_crc</span><span class="p">,</span> <span class="n">hdr_scratch</span> <span class="o">+</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">XLogRecord</span><span class="p">),</span> <span class="n">hdr_rdt</span><span class="p">.</span><span class="n">len</span> <span class="o">-</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">XLogRecord</span><span class="p">));</span>
+</span></span><span class="line"><span class="cl">	<span class="k">for</span> <span class="p">(</span><span class="n">rdt</span> <span class="o">=</span> <span class="n">hdr_rdt</span><span class="p">.</span><span class="n">next</span><span class="p">;</span> <span class="n">rdt</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">;</span> <span class="n">rdt</span> <span class="o">=</span> <span class="n">rdt</span><span class="o">-&gt;</span><span class="n">next</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">		<span class="nf">COMP_CRC32C</span><span class="p">(</span><span class="n">rdata_crc</span><span class="p">,</span> <span class="n">rdt</span><span class="o">-&gt;</span><span class="n">data</span><span class="p">,</span> <span class="n">rdt</span><span class="o">-&gt;</span><span class="n">len</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">	<span class="n">rechdr</span><span class="o">-&gt;</span><span class="n">xl_xid</span> <span class="o">=</span> <span class="nf">GetCurrentTransactionIdIfAny</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl">	<span class="n">rechdr</span><span class="o">-&gt;</span><span class="n">xl_tot_len</span> <span class="o">=</span> <span class="n">total_len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">	<span class="n">rechdr</span><span class="o">-&gt;</span><span class="n">xl_info</span> <span class="o">=</span> <span class="n">info</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">	<span class="n">rechdr</span><span class="o">-&gt;</span><span class="n">xl_rmid</span> <span class="o">=</span> <span class="n">rmid</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">	<span class="n">rechdr</span><span class="o">-&gt;</span><span class="n">xl_prev</span> <span class="o">=</span> <span class="n">InvalidXLogRecPtr</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">	<span class="n">rechdr</span><span class="o">-&gt;</span><span class="n">xl_crc</span> <span class="o">=</span> <span class="n">rdata_crc</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="o">&amp;</span><span class="n">hdr_rdt</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 1.2 */</span>
+</span></span><span class="line"><span class="cl"><span class="n">XLogRecPtr</span> <span class="nf">XLogInsertRecord</span><span class="p">(</span><span class="n">XLogRecData</span> <span class="n">rdata</span><span class="p">,</span> <span class="n">XLogRecPtr</span> <span class="n">fpw_lsn</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogCtlInsert</span> <span class="o">*</span><span class="n">Insert</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">XLogCtl</span><span class="o">-&gt;</span><span class="n">Insert</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecord</span> <span class="o">*</span><span class="n">rechdr</span> <span class="o">=</span> <span class="p">(</span><span class="n">XLogRecord</span> <span class="o">*</span><span class="p">)</span> <span class="n">rdata</span><span class="o">-&gt;</span><span class="n">data</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">isLogSwitch</span> <span class="o">=</span> <span class="n">rechdr</span><span class="o">-&gt;</span><span class="n">xl_rmid</span> <span class="o">==</span> <span class="n">RM_XLOG_ID</span> <span class="o">&amp;&amp;</span> <span class="n">rechdr</span><span class="o">-&gt;</span><span class="n">xl_info</span> <span class="o">==</span> <span class="n">XLOG_SWITCH</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="nl">isLogSwitch</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="nf">WALInsertLockAcquireExclusive</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">    <span class="k">else</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">        <span class="nf">WALInsertLockAcquire</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="n">RedoRecPtr</span> <span class="o">!=</span> <span class="n">Insert</span><span class="o">-&gt;</span><span class="nl">RedoRecPtr</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="n">RedoRecPtr</span> <span class="o">=</span> <span class="n">Insert</span><span class="o">-&gt;</span><span class="n">RedoRecPtr</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">doPageWrites</span> <span class="o">=</span> <span class="n">Insert</span><span class="o">-&gt;</span><span class="n">fullPageWrites</span> <span class="o">||</span> <span class="n">Insert</span><span class="o">-&gt;</span><span class="n">forcePageWrites</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecPtr</span>	<span class="n">StartPos</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecPtr</span>	<span class="n">EndPos</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="nl">isLogSwitch</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="n">insert</span> <span class="o">=</span> <span class="nf">ReserveXLogSwitch</span><span class="p">(</span><span class="o">&amp;</span><span class="n">StartPos</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">EndPos</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">rechdr</span><span class="o">-&gt;</span><span class="n">xl_prev</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="k">else</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">        <span class="nf">ReserveXLogInsertLocation</span><span class="p">(</span><span class="n">rechdr</span><span class="o">-&gt;</span><span class="n">xl_tot_len</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">StartPos</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">EndPos</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">rechdr</span><span class="o">-&gt;</span><span class="n">xl_prev</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">inserted</span> <span class="o">=</span> <span class="nb">true</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="nl">inserted</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="nf">CopyXLogRecordToWAL</span><span class="p">(</span><span class="n">rechdr</span><span class="o">-&gt;</span><span class="n">xl_tot_len</span><span class="p">,</span> <span class="n">isLogSwitch</span><span class="p">,</span> <span class="n">rdata</span><span class="p">,</span> <span class="n">StartPos</span><span class="p">,</span> <span class="n">EndPos</span><span class="p">)</span> <span class="cm">/* 封装实际数据 */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="nf">WALInsertLockRelease</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">MarkCurrentTransactionIdLoggedIfAny</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="cm">/* Update shared LogwrtRqst.Write, if we crossed page boundary */</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="n">StartPos</span> <span class="o">/</span> <span class="n">XLOG_BLCKSZ</span> <span class="o">!=</span> <span class="n">EndPos</span> <span class="o">/</span> <span class="nl">XLOG_BLCKSZ</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">XLogCtl</span><span class="o">-&gt;</span><span class="n">LogwrtRqst</span><span class="p">.</span><span class="n">Write</span> <span class="o">&lt;</span> <span class="nl">EndPos</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">XLogCtl</span><span class="o">-&gt;</span><span class="n">LogwrtRqst</span><span class="p">.</span><span class="n">Write</span> <span class="o">=</span> <span class="n">EndPos</span><span class="p">;</span> <span class="cm">/* 更新所有进程的xlog写入位置 */</span>
+</span></span><span class="line"><span class="cl">        <span class="n">LogwrtResult</span> <span class="o">=</span> <span class="n">XLogCtl</span><span class="o">-&gt;</span><span class="n">LogwrtResult</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="nl">isLogSwitch</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="nf">XLogFlush</span><span class="p">(</span><span class="n">EndPos</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">TODO</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">ProcLastRecPtr</span> <span class="o">=</span> <span class="n">StartPos</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XactLastRecEnd</span> <span class="o">=</span> <span class="n">EndPos</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 1.2.1 */</span>
+</span></span><span class="line"><span class="cl"><span class="nf">CopyXLogRecordToWAL</span><span class="p">(</span><span class="kt">int</span> <span class="n">write_len</span><span class="p">,</span> <span class="n">XLogRecData</span> <span class="o">*</span><span class="n">rdata</span><span class="p">,</span> <span class="n">XLogRecPtr</span> <span class="n">StartPos</span><span class="p">,</span> <span class="n">XLogRecPtr</span> <span class="n">EndPos</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">char</span> <span class="o">*</span><span class="n">currpos</span> <span class="o">=</span> <span class="n">StartPos</span>
+</span></span><span class="line"><span class="cl">    <span class="n">currpos</span> <span class="o">=</span> <span class="nf">GetXLogBuffer</span><span class="p">(</span><span class="n">CurrPos</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">freespace</span> <span class="o">=</span> <span class="nf">INSERT_FREESPACE</span><span class="p">(</span><span class="n">CurrPos</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">while</span> <span class="p">(</span><span class="n">rdata</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="kt">char</span> <span class="o">*</span><span class="n">rdata_data</span> <span class="o">=</span> <span class="n">rdata</span><span class="o">-&gt;</span><span class="n">data</span>
+</span></span><span class="line"><span class="cl">        <span class="kt">int</span> <span class="n">rdata_len</span> <span class="o">=</span> <span class="n">rdata</span><span class="o">-&gt;</span><span class="n">len</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="k">while</span> <span class="p">(</span><span class="n">rdata_len</span> <span class="o">&gt;</span> <span class="n">freespace</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="nf">memcpy</span><span class="p">(</span><span class="n">currpos</span><span class="p">,</span> <span class="n">rdata_data</span><span class="p">,</span> <span class="n">freespace</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">rdata_data</span> <span class="o">+=</span> <span class="n">freespace</span>
+</span></span><span class="line"><span class="cl">            <span class="n">rdata_len</span> <span class="o">-=</span> <span class="n">freespace</span>
+</span></span><span class="line"><span class="cl">            <span class="n">written</span> <span class="o">+=</span> <span class="n">freespace</span>
+</span></span><span class="line"><span class="cl">            <span class="n">CurrPos</span> <span class="o">+=</span> <span class="n">freespace</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">            <span class="n">currpos</span> <span class="o">=</span> <span class="nf">GetXLogBuffer</span><span class="p">(</span><span class="n">CurrPos</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="p">...</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="nf">memcpy</span><span class="p">(</span><span class="n">currpos</span><span class="p">,</span> <span class="n">rdata_data</span><span class="p">,</span> <span class="n">rdata_len</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="p">...</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="n">isLogSwitch</span>
+</span></span><span class="line"><span class="cl">        <span class="k">while</span> <span class="p">(</span><span class="n">CurrPos</span> <span class="o">&lt;</span> <span class="n">EndPos</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="nf">WALInsertLockUpdateInsertingAt</span><span class="p">(</span><span class="n">CurrPos</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="nf">AdvanceXLInsertBuffer</span><span class="p">(</span><span class="n">CurrPos</span><span class="p">)</span>
+</span></span></code></pre></div><h2 id="14-log-page">1.4 log page<a hidden class="anchor" aria-hidden="true" href="#14-log-page">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="nf">log_newpage_buffer</span><span class="p">()</span>
+</span></span></code></pre></div><h1 id="2-xlog重放">2 xlog重放<a hidden class="anchor" aria-hidden="true" href="#2-xlog重放">#</a></h1>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="n">XLogReaderState</span> <span class="o">*</span><span class="n">xlogreader</span> <span class="o">=</span> <span class="nf">XLogReaderAllocate</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecord</span> <span class="n">record</span> <span class="o">=</span> <span class="nf">ReadRecord</span><span class="p">(</span><span class="n">xlogreader</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="k">do</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">        <span class="n">RmgrTable</span><span class="p">[</span><span class="n">record</span><span class="o">-&gt;</span><span class="n">xl_rmid</span><span class="p">].</span><span class="nf">rm_redo</span><span class="p">(</span><span class="n">xlogreader</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">        <span class="n">record</span> <span class="o">=</span> <span class="nf">ReadRecord</span><span class="p">(</span><span class="n">xlogreader</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">heap_redo</span><span class="p">(</span><span class="n">XLogReaderState</span> <span class="o">*</span><span class="n">record</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint8</span> <span class="n">info</span> <span class="o">=</span> <span class="nf">XLogRecGetInfo</span><span class="p">(</span><span class="n">record</span><span class="p">)</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">XLR_INFO_MASK</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="k">switch</span> <span class="n">info</span> <span class="o">&amp;</span> <span class="nl">XLOG_HEAP_OPMASK</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="k">case</span> <span class="nl">XLOG_HEAP_INSERT</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="nf">heap_xlog_insert</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="k">case</span> <span class="nl">XLOG_HEAP_DELETE</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">TODO</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">heap_xlog_insert</span><span class="p">(</span><span class="n">XLogReaderState</span> <span class="o">*</span><span class="n">record</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecPtr</span>	<span class="n">lsn</span> <span class="o">=</span> <span class="n">record</span><span class="o">-&gt;</span><span class="n">EndRecPtr</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">RelFileNode</span> <span class="n">target_node</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">XLogRecGetBlockTag</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">target_node</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">blkno</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="cm">/*  set tup&#39;s offset */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ItemPointerData</span> <span class="n">target_tid</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">ItemPointerSetBlockNumber</span><span class="p">(</span><span class="o">&amp;</span><span class="n">target_tid</span><span class="p">,</span> <span class="n">blkno</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">ItemPointerSetOffsetNumber</span><span class="p">(</span><span class="o">&amp;</span><span class="n">target_tid</span><span class="p">,</span> <span class="n">xlrec</span><span class="o">-&gt;</span><span class="n">offnum</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">xl_heap_insert</span> <span class="o">*</span><span class="n">xlrec</span> <span class="o">=</span> <span class="p">(</span><span class="n">xl_heap_insert</span> <span class="o">*</span><span class="p">)</span> <span class="nf">XLogRecGetData</span><span class="p">(</span><span class="n">record</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="nf">XLogRecGetInfo</span><span class="p">(</span><span class="n">record</span><span class="p">)</span> <span class="o">=</span> <span class="n">XLOG_HEAP_INIT_PAGE</span>
+</span></span><span class="line"><span class="cl">        <span class="n">buffer</span> <span class="o">=</span> <span class="nf">XLogInitBufferForRedo</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">page</span> <span class="o">=</span> <span class="nf">BufferGetPage</span><span class="p">(</span><span class="n">buffer</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="nf">PageInit</span><span class="p">(</span><span class="n">page</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="k">else</span>
+</span></span><span class="line"><span class="cl">        <span class="n">action</span> <span class="o">=</span> <span class="nf">XLogReadBufferForRedo</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">buffer</span><span class="p">)</span>
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="c1">// 1 插入阶段
+</span></span></span><span class="line"><span class="cl"><span class="nf">heap_insert</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">LogBeginInsert</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">XLogRegisterData</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">datasz</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">XLogRegisterBuffer</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">buffer</span><span class="p">,</span> <span class="n">bufflags</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">XLogRegisterBufData0</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">datasz</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">XLogRegisterBufData</span><span class="p">(</span><span class="n">o</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">datasz</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">XLogIncludeOrigin</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecPtr</span> <span class="o">=</span> <span class="nf">XLogInsert</span><span class="p">(</span><span class="n">RM_HEAP_ID</span><span class="p">,</span> <span class="n">XLOG_HEAP_INSERT</span> <span class="o">|</span> <span class="n">XLOG_HEAP_INIT_PAGE</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1">// 2 组装阶段 - 调用assemble
+</span></span></span><span class="line"><span class="cl"><span class="nf">XLogInsert</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecPtr</span> <span class="n">RedoRecPtr</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecPtr</span> <span class="n">fpw_lsn</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">GetFullPageWriteInfo</span><span class="p">(</span><span class="o">&amp;</span><span class="n">RedoRecPtr</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecData</span> <span class="o">*</span><span class="n">tdt</span> <span class="o">=</span> <span class="nf">XLogRecordAssemble</span><span class="p">(</span><span class="n">rmid</span><span class="p">,</span> <span class="n">info</span><span class="p">,</span> <span class="n">doPageWrites</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">fpw_lsn</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecPtr</span> <span class="n">EndPos</span> <span class="o">=</span> <span class="nf">XLogInsertRecord</span><span class="p">(</span><span class="n">rdt</span><span class="p">,</span> <span class="n">fpw_lsn</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1">// assemble 返回值
+</span></span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="n">XLogRecData</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="k">struct</span> <span class="n">XLogRecData</span> <span class="o">*</span><span class="n">next</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">char</span> <span class="o">*</span><span class="n">data</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint32</span> <span class="n">len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">XLogRecData</span><span class="p">;</span>  <span class="cm">/* 物理xlog：header + main的list */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="n">uint64</span> <span class="n">XLogRecPtr</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1">// 物理xlog的头部
+</span></span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="n">XLogRecord</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint32</span> <span class="n">xl_tot_len</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">TransactionId</span> <span class="n">xl_xid</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">XLogRecPtr</span> <span class="n">xl_prev</span><span class="p">;</span> <span class="cm">/* 前一条物理xlog */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint8</span> <span class="n">xl_info</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">RmgrId</span> <span class="n">xl_rmid</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_crc32c</span> <span class="n">xl_crc</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">XLogRecord</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1">// 2.1 assemble 组装
+</span></span></span><span class="line"><span class="cl"><span class="n">XLogRecData</span> <span class="o">*</span><span class="nf">XLogRecordAssemble</span><span class="p">(</span><span class="n">rmid</span><span class="p">,</span> <span class="n">info</span><span class="p">,</span> <span class="n">doPageWrites</span><span class="p">)</span> <span class="cm">/* RM_HEAP_ID, XLOG_HEAP_INSERT | XLOG_HEAP_INIT_PAGE */</span>
+</span></span><span class="line"><span class="cl">    <span class="k">for</span> <span class="p">(</span><span class="n">block_id</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">block_id</span> <span class="o">&lt;</span> <span class="n">max_registered_block_id</span><span class="p">;</span> <span class="n">block_id</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">        <span class="c1">// 1 依次获取 block / buffer
+</span></span></span><span class="line"><span class="cl">        <span class="n">registered_buffer</span> <span class="o">*</span><span class="n">regbuf</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">registered_buffers</span><span class="p">[</span><span class="n">block_id</span><span class="p">]</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="c1">// 2 判断是否写 full-page
+</span></span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="o">:</span>
+</span></span><span class="line"><span class="cl">            <span class="p">...</span>
+</span></span><span class="line"><span class="cl">        <span class="k">else</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">XLogRecPtr</span> <span class="n">page_lsn</span> <span class="o">=</span> <span class="nf">PageGetLSN</span><span class="p">(</span><span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">page</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                <span class="n">needs_backup</span> <span class="o">=</span> <span class="p">(</span><span class="n">page_lsn</span> <span class="o">&lt;=</span> <span class="n">RedoRecPtr</span><span class="p">)</span> <span class="c1">// page的lsn小于xlog的lsn
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="c1">// 3 构造 BlockHeader
+</span></span></span><span class="line"><span class="cl">        <span class="n">XLogRecordBlockHeader</span> <span class="n">bkpb</span>
+</span></span><span class="line"><span class="cl">        <span class="n">bkpb</span><span class="p">.</span><span class="n">id</span> <span class="o">=</span> <span class="n">block_id</span>
+</span></span><span class="line"><span class="cl">        <span class="n">bkpb</span><span class="p">.</span><span class="n">fork_flags</span> <span class="o">=</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">forkno</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="nl">REGBUF_WILL_INIT</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">bkpb</span><span class="p">.</span><span class="n">fork_flags</span> <span class="o">|=</span> <span class="n">BKPBLOCK_WILL_INIT</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="c1">// 4 拼接 page image
+</span></span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="nl">needs_backup</span><span class="p">:</span> <span class="c1">// header后紧跟page imge
+</span></span></span><span class="line"><span class="cl">            <span class="n">Page</span> <span class="n">page</span> <span class="o">=</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">page</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="nl">REGBUF_STANDARD</span><span class="p">:</span> <span class="c1">// 计算孔洞
+</span></span></span><span class="line"><span class="cl">                <span class="n">bimg</span><span class="p">.</span><span class="n">hole_offset</span> <span class="o">=</span> <span class="n">lower</span>
+</span></span><span class="line"><span class="cl">                <span class="n">cbimg</span><span class="p">.</span><span class="n">hole_length</span> <span class="o">=</span> <span class="n">upper</span> <span class="o">-</span> <span class="n">lower</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="nl">wal_compression</span><span class="p">:</span> <span class="c1">// 压缩page
+</span></span></span><span class="line"><span class="cl">                <span class="n">is_compressed</span> <span class="o">=</span> <span class="nf">XLogCompressBackupBlock</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">bimg</span><span class="p">.</span><span class="n">hole_offset</span><span class="p">,</span> <span class="n">cbimg</span><span class="p">.</span><span class="n">hole_length</span><span class="p">,</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">compressed_page</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">compressed_len</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">bkpb</span><span class="p">.</span><span class="n">fork_flags</span> <span class="o">|=</span> <span class="n">BKPBLOCK_HAS_IMAGE</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="nl">is_compressed</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="c1">// 物理数据 | XLogRecord--BlockNumber | regbuf-&gt;compressed_page
+</span></span></span><span class="line"><span class="cl">            <span class="k">else</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">                <span class="n">bimg</span><span class="p">.</span><span class="n">length</span> <span class="o">=</span> <span class="n">BLCKSZ</span> <span class="o">-</span> <span class="n">cbimg</span><span class="p">.</span><span class="n">hole_length</span>
+</span></span><span class="line"><span class="cl">                <span class="k">if</span> <span class="n">cbimg</span><span class="p">.</span><span class="n">hole_length</span> <span class="o">==</span> <span class="mi">0</span>
+</span></span><span class="line"><span class="cl">                    <span class="c1">// 物理数据 | XLogRecord--BlockNumber | regbuf-&gt;page
+</span></span></span><span class="line"><span class="cl">                    <span class="n">rdt_datas_last</span><span class="o">-&gt;</span><span class="n">data</span> <span class="o">=</span> <span class="n">page</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">rdt_datas_last</span><span class="o">-&gt;</span><span class="n">len</span> <span class="o">=</span> <span class="n">BLCKSZ</span>
+</span></span><span class="line"><span class="cl">                <span class="k">else</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">                    <span class="c1">// page分成两部分存：page起始到hole起始，hole结束到page结束
+</span></span></span><span class="line"><span class="cl">                    <span class="c1">// 物理数据 | XLogRecord--BlockNumber | regbuf-&gt;page--hole_offset |   regbuf-&gt;page--hole_offset--hole_length |
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="c1">// 5 拼接 tuple data
+</span></span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="nl">needs_data</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="c1">// // 物理数据 | XLogRecord--BlockNumber | regbuf-&gt;page | data1 | data2 | ... |
+</span></span></span><span class="line"><span class="cl">            <span class="n">bkpb</span><span class="p">.</span><span class="n">fork_flags</span> <span class="o">|=</span> <span class="n">BKPBLOCK_HAS_DATA</span>
+</span></span><span class="line"><span class="cl">            <span class="n">bkpb</span><span class="p">.</span><span class="n">data_length</span> <span class="o">=</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_len</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">            <span class="n">rdt_datas_last</span><span class="o">-&gt;</span><span class="n">next</span> <span class="o">=</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_head</span>
+</span></span><span class="line"><span class="cl">            <span class="n">rdt_datas_last</span> <span class="o">=</span> <span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rdata_tail</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="c1">// 6 继续填充 BlockHeader
+</span></span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">prev_regbuf</span> <span class="o">&amp;&amp;</span> <span class="nf">RelFileNodeEquals</span><span class="p">(</span><span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rnode</span><span class="p">,</span> <span class="n">prev_regbuf</span><span class="o">-&gt;</span><span class="n">rnode</span><span class="p">)</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">samerel</span> <span class="o">=</span> <span class="nb">true</span>
+</span></span><span class="line"><span class="cl">            <span class="n">bkpb</span><span class="p">.</span><span class="n">fork_flags</span> <span class="o">|=</span> <span class="n">BKPBLOCK_SAME_REL</span>
+</span></span><span class="line"><span class="cl">        <span class="n">prev_regbuf</span> <span class="o">=</span> <span class="n">regbuf</span>
+</span></span><span class="line"><span class="cl">        <span class="c1">// 物理数据：| XLogRecord  XLogRecordBlockHeader | regbuf-&gt;page | ...
+</span></span></span><span class="line"><span class="cl">        <span class="nf">memcpy</span><span class="p">(</span><span class="n">scratch</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">bkpb</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">XLogRecordBlockHeader</span><span class="p">))</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="c1">// 7 继续填充
+</span></span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="nl">needs_backup</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="c1">// 物理数据：| XLogRecord XLogRecordBlockHeader XLogRecordBlockImageHeader | regbuf-&gt;page | ...
+</span></span></span><span class="line"><span class="cl">            <span class="nf">memcpy</span><span class="p">(</span><span class="n">scratch</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">bimg</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">XLogRecordBlockImageHeader</span><span class="p">))</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="n">cbimg</span><span class="p">.</span><span class="n">hole_length</span> <span class="o">!=</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="nl">is_compressed</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="c1">// 物理数据：| XLogRecord XLogRecordBlockHeader XLogRecordBlockImageHeader XLogRecordBlockCompressHeader | regbuf-&gt;page | ...
+</span></span></span><span class="line"><span class="cl">                <span class="nf">memcpy</span><span class="p">(</span><span class="n">scratch</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">cbimg</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">XLogRecordBlockCompressHeader</span><span class="p">))</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="nl">samerel</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="c1">// 物理数据：| XLogRecord XLogRecordBlockHeader XLogRecordBlockImageHeader XLogRecordBlockCompressHeader RelFileNode | regbuf-&gt;page | ...
+</span></span></span><span class="line"><span class="cl">            <span class="nf">memcpy</span><span class="p">(</span><span class="n">scratch</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">rnode</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">RelFileNode</span><span class="p">))</span>
+</span></span><span class="line"><span class="cl">        <span class="cm">/*
+</span></span></span><span class="line"><span class="cl"><span class="cm">         * 物理数据：（list的第一个node）
+</span></span></span><span class="line"><span class="cl"><span class="cm">         *  | XLogRecord
+</span></span></span><span class="line"><span class="cl"><span class="cm">         *  | XLogRecordBlockHeader  -----------+ 可能重复多次
+</span></span></span><span class="line"><span class="cl"><span class="cm">         *  | XLogRecordBlockImageHeader        |
+</span></span></span><span class="line"><span class="cl"><span class="cm">         *  | XLogRecordBlockCompressHeader     |
+</span></span></span><span class="line"><span class="cl"><span class="cm">         *  | RelFileNode                       |
+</span></span></span><span class="line"><span class="cl"><span class="cm">         *  | BlockNumber ----------------------+
+</span></span></span><span class="line"><span class="cl"><span class="cm">         *  | ... 重复
+</span></span></span><span class="line"><span class="cl"><span class="cm">         */</span>
+</span></span><span class="line"><span class="cl">        <span class="nf">memcpy</span><span class="p">(</span><span class="n">scratch</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">regbuf</span><span class="o">-&gt;</span><span class="n">block</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">BlockNumber</span><span class="p">))</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span> <span class="c1">// 结束遍历 Block
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="cm">/*
+</span></span></span><span class="line"><span class="cl"><span class="cm">    * 物理数据：（list的第一个node）
+</span></span></span><span class="line"><span class="cl"><span class="cm">    *  | XLogRecord
+</span></span></span><span class="line"><span class="cl"><span class="cm">    *  | XLogRecordBlockHeader  -----------+ 可能重复多次
+</span></span></span><span class="line"><span class="cl"><span class="cm">    *  | XLogRecordBlockImageHeader        |
+</span></span></span><span class="line"><span class="cl"><span class="cm">    *  | XLogRecordBlockCompressHeader     |
+</span></span></span><span class="line"><span class="cl"><span class="cm">    *  | RelFileNode                       |
+</span></span></span><span class="line"><span class="cl"><span class="cm">    *  | BlockNumber ----------------------+
+</span></span></span><span class="line"><span class="cl"><span class="cm">    *  | ... 重复
+</span></span></span><span class="line"><span class="cl"><span class="cm">    *  | XLR_BLOCK_ID_ORIGIN
+</span></span></span><span class="line"><span class="cl"><span class="cm">    *  | replorigin_session_origin (uint16)
+</span></span></span><span class="line"><span class="cl"><span class="cm">    *  | XLR_BLOCK_ID_DATA_SHORT
+</span></span></span><span class="line"><span class="cl"><span class="cm">    *  | mainrdata_len
+</span></span></span><span class="line"><span class="cl"><span class="cm">    */</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="n">include_origin</span> <span class="o">&amp;&amp;</span> <span class="nl">replorigin_session_origin</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="o">*</span><span class="p">(</span><span class="n">scratch</span><span class="o">++</span><span class="p">)</span> <span class="o">=</span> <span class="n">XLR_BLOCK_ID_ORIGIN</span>
+</span></span><span class="line"><span class="cl">        <span class="nf">memcpy</span><span class="p">(</span><span class="n">scratch</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">replorigin_session_origin</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">replorigin_session_origin</span><span class="p">))</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="c1">// 4 拼接 maindata
+</span></span></span><span class="line"><span class="cl">        <span class="cm">/*
+</span></span></span><span class="line"><span class="cl"><span class="cm">        * [XLogRecord-...-BlockNumber] -&gt; [page1] -&gt; [page2]-&gt; [page1 data1] -&gt; [page2 data2] -&gt;  [maindata] -&gt; [maindata] -&gt; [...]
+</span></span></span><span class="line"><span class="cl"><span class="cm">        */</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">mainrdata_len</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="o">:</span>
+</span></span><span class="line"><span class="cl">            <span class="o">*</span><span class="p">(</span><span class="n">scratch</span><span class="o">++</span><span class="p">)</span> <span class="o">=</span> <span class="n">XLR_BLOCK_ID_DATA_LONG</span> <span class="o">/</span> <span class="n">XLR_BLOCK_ID_DATA_SHORT</span>
+</span></span><span class="line"><span class="cl">            <span class="nf">memcpy</span><span class="p">(</span><span class="n">scratch</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">mainrdata_len</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">uint32</span><span class="p">))</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">            <span class="n">rdt_datas_last</span><span class="o">-&gt;</span><span class="n">next</span> <span class="o">=</span> <span class="n">mainrdata_head</span>
+</span></span><span class="line"><span class="cl">            <span class="n">rdt_datas_last</span> <span class="o">=</span> <span class="n">mainrdata_last</span>
+</span></span></code></pre></div><p>xlog完整格式</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="c1"># 物理xlog</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>   list 节点                   <span class="p">|</span> 是否必选                 描述
+</span></span><span class="line"><span class="cl">+-------------------------------+---+-----------------------------------------------------------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> XLogRecord                    <span class="p">|</span> Y <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>   <span class="s">&lt;&lt; loop start &gt;&gt;            | - |
+</span></span></span><span class="line"><span class="cl"><span class="s">| XLogRecordBlockHeader         | N | 有page时 {id, fork_flags, data_length} : INIT_PAGE HAS_IMAGE HAS_DATA
+</span></span></span><span class="line"><span class="cl"><span class="s">| XLogRecordBlockImageHeader    | N | 有page时，写入full-page镜像
+</span></span></span><span class="line"><span class="cl"><span class="s">| XLogRecordBlockCompressHeader | N | 有page时，写入full-page镜像，开启压缩
+</span></span></span><span class="line"><span class="cl"><span class="s">| RelFileNode                   | N | 有page时
+</span></span></span><span class="line"><span class="cl"><span class="s">| BlockNumber                   | N | 有page时
+</span></span></span><span class="line"><span class="cl"><span class="s">|   &lt;&lt; loop</span> end &gt;&gt;              <span class="p">|</span> - <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> XLR_BLOCK_ID_ORIGIN           <span class="p">|</span> N <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> replorigin_session_origin     <span class="p">|</span> N <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> XLR_BLOCK_ID_DATA_SHORT/LONG  <span class="p">|</span> N <span class="p">|</span> 有maindata时（可能有误）
+</span></span><span class="line"><span class="cl"><span class="p">|</span> mainrdata_len                 <span class="p">|</span> N <span class="p">|</span> 有maindata时
+</span></span><span class="line"><span class="cl">+-------------------------------<span class="p">|</span>---<span class="p">|</span>-----------------------------------------------------------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> page start -- hole start      <span class="p">|</span> N <span class="p">|</span> 有page时，写入full-page镜像
+</span></span><span class="line"><span class="cl">+-------------------------------<span class="p">|</span>---<span class="p">|</span>-----------------------------------------------------------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> hole end -- page end          <span class="p">|</span> N <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+-------------------------------<span class="p">|</span>---<span class="p">|</span>-----------------------------------------------------------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> block1_data1                  <span class="p">|</span> N <span class="p">|</span> xl_heap_header <span class="o">{</span>t_infomask2, t_infomask, t_hoff<span class="o">}</span> : 记录tuple信息
+</span></span><span class="line"><span class="cl">+-------------------------------<span class="p">|</span>---<span class="p">|</span>-----------------------------------------------------------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> block1_data2                  <span class="p">|</span> N <span class="p">|</span> tuple-&gt;t_data : 记录tuple数据
+</span></span><span class="line"><span class="cl">+-------------------------------<span class="p">|</span>---<span class="p">|</span>-----------------------------------------------------------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> block2_data1                  <span class="p">|</span> N <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+-------------------------------<span class="p">|</span>---<span class="p">|</span>-----------------------------------------------------------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> block...                      <span class="p">|</span> N <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+-------------------------------<span class="p">|</span>---<span class="p">|</span>-----------------------------------------------------------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> maindata1                     <span class="p">|</span> N <span class="p">|</span> xl_heap_insert <span class="o">{</span>OffsetNumber, flags<span class="o">}</span> ： 记录tuple位置
+</span></span><span class="line"><span class="cl">+-------------------------------<span class="p">|</span>---<span class="p">|</span>-----------------------------------------------------------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> maindata2                     <span class="p">|</span> N <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+-------------------------------<span class="p">|</span>---<span class="p">|</span>-----------------------------------------------------------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> maindata...                   <span class="p">|</span> N <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+-------------------------------<span class="p">|</span>---<span class="p">|</span>-----------------------------------------------------------------
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="cm">/* symbol name, textual name, redo, desc, identify, startup, cleanup */</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_XLOG_ID</span><span class="p">,</span> <span class="s">&#34;XLOG&#34;</span><span class="p">,</span> <span class="n">xlog_redo</span><span class="p">,</span> <span class="n">xlog_desc</span><span class="p">,</span> <span class="n">xlog_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_XACT_ID</span><span class="p">,</span> <span class="s">&#34;Transaction&#34;</span><span class="p">,</span> <span class="n">xact_redo</span><span class="p">,</span> <span class="n">xact_desc</span><span class="p">,</span> <span class="n">xact_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_SMGR_ID</span><span class="p">,</span> <span class="s">&#34;Storage&#34;</span><span class="p">,</span> <span class="n">smgr_redo</span><span class="p">,</span> <span class="n">smgr_desc</span><span class="p">,</span> <span class="n">smgr_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_CLOG_ID</span><span class="p">,</span> <span class="s">&#34;CLOG&#34;</span><span class="p">,</span> <span class="n">clog_redo</span><span class="p">,</span> <span class="n">clog_desc</span><span class="p">,</span> <span class="n">clog_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_DBASE_ID</span><span class="p">,</span> <span class="s">&#34;Database&#34;</span><span class="p">,</span> <span class="n">dbase_redo</span><span class="p">,</span> <span class="n">dbase_desc</span><span class="p">,</span> <span class="n">dbase_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_TBLSPC_ID</span><span class="p">,</span> <span class="s">&#34;Tablespace&#34;</span><span class="p">,</span> <span class="n">tblspc_redo</span><span class="p">,</span> <span class="n">tblspc_desc</span><span class="p">,</span> <span class="n">tblspc_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_MULTIXACT_ID</span><span class="p">,</span> <span class="s">&#34;MultiXact&#34;</span><span class="p">,</span> <span class="n">multixact_redo</span><span class="p">,</span> <span class="n">multixact_desc</span><span class="p">,</span> <span class="n">multixact_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_RELMAP_ID</span><span class="p">,</span> <span class="s">&#34;RelMap&#34;</span><span class="p">,</span> <span class="n">relmap_redo</span><span class="p">,</span> <span class="n">relmap_desc</span><span class="p">,</span> <span class="n">relmap_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_STANDBY_ID</span><span class="p">,</span> <span class="s">&#34;Standby&#34;</span><span class="p">,</span> <span class="n">standby_redo</span><span class="p">,</span> <span class="n">standby_desc</span><span class="p">,</span> <span class="n">standby_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_HEAP2_ID</span><span class="p">,</span> <span class="s">&#34;Heap2&#34;</span><span class="p">,</span> <span class="n">heap2_redo</span><span class="p">,</span> <span class="n">heap2_desc</span><span class="p">,</span> <span class="n">heap2_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_HEAP_ID</span><span class="p">,</span> <span class="s">&#34;Heap&#34;</span><span class="p">,</span> <span class="n">heap_redo</span><span class="p">,</span> <span class="n">heap_desc</span><span class="p">,</span> <span class="n">heap_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_BTREE_ID</span><span class="p">,</span> <span class="s">&#34;Btree&#34;</span><span class="p">,</span> <span class="n">btree_redo</span><span class="p">,</span> <span class="n">btree_desc</span><span class="p">,</span> <span class="n">btree_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_HASH_ID</span><span class="p">,</span> <span class="s">&#34;Hash&#34;</span><span class="p">,</span> <span class="n">hash_redo</span><span class="p">,</span> <span class="n">hash_desc</span><span class="p">,</span> <span class="n">hash_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_GIN_ID</span><span class="p">,</span> <span class="s">&#34;Gin&#34;</span><span class="p">,</span> <span class="n">gin_redo</span><span class="p">,</span> <span class="n">gin_desc</span><span class="p">,</span> <span class="n">gin_identify</span><span class="p">,</span> <span class="n">gin_xlog_startup</span><span class="p">,</span> <span class="n">gin_xlog_cleanup</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_GIST_ID</span><span class="p">,</span> <span class="s">&#34;Gist&#34;</span><span class="p">,</span> <span class="n">gist_redo</span><span class="p">,</span> <span class="n">gist_desc</span><span class="p">,</span> <span class="n">gist_identify</span><span class="p">,</span> <span class="n">gist_xlog_startup</span><span class="p">,</span> <span class="n">gist_xlog_cleanup</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_SEQ_ID</span><span class="p">,</span> <span class="s">&#34;Sequence&#34;</span><span class="p">,</span> <span class="n">seq_redo</span><span class="p">,</span> <span class="n">seq_desc</span><span class="p">,</span> <span class="n">seq_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_SPGIST_ID</span><span class="p">,</span> <span class="s">&#34;SPGist&#34;</span><span class="p">,</span> <span class="n">spg_redo</span><span class="p">,</span> <span class="n">spg_desc</span><span class="p">,</span> <span class="n">spg_identify</span><span class="p">,</span> <span class="n">spg_xlog_startup</span><span class="p">,</span> <span class="n">spg_xlog_cleanup</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_BRIN_ID</span><span class="p">,</span> <span class="s">&#34;BRIN&#34;</span><span class="p">,</span> <span class="n">brin_redo</span><span class="p">,</span> <span class="n">brin_desc</span><span class="p">,</span> <span class="n">brin_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_COMMIT_TS_ID</span><span class="p">,</span> <span class="s">&#34;CommitTs&#34;</span><span class="p">,</span> <span class="n">commit_ts_redo</span><span class="p">,</span> <span class="n">commit_ts_desc</span><span class="p">,</span> <span class="n">commit_ts_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nf">PG_RMGR</span><span class="p">(</span><span class="n">RM_REPLORIGIN_ID</span><span class="p">,</span> <span class="s">&#34;ReplicationOrigin&#34;</span><span class="p">,</span> <span class="n">replorigin_redo</span><span class="p">,</span> <span class="n">replorigin_desc</span><span class="p">,</span> <span class="n">replorigin_identify</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span>
+</span></span></code></pre></div><h2 id="21-heap">2.1 HEAP<a hidden class="anchor" aria-hidden="true" href="#21-heap">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP_INSERT		0x00
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP_DELETE		0x10
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP_UPDATE		0x20
+</span></span></span><span class="line"><span class="cl"><span class="cm">/* 0x030 is free, was XLOG_HEAP_MOVE */</span>
+</span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP_HOT_UPDATE	0x40
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP_CONFIRM		0x50
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP_LOCK			0x60
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP_INPLACE		0x70
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP_OPMASK		0x70
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP_INIT_PAGE		0x80
+</span></span></span></code></pre></div><h2 id="22-heap2">2.2 HEAP2<a hidden class="anchor" aria-hidden="true" href="#22-heap2">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP2_REWRITE		0x00
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP2_CLEAN		0x10
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP2_FREEZE_PAGE	0x20
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP2_CLEANUP_INFO 0x30
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP2_VISIBLE		0x40
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP2_MULTI_INSERT 0x50
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP2_LOCK_UPDATED 0x60
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_HEAP2_NEW_CID		0x70
+</span></span></span></code></pre></div><h2 id="23-xlog">2.3 XLOG<a hidden class="anchor" aria-hidden="true" href="#23-xlog">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="cp">#define XLOG_CHECKPOINT_SHUTDOWN		0x00
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_CHECKPOINT_ONLINE			0x10
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_NOOP						0x20
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_NEXTOID					0x30
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_SWITCH						0x40
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_BACKUP_END					0x50
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_PARAMETER_CHANGE			0x60
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_RESTORE_POINT				0x70
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_FPW_CHANGE					0x80
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_END_OF_RECOVERY			0x90
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_FPI_FOR_HINT				0xA0
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define XLOG_FPI						0xB0
+</span></span></span></code></pre></div><h2 id="24-rm_smgr_id">2.4 RM_SMGR_ID<a hidden class="anchor" aria-hidden="true" href="#24-rm_smgr_id">#</a></h2>
+<p>```c<br>
+#define XLOG_SMGR_CREATE 0x10<br>
+#define XLOG_SMGR_TRUNCATE 0x20<br>
+``</p>
+<h2 id="25">2.5<a hidden class="anchor" aria-hidden="true" href="#25">#</a></h2>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/postgresql/">PostgreSQL</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/postgresql/postgresinternal/">PostgresInternal</a></li><li><a href="/posts/postgresql/3-6-tans-ai/">PostgreSQL 3-2 Transation (v2)</a></li><li><a href="/posts/postgresql/2-10-func/">PostgreSQL 2-10 function</a></li><li><a href="/posts/postgresql/5-1-libpq/">PostgreSQL 5-1 libpq</a></li><li><a href="/posts/postgresql/3-14-physical-replication/">PostgreSQL 3-14 物理复制</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./PostgreSQL</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

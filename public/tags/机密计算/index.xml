@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>机密计算 on Kernel Notes</title>
+    <link>http://localhost:1313/tags/%E6%9C%BA%E5%AF%86%E8%AE%A1%E7%AE%97/</link>
+    <description>Recent content in 机密计算 on Kernel Notes</description>
+    <generator>Hugo -- 0.155.3</generator>
+    <language>zh-cn</language>
+    <lastBuildDate>Mon, 17 Aug 2026 11:27:23 +0800</lastBuildDate>
+    <atom:link href="http://localhost:1313/tags/%E6%9C%BA%E5%AF%86%E8%AE%A1%E7%AE%97/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>高质量专项 全密态机密计算</title>
+      <link>http://localhost:1313/posts/security/confidential-computing/</link>
+      <pubDate>Mon, 19 Jan 2026 18:37:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/security/confidential-computing/</guid>
+      <description>&lt;h1 id=&#34;目录&#34;&gt;目录&lt;/h1&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#%E7%9B%AE%E5%BD%95&#34;&gt;目录&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#1-%E6%9E%B6%E6%9E%84&#34;&gt;1 架构&lt;/a&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#1-1-%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84&#34;&gt;1.1 整体架构&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#2-%E6%B5%81%E7%A8%8B&#34;&gt;2 流程&lt;/a&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#2-1-%E6%95%B4%E4%BD%93%E6%B5%81%E7%A8%8B&#34;&gt;2.1 整体流程&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#3-%E8%AE%BE%E8%AE%A1&#34;&gt;3 设计&lt;/a&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#3-1-%E9%A9%B1%E5%8A%A8%E5%8A%A0%E5%AF%86&#34;&gt;3.1 驱动加密&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#3-2-%E6%9C%BA%E5%AF%86%E8%AE%A1%E7%AE%97&#34;&gt;3.2 机密计算&lt;/a&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;#%E4%B8%80%E3%80%81%E6%8A%80%E6%9C%AF%E8%B0%83%E7%A0%94&#34;&gt;一、技术调研&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#%E4%BA%8C%E3%80%81%E6%96%B9%E6%A1%88%E5%AF%B9%E6%AF%94&#34;&gt;二、方案对比&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#4-%E6%8E%A5%E5%8F%A3&#34;&gt;4 接口&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;#5-%E5%AE%9E%E7%8E%B0&#34;&gt;5 实现&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h1 id=&#34;1-架构&#34;&gt;1 架构&lt;/h1&gt;
+&lt;h2 id=&#34;11-整体架构&#34;&gt;1.1 整体架构&lt;/h2&gt;
+&lt;p&gt;&lt;strong&gt;全密态数据库&lt;/strong&gt;是一种由数据库提供的安全特性，指数据库在处理数据的过程中，确保数据在传输、计算、存储等全生命周期阶段，于任何不可信的介质或环境中，始终处于加密状态。不可信环境包括：网络、内存、磁盘等。以常见的拓扑模型为例，在使用数据库的过程中，威胁面较广：&lt;/p&gt;
+&lt;p&gt;&lt;img alt=&#34;risk&#34; loading=&#34;lazy&#34; src=&#34;http://localhost:1313/images/Security/confidential-computing/risk.png&#34;&gt;&lt;/p&gt;
+&lt;p&gt;全密态数据库中，对于传输、存储安全，采用驱动加密方案。应用向数据库发送数据时，先在驱动中加密数据，再发送数据密文。应用从数据库接收数据时，先接收数据密文，再在驱动中解密数据。数据在网络、磁盘、服务端内存中，均处于加密状态。基本架构如下图所示：&lt;/p&gt;
+&lt;p&gt;&lt;img alt=&#34;driver&#34; loading=&#34;lazy&#34; src=&#34;http://localhost:1313/images/Security/confidential-computing/driver.png&#34;&gt;&lt;/p&gt;
+&lt;p&gt;全密态数据库中，对于计算安全，采用机密计算方案。驱动加密方案，解决传输、存储安全，但是，数据库端无法在密文上计算。为解决计算问题，业界有两种方案：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;基于密码学算法的密文计算方案：通过密码学算法，让数据库在直接在密文上进行计算，例如保序加密、可搜索加密、同态加密等&lt;/li&gt;
+&lt;li&gt;基于硬件隔离的机密计算方案：在CPU、内存中，划分逻辑独立的可信执行环境，让数据库在可信执行环境中解密数据密文，进行计算。&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;在充分对比安全性、功能完备性、性能、实现难度等特点，选择机密计算方案。结合驱动加密方案、机密计算方案，全密态数据库整体架构如下图所示：&lt;/p&gt;
+&lt;p&gt;&lt;img alt=&#34;all&#34; loading=&#34;lazy&#34; src=&#34;http://localhost:1313/images/Security/confidential-computing/all.png&#34;&gt;&lt;/p&gt;
+&lt;p&gt;全密态数据库中，对于加密模型，采用多级密钥方案。数据由数据密钥加密，密钥由主密钥加密，主密钥由根密钥加密。在驱动加密模块中，只能获取数据密钥，无法获取主密钥。在更安全的加密方案中，驱动加密模块无法获取数据密钥，由硬件加密机加密。在数据库端，仅存储密钥信息，无法获取密钥。全密态数据库加密模型如下图所示：&lt;/p&gt;
+&lt;p&gt;&lt;img alt=&#34;crypt&#34; loading=&#34;lazy&#34; src=&#34;http://localhost:1313/images/Security/confidential-computing/crypt.png&#34;&gt;&lt;/p&gt;
+&lt;h1 id=&#34;2-流程&#34;&gt;2 流程&lt;/h1&gt;
+&lt;h2 id=&#34;21-整体流程&#34;&gt;2.1 整体流程&lt;/h2&gt;
+&lt;p&gt;使用全密态数据库时，用户需定义主密钥、数据密钥、加密表，在执行存储、查询数据时，全密态数据库自动完成加密、解密、计算等操作。完整的使用流程如图所示：&lt;/p&gt;
+&lt;p&gt;&lt;img alt=&#34;flow&#34; loading=&#34;lazy&#34; src=&#34;http://localhost:1313/images/Security/confidential-computing/flow.png&#34;&gt;&lt;/p&gt;
+&lt;h1 id=&#34;3-设计&#34;&gt;3 设计&lt;/h1&gt;
+&lt;h2 id=&#34;31-驱动加密&#34;&gt;3.1 驱动加密&lt;/h2&gt;
+&lt;h2 id=&#34;32-机密计算&#34;&gt;3.2 机密计算&lt;/h2&gt;
+&lt;h3 id=&#34;一技术调研&#34;&gt;一、技术调研&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;纯软路线&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;同态加密&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;软硬路线&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;x86
+&lt;ul&gt;
+&lt;li&gt;cpu
+&lt;ul&gt;
+&lt;li&gt;sgx：硬件&lt;/li&gt;
+&lt;li&gt;tdx：硬件&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;固件
+&lt;ul&gt;
+&lt;li&gt;me：出厂自带&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;软件
+&lt;ul&gt;
+&lt;li&gt;sgx driver&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;amd
+&lt;ul&gt;
+&lt;li&gt;cpu
+&lt;ul&gt;
+&lt;li&gt;sev：Secure Encrypted Virtualization，CPU扩展电路，为每台虚拟机分配内存密钥，运行时加密整段内存。需BIOS开启。&lt;/li&gt;
+&lt;li&gt;sev-snp/sev-es&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;固件
+&lt;ul&gt;
+&lt;li&gt;psp&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;软件
+&lt;ul&gt;
+&lt;li&gt;kvm sev&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;arm
+&lt;ul&gt;
+&lt;li&gt;cpu
+&lt;ul&gt;
+&lt;li&gt;trust-zone：每个核新增总线，&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;固件
+&lt;ul&gt;
+&lt;li&gt;arm trusted fimware&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;软件
+&lt;ul&gt;
+&lt;li&gt;op-tee&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;tee: &lt;a href=&#34;https://github.com/OP-TEE/build&#34;&gt;https://github.com/OP-TEE/build&lt;/a&gt;&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>海量 0 机密计算</title>
+      <link>http://localhost:1313/posts/projectdocs/0-confidential-computing/</link>
+      <pubDate>Mon, 12 Jan 2026 16:49:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/projectdocs/0-confidential-computing/</guid>
+      <description>&lt;h1 id=&#34;概述&#34;&gt;概述&lt;/h1&gt;
+&lt;h2 id=&#34;11-机密计算&#34;&gt;1.1 机密计算&lt;/h2&gt;
+&lt;h2 id=&#34;12-可信执行环境&#34;&gt;1.2 可信执行环境&lt;/h2&gt;</description>
+    </item>
+  </channel>
+</rss>

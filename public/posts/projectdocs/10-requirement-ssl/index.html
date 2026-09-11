@@ -1,0 +1,2668 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>海量 10 需求 SSL协议 | Kernel Notes</title>
+<meta name="keywords" content="SSL, 需求文档">
+<meta name="description" content="1 简介
+1.1 目的
+在应用与数据库传输数据时，为避免攻击者对数据进行窃听、篡改、伪造、重放等攻击，Vastbase支持采用TLS协议保障数据机密性与完整性。
+通过TLS协议，应用传输数据指至服务端路程如下：
+
+建立连接：与数据建立TCP连接
+生成密钥(TLS)：采用TLS协议协商生成密钥(连接级)
+加密数据(TLS)：使用密钥加密数据(SQL等)
+发送数据：通过TCP协议，发送数据密文至数据库
+
+客户可能采用第三方工具，截取网络流量，获取传输中的SQL等数据，进行流量审计。但是，在使用TLS协议的情况下，网络中的数据是密文形式，无法进行流量审计。为解决该问题，本文介绍如何让第三方工具获取密钥，以解密网络中的数据密文。
+1.2 适用范围
+本文适用于3.0.8 psu4以之后版本。未来本需求将同步至2.2.15版本。
+1.3 术语定义、首字母缩写词和缩略语
+
+SSL: Secure Sockets Layer，于保障网络通信安全的加密协议，早期协议，存在设计缺陷，目前由TLS协议替代。但是，SSL也可不特指SSL协议，可泛指所有通信安全加密协议。同时，由于历史原因，以及前向兼容，数据库中的很多参数与接口采用SSL命令，实际使用的是TLS协议。无需纠结TLS与SSL差异，vastbase中SSL等于TLS。
+TLS: Transport Layer Security，更安全的传输加密协议。早期版本1.0,1.1已不安全，主流版本为1.2,1.3。
+
+1.3 参考资料
+
+原始需求：https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001084569
+openssl支持的所有cipers： https://docs.openssl.org/3.0/man1/openssl-ciphers/
+ssl与tls原理：博客写了一点点，没整理
+
+2 TLS协议支持第三方流量审计
+2.1 功能简述
+【需求现状】
+目前，大部分第三方流量审计工具，可在一些特定场景下，解密由TLS协议加密后的数据。以vastbase为例，使用TLS协议分为以下阶段：
+
+生成证书、私钥文件
+vastbase端配置证书、私钥文件
+vsql端配置证书、私钥文件
+vsql连接vastbase
+4.1 建立tcp连接
+4.2 使用证书校验对方身份
+4.3 双发协商选择算法套件：包括密钥生成协议、加密算法等
+4.4 双方协商生成密钥
+vsql与vastbase传输数据
+5.1 发送数据前，使用密钥加密数据
+5.2 发送数据密文
+在4.3步骤中，可配置不同的密钥生成协议，对于其中一部分协议，在步骤4.4中，第三方工具可获取密钥，第步骤5.2中，第三方工具截取数据密文后，即可解密数据。
+但是，4.3步骤中，目前vastbase仅支持2种密钥生成协议，这2种协议都无法让第三方工具获取密钥。
+
+【密钥生成协议】
+此处介绍2类常见的密钥生成协议：
+
+
+一、DHE密钥协商协议
+Vastbase目前支持的2种协议，都属于此类协议
+client                                    server
+&#43;-------------------------------------------&#43;-----------------------------------
+|  &lt;-------- 0. 双方随机约定一些参数 ------&gt;  |
+| 1. 生成随机私钥 client_priv
+| 2. 基于client_priv，计算公钥 client_pub
+| 3. 发送公钥 client_pub ------------&gt;
+                                            | 4. 接收公钥 client_pub
+                                            | 5. 生成随机私钥 server_priv
+                                            | 6. 基于server_priv，计算公钥 server_pub
+                            &lt;------------   | 7. 发送公钥 server_pub
+| 8. 接收公钥 server_pub
+| 9. 基于client_priv，server_pub，计算密钥
+                                            | 10. 基于server_priv，client_pub，计算密钥
+（第9步和第10步，可以计算出相同的密钥）
+
+简单举个例子
+client                                    server
+&#43;-------------------------------------------&#43;-----------------------------------
+|  &lt;----- 0. generate and send (2,11) ----&gt; |
+| 1. generate 8
+| 2. caculate (8 * 2) % 11 = 5
+| 3. send 5 ----------&gt;  
+                                            | 4. receive 5
+                                            | 5. generate 10
+                                            | 6. caculate (10 * 2) % 11 = 9
+                            &lt;------------   | 7. send 9
+| 8. receive 9
+| 9. key = (8 * 9) % 11 = 6
+                                            | 10. key = (10 * 5) % 11 = 6
+
+攻击者：截获网络流量，获取2,11,5,9，无法计算出密钥为6
+
+
+二、RSA密钥交换协议
+该协议支持第三方工具解密流量，客户选择的工具已适配该协议。TLS还支持其他PSK、SRP等协议，但是，由于这些协议比较少见，且客户选择的工具未适配，本次不适配其他协议。">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/projectdocs/10-requirement-ssl/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/projectdocs/10-requirement-ssl/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/projectdocs/10-requirement-ssl/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="海量 10 需求 SSL协议">
+  <meta property="og:description" content="1 简介 1.1 目的 在应用与数据库传输数据时，为避免攻击者对数据进行窃听、篡改、伪造、重放等攻击，Vastbase支持采用TLS协议保障数据机密性与完整性。
+通过TLS协议，应用传输数据指至服务端路程如下：
+建立连接：与数据建立TCP连接 生成密钥(TLS)：采用TLS协议协商生成密钥(连接级) 加密数据(TLS)：使用密钥加密数据(SQL等) 发送数据：通过TCP协议，发送数据密文至数据库 客户可能采用第三方工具，截取网络流量，获取传输中的SQL等数据，进行流量审计。但是，在使用TLS协议的情况下，网络中的数据是密文形式，无法进行流量审计。为解决该问题，本文介绍如何让第三方工具获取密钥，以解密网络中的数据密文。
+1.2 适用范围 本文适用于3.0.8 psu4以之后版本。未来本需求将同步至2.2.15版本。
+1.3 术语定义、首字母缩写词和缩略语 SSL: Secure Sockets Layer，于保障网络通信安全的加密协议，早期协议，存在设计缺陷，目前由TLS协议替代。但是，SSL也可不特指SSL协议，可泛指所有通信安全加密协议。同时，由于历史原因，以及前向兼容，数据库中的很多参数与接口采用SSL命令，实际使用的是TLS协议。无需纠结TLS与SSL差异，vastbase中SSL等于TLS。 TLS: Transport Layer Security，更安全的传输加密协议。早期版本1.0,1.1已不安全，主流版本为1.2,1.3。 1.3 参考资料 原始需求：https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001084569 openssl支持的所有cipers： https://docs.openssl.org/3.0/man1/openssl-ciphers/ ssl与tls原理：博客写了一点点，没整理 2 TLS协议支持第三方流量审计 2.1 功能简述 【需求现状】
+目前，大部分第三方流量审计工具，可在一些特定场景下，解密由TLS协议加密后的数据。以vastbase为例，使用TLS协议分为以下阶段：
+生成证书、私钥文件 vastbase端配置证书、私钥文件 vsql端配置证书、私钥文件 vsql连接vastbase
+4.1 建立tcp连接
+4.2 使用证书校验对方身份
+4.3 双发协商选择算法套件：包括密钥生成协议、加密算法等
+4.4 双方协商生成密钥 vsql与vastbase传输数据
+5.1 发送数据前，使用密钥加密数据
+5.2 发送数据密文
+在4.3步骤中，可配置不同的密钥生成协议，对于其中一部分协议，在步骤4.4中，第三方工具可获取密钥，第步骤5.2中，第三方工具截取数据密文后，即可解密数据。
+但是，4.3步骤中，目前vastbase仅支持2种密钥生成协议，这2种协议都无法让第三方工具获取密钥。 【密钥生成协议】
+此处介绍2类常见的密钥生成协议：
+一、DHE密钥协商协议
+Vastbase目前支持的2种协议，都属于此类协议
+client server &#43;-------------------------------------------&#43;----------------------------------- | &lt;-------- 0. 双方随机约定一些参数 ------&gt; | | 1. 生成随机私钥 client_priv | 2. 基于client_priv，计算公钥 client_pub | 3. 发送公钥 client_pub ------------&gt; | 4. 接收公钥 client_pub | 5. 生成随机私钥 server_priv | 6. 基于server_priv，计算公钥 server_pub &lt;------------ | 7. 发送公钥 server_pub | 8. 接收公钥 server_pub | 9. 基于client_priv，server_pub，计算密钥 | 10. 基于server_priv，client_pub，计算密钥 （第9步和第10步，可以计算出相同的密钥） 简单举个例子 client server &#43;-------------------------------------------&#43;----------------------------------- | &lt;----- 0. generate and send (2,11) ----&gt; | | 1. generate 8 | 2. caculate (8 * 2) % 11 = 5 | 3. send 5 ----------&gt; | 4. receive 5 | 5. generate 10 | 6. caculate (10 * 2) % 11 = 9 &lt;------------ | 7. send 9 | 8. receive 9 | 9. key = (8 * 9) % 11 = 6 | 10. key = (10 * 5) % 11 = 6 攻击者：截获网络流量，获取2,11,5,9，无法计算出密钥为6 二、RSA密钥交换协议
+该协议支持第三方工具解密流量，客户选择的工具已适配该协议。TLS还支持其他PSK、SRP等协议，但是，由于这些协议比较少见，且客户选择的工具未适配，本次不适配其他协议。">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-09-03T11:07:00+08:00">
+    <meta property="article:modified_time" content="2026-08-14T17:47:31+08:00">
+    <meta property="article:tag" content="SSL">
+    <meta property="article:tag" content="需求文档">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="海量 10 需求 SSL协议">
+<meta name="twitter:description" content="1 简介
+1.1 目的
+在应用与数据库传输数据时，为避免攻击者对数据进行窃听、篡改、伪造、重放等攻击，Vastbase支持采用TLS协议保障数据机密性与完整性。
+通过TLS协议，应用传输数据指至服务端路程如下：
+
+建立连接：与数据建立TCP连接
+生成密钥(TLS)：采用TLS协议协商生成密钥(连接级)
+加密数据(TLS)：使用密钥加密数据(SQL等)
+发送数据：通过TCP协议，发送数据密文至数据库
+
+客户可能采用第三方工具，截取网络流量，获取传输中的SQL等数据，进行流量审计。但是，在使用TLS协议的情况下，网络中的数据是密文形式，无法进行流量审计。为解决该问题，本文介绍如何让第三方工具获取密钥，以解密网络中的数据密文。
+1.2 适用范围
+本文适用于3.0.8 psu4以之后版本。未来本需求将同步至2.2.15版本。
+1.3 术语定义、首字母缩写词和缩略语
+
+SSL: Secure Sockets Layer，于保障网络通信安全的加密协议，早期协议，存在设计缺陷，目前由TLS协议替代。但是，SSL也可不特指SSL协议，可泛指所有通信安全加密协议。同时，由于历史原因，以及前向兼容，数据库中的很多参数与接口采用SSL命令，实际使用的是TLS协议。无需纠结TLS与SSL差异，vastbase中SSL等于TLS。
+TLS: Transport Layer Security，更安全的传输加密协议。早期版本1.0,1.1已不安全，主流版本为1.2,1.3。
+
+1.3 参考资料
+
+原始需求：https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001084569
+openssl支持的所有cipers： https://docs.openssl.org/3.0/man1/openssl-ciphers/
+ssl与tls原理：博客写了一点点，没整理
+
+2 TLS协议支持第三方流量审计
+2.1 功能简述
+【需求现状】
+目前，大部分第三方流量审计工具，可在一些特定场景下，解密由TLS协议加密后的数据。以vastbase为例，使用TLS协议分为以下阶段：
+
+生成证书、私钥文件
+vastbase端配置证书、私钥文件
+vsql端配置证书、私钥文件
+vsql连接vastbase
+4.1 建立tcp连接
+4.2 使用证书校验对方身份
+4.3 双发协商选择算法套件：包括密钥生成协议、加密算法等
+4.4 双方协商生成密钥
+vsql与vastbase传输数据
+5.1 发送数据前，使用密钥加密数据
+5.2 发送数据密文
+在4.3步骤中，可配置不同的密钥生成协议，对于其中一部分协议，在步骤4.4中，第三方工具可获取密钥，第步骤5.2中，第三方工具截取数据密文后，即可解密数据。
+但是，4.3步骤中，目前vastbase仅支持2种密钥生成协议，这2种协议都无法让第三方工具获取密钥。
+
+【密钥生成协议】
+此处介绍2类常见的密钥生成协议：
+
+
+一、DHE密钥协商协议
+Vastbase目前支持的2种协议，都属于此类协议
+client                                    server
+&#43;-------------------------------------------&#43;-----------------------------------
+|  &lt;-------- 0. 双方随机约定一些参数 ------&gt;  |
+| 1. 生成随机私钥 client_priv
+| 2. 基于client_priv，计算公钥 client_pub
+| 3. 发送公钥 client_pub ------------&gt;
+                                            | 4. 接收公钥 client_pub
+                                            | 5. 生成随机私钥 server_priv
+                                            | 6. 基于server_priv，计算公钥 server_pub
+                            &lt;------------   | 7. 发送公钥 server_pub
+| 8. 接收公钥 server_pub
+| 9. 基于client_priv，server_pub，计算密钥
+                                            | 10. 基于server_priv，client_pub，计算密钥
+（第9步和第10步，可以计算出相同的密钥）
+
+简单举个例子
+client                                    server
+&#43;-------------------------------------------&#43;-----------------------------------
+|  &lt;----- 0. generate and send (2,11) ----&gt; |
+| 1. generate 8
+| 2. caculate (8 * 2) % 11 = 5
+| 3. send 5 ----------&gt;  
+                                            | 4. receive 5
+                                            | 5. generate 10
+                                            | 6. caculate (10 * 2) % 11 = 9
+                            &lt;------------   | 7. send 9
+| 8. receive 9
+| 9. key = (8 * 9) % 11 = 6
+                                            | 10. key = (10 * 5) % 11 = 6
+
+攻击者：截获网络流量，获取2,11,5,9，无法计算出密钥为6
+
+
+二、RSA密钥交换协议
+该协议支持第三方工具解密流量，客户选择的工具已适配该协议。TLS还支持其他PSK、SRP等协议，但是，由于这些协议比较少见，且客户选择的工具未适配，本次不适配其他协议。">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "海量 10 需求 SSL协议",
+      "item": "http://localhost:1313/posts/projectdocs/10-requirement-ssl/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "海量 10 需求 SSL协议",
+  "name": "海量 10 需求 SSL协议",
+  "description": "1 简介 1.1 目的 在应用与数据库传输数据时，为避免攻击者对数据进行窃听、篡改、伪造、重放等攻击，Vastbase支持采用TLS协议保障数据机密性与完整性。\n通过TLS协议，应用传输数据指至服务端路程如下：\n建立连接：与数据建立TCP连接 生成密钥(TLS)：采用TLS协议协商生成密钥(连接级) 加密数据(TLS)：使用密钥加密数据(SQL等) 发送数据：通过TCP协议，发送数据密文至数据库 客户可能采用第三方工具，截取网络流量，获取传输中的SQL等数据，进行流量审计。但是，在使用TLS协议的情况下，网络中的数据是密文形式，无法进行流量审计。为解决该问题，本文介绍如何让第三方工具获取密钥，以解密网络中的数据密文。\n1.2 适用范围 本文适用于3.0.8 psu4以之后版本。未来本需求将同步至2.2.15版本。\n1.3 术语定义、首字母缩写词和缩略语 SSL: Secure Sockets Layer，于保障网络通信安全的加密协议，早期协议，存在设计缺陷，目前由TLS协议替代。但是，SSL也可不特指SSL协议，可泛指所有通信安全加密协议。同时，由于历史原因，以及前向兼容，数据库中的很多参数与接口采用SSL命令，实际使用的是TLS协议。无需纠结TLS与SSL差异，vastbase中SSL等于TLS。 TLS: Transport Layer Security，更安全的传输加密协议。早期版本1.0,1.1已不安全，主流版本为1.2,1.3。 1.3 参考资料 原始需求：https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001084569 openssl支持的所有cipers： https://docs.openssl.org/3.0/man1/openssl-ciphers/ ssl与tls原理：博客写了一点点，没整理 2 TLS协议支持第三方流量审计 2.1 功能简述 【需求现状】\n目前，大部分第三方流量审计工具，可在一些特定场景下，解密由TLS协议加密后的数据。以vastbase为例，使用TLS协议分为以下阶段：\n生成证书、私钥文件 vastbase端配置证书、私钥文件 vsql端配置证书、私钥文件 vsql连接vastbase\n4.1 建立tcp连接\n4.2 使用证书校验对方身份\n4.3 双发协商选择算法套件：包括密钥生成协议、加密算法等\n4.4 双方协商生成密钥 vsql与vastbase传输数据\n5.1 发送数据前，使用密钥加密数据\n5.2 发送数据密文\n在4.3步骤中，可配置不同的密钥生成协议，对于其中一部分协议，在步骤4.4中，第三方工具可获取密钥，第步骤5.2中，第三方工具截取数据密文后，即可解密数据。\n但是，4.3步骤中，目前vastbase仅支持2种密钥生成协议，这2种协议都无法让第三方工具获取密钥。 【密钥生成协议】\n此处介绍2类常见的密钥生成协议：\n一、DHE密钥协商协议\nVastbase目前支持的2种协议，都属于此类协议\nclient server +-------------------------------------------+----------------------------------- | \u0026lt;-------- 0. 双方随机约定一些参数 ------\u0026gt; | | 1. 生成随机私钥 client_priv | 2. 基于client_priv，计算公钥 client_pub | 3. 发送公钥 client_pub ------------\u0026gt; | 4. 接收公钥 client_pub | 5. 生成随机私钥 server_priv | 6. 基于server_priv，计算公钥 server_pub \u0026lt;------------ | 7. 发送公钥 server_pub | 8. 接收公钥 server_pub | 9. 基于client_priv，server_pub，计算密钥 | 10. 基于server_priv，client_pub，计算密钥 （第9步和第10步，可以计算出相同的密钥） 简单举个例子 client server +-------------------------------------------+----------------------------------- | \u0026lt;----- 0. generate and send (2,11) ----\u0026gt; | | 1. generate 8 | 2. caculate (8 * 2) % 11 = 5 | 3. send 5 ----------\u0026gt; | 4. receive 5 | 5. generate 10 | 6. caculate (10 * 2) % 11 = 9 \u0026lt;------------ | 7. send 9 | 8. receive 9 | 9. key = (8 * 9) % 11 = 6 | 10. key = (10 * 5) % 11 = 6 攻击者：截获网络流量，获取2,11,5,9，无法计算出密钥为6 二、RSA密钥交换协议\n该协议支持第三方工具解密流量，客户选择的工具已适配该协议。TLS还支持其他PSK、SRP等协议，但是，由于这些协议比较少见，且客户选择的工具未适配，本次不适配其他协议。\n",
+  "keywords": [
+    "SSL", "需求文档"
+  ],
+  "articleBody": "1 简介 1.1 目的 在应用与数据库传输数据时，为避免攻击者对数据进行窃听、篡改、伪造、重放等攻击，Vastbase支持采用TLS协议保障数据机密性与完整性。\n通过TLS协议，应用传输数据指至服务端路程如下：\n建立连接：与数据建立TCP连接 生成密钥(TLS)：采用TLS协议协商生成密钥(连接级) 加密数据(TLS)：使用密钥加密数据(SQL等) 发送数据：通过TCP协议，发送数据密文至数据库 客户可能采用第三方工具，截取网络流量，获取传输中的SQL等数据，进行流量审计。但是，在使用TLS协议的情况下，网络中的数据是密文形式，无法进行流量审计。为解决该问题，本文介绍如何让第三方工具获取密钥，以解密网络中的数据密文。\n1.2 适用范围 本文适用于3.0.8 psu4以之后版本。未来本需求将同步至2.2.15版本。\n1.3 术语定义、首字母缩写词和缩略语 SSL: Secure Sockets Layer，于保障网络通信安全的加密协议，早期协议，存在设计缺陷，目前由TLS协议替代。但是，SSL也可不特指SSL协议，可泛指所有通信安全加密协议。同时，由于历史原因，以及前向兼容，数据库中的很多参数与接口采用SSL命令，实际使用的是TLS协议。无需纠结TLS与SSL差异，vastbase中SSL等于TLS。 TLS: Transport Layer Security，更安全的传输加密协议。早期版本1.0,1.1已不安全，主流版本为1.2,1.3。 1.3 参考资料 原始需求：https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001084569 openssl支持的所有cipers： https://docs.openssl.org/3.0/man1/openssl-ciphers/ ssl与tls原理：博客写了一点点，没整理 2 TLS协议支持第三方流量审计 2.1 功能简述 【需求现状】\n目前，大部分第三方流量审计工具，可在一些特定场景下，解密由TLS协议加密后的数据。以vastbase为例，使用TLS协议分为以下阶段：\n生成证书、私钥文件 vastbase端配置证书、私钥文件 vsql端配置证书、私钥文件 vsql连接vastbase\n4.1 建立tcp连接\n4.2 使用证书校验对方身份\n4.3 双发协商选择算法套件：包括密钥生成协议、加密算法等\n4.4 双方协商生成密钥 vsql与vastbase传输数据\n5.1 发送数据前，使用密钥加密数据\n5.2 发送数据密文\n在4.3步骤中，可配置不同的密钥生成协议，对于其中一部分协议，在步骤4.4中，第三方工具可获取密钥，第步骤5.2中，第三方工具截取数据密文后，即可解密数据。\n但是，4.3步骤中，目前vastbase仅支持2种密钥生成协议，这2种协议都无法让第三方工具获取密钥。 【密钥生成协议】\n此处介绍2类常见的密钥生成协议：\n一、DHE密钥协商协议\nVastbase目前支持的2种协议，都属于此类协议\nclient server +-------------------------------------------+----------------------------------- | \u003c-------- 0. 双方随机约定一些参数 ------\u003e | | 1. 生成随机私钥 client_priv | 2. 基于client_priv，计算公钥 client_pub | 3. 发送公钥 client_pub ------------\u003e | 4. 接收公钥 client_pub | 5. 生成随机私钥 server_priv | 6. 基于server_priv，计算公钥 server_pub \u003c------------ | 7. 发送公钥 server_pub | 8. 接收公钥 server_pub | 9. 基于client_priv，server_pub，计算密钥 | 10. 基于server_priv，client_pub，计算密钥 （第9步和第10步，可以计算出相同的密钥） 简单举个例子 client server +-------------------------------------------+----------------------------------- | \u003c----- 0. generate and send (2,11) ----\u003e | | 1. generate 8 | 2. caculate (8 * 2) % 11 = 5 | 3. send 5 ----------\u003e | 4. receive 5 | 5. generate 10 | 6. caculate (10 * 2) % 11 = 9 \u003c------------ | 7. send 9 | 8. receive 9 | 9. key = (8 * 9) % 11 = 6 | 10. key = (10 * 5) % 11 = 6 攻击者：截获网络流量，获取2,11,5,9，无法计算出密钥为6 二、RSA密钥交换协议\n该协议支持第三方工具解密流量，客户选择的工具已适配该协议。TLS还支持其他PSK、SRP等协议，但是，由于这些协议比较少见，且客户选择的工具未适配，本次不适配其他协议。\nclient server +-------------------------------------------+----------------------------------- | 1. 提前配置私钥、公钥 server_priv, server_pub \u003c------------ | 2. 发送公钥 server_pub | 3. 生成密钥 key | 4. 使用公钥加密密钥 enc_key = enncrypt(key, server_pub) | 5. 发送密钥 enc_key --------\u003e | 6. 接收密钥 enc_key | 7. 解密密钥 key = decrypt(enc_key, server_priv) 攻击者：截获网络流量，获取公钥server_pub, 加密后的enc_key，因为没有私钥，无法解密得到key 第三方工具：如果提前拿到server_priv，并且截获网络流量获取en_key，则可解密得到key 【TLS算法套件】\nTLS协议主要提供4个功能：\n身份认证（基于证书） 密钥生成（对称密钥） 数据机密性（对称加密） 数据完整性 用户使用TLS协议时，可选择不同算法套件，不同算法套件中，上述4个功能采用的协议或算法不同。\nopenssl 1.1.1n支持的算法套件有100+种，在编译libssl.so时，裁剪一些冷门的、不安全的算法套件后，vastbase使用的openssl支持60种。（执行openssl ciphers -v或者-v ‘ALL:eNULL’可查看）\n内核已支持以下几种：\nECDHE-ECDSA-AES256-GCM-SHA384 ECDHE-RSA-AES256-GCM-SHA384 DHE-RSA-AES256-GCM-SHA384 ECDHE-ECDSA-AES128-GCM-SHA256 DHE-RSA-AES128-GCM-SHA256 ECDHE-RSA-AES128-SHA256 ECDHE-ECDSA-SM4-CBC-SM3 4个仅tassl支持的国密算法套件 客户选择的第三方工具，支持7种：\n编号 算法套件 代码定义 支持情况 1 AES256-SHA256 TLS_RSA_WITH_AES_256_CBC_SHA256 可支持 2 AES128-SHA256 TLS_RSA_WITH_AES_128_CBC_SHA256 可支持 3 DES-CBC3-SHA TLS_RSA_WITH_3DES_EDE_CBC_SHA 含不安全算法3des，vastbase依赖的libssl.so编译裁剪 4 DES-CBC3-SHA SSL_RSA_WITH_3DES_EDE_CBC_SHA 含不安全算法3des，vastbase依赖的libssl.so编译裁剪 5 AES256-SHA SSL_RSA_WITH_AES_256_CBC_SHA 含不安全算法sha1，可支持，不建议支持 6 AES128-SHA TLS_RSA_WITH_AES_128_CBC_SHA 含不安全算法sha1，可支持，不建议支持 7 AES256-GCM-SHA256 TLS_RSA_WITH_AES_256_GCM_SHA256 找不到，只有AES256-GCM-SHA384、AES128-GCM-SHA256 客户提的几种看起来取名简单，和之前的风格不同，但这是openssl取的，这些名称都直接传递给libssl.so，openssl迭代过很多版本，执行openssl cipher -v显示的对应的名称就是以下4个。\n7种算法套中：\n第1、2种，算法是安全的，协议不太安全，但符合标准，整体算是安全的，可以不用参数控制 第2，3种，算法非常不安全，我们的openssl都完全不支持 第4，5种，算法不安全，如果要支持，需要参数控制 第7种，找不到 客户的要求，第三方工具能解密数据，因此只需至少支持其中1种即可，无需全都支持。\n客户提出的7种，本次支持2种。另外，还有2种客户未提出，但也满足条件，疑似是第7种，使用GCM加密模式，性能更高，本次也支持：\nAES128-SHA256 AES256-SHA256 AES128-GCM-SHA256 AES256-GCM-SHA384\n（代码中的定义分别为：TLS1_TXT_RSA_WITH_AES_128_SHA256、TLS1_TXT_RSA_WITH_AES_256_SHA256、TLS1_TXT_RSA_WITH_AES_128_GCM_SHA256、TLS1_TXT_RSA_WITH_AES_256_GCM_SHA384） 以下是vastbase libssl.so支持的60种完整算法套件，仅供参考：\n# Cipher Suite Protocol Kx Au Enc Mac 内核支持 1 AES128-GCM-SHA256 TLSv1.2 RSA RSA AESGCM(128) AEAD 满足条件，本次支持 2 AES128-SHA SSLv3 RSA RSA AES(128) SHA1 客户提出，不安全 3 AES128-SHA256 TLSv1.2 RSA RSA AES(128) SHA256 客户提出，本次支持 4 AES256-GCM-SHA384 TLSv1.2 RSA RSA AESGCM(256) AEAD 满足条件，本次可支持 5 AES256-SHA SSLv3 RSA RSA AES(256) SHA1 客户提出，不安全 6 AES256-SHA256 TLSv1.2 RSA RSA AES(256) SHA256 客户提出，本次支持 7 DHE-PSK-AES128-CBC-SHA SSLv3 DHEPSK PSK AES(128) SHA1 8 DHE-PSK-AES128-CBC-SHA256 TLSv1 DHEPSK PSK AES(128) SHA256 9 DHE-PSK-AES128-GCM-SHA256 TLSv1.2 DHEPSK PSK AESGCM(128) AEAD 10 DHE-PSK-AES256-CBC-SHA SSLv3 DHEPSK PSK AES(256) SHA1 11 DHE-PSK-AES256-CBC-SHA384 TLSv1 DHEPSK PSK AES(256) SHA384 12 DHE-PSK-AES256-GCM-SHA384 TLSv1.2 DHEPSK PSK AESGCM(256) AEAD 13 DHE-RSA-AES128-GCM-SHA256 TLSv1.2 DH RSA AESGCM(128) AEAD 已支持 14 DHE-RSA-AES128-SHA SSLv3 DH RSA AES(128) SHA1 15 DHE-RSA-AES128-SHA256 TLSv1.2 DH RSA AES(128) SHA256 16 DHE-RSA-AES256-GCM-SHA384 TLSv1.2 DH RSA AESGCM(256) AEAD 已支持 17 DHE-RSA-AES256-SHA SSLv3 DH RSA AES(256) SHA1 18 DHE-RSA-AES256-SHA256 TLSv1.2 DH RSA AES(256) SHA256 19 DHE-RSA-CHACHA20-POLY1305 TLSv1.2 DH RSA CHACHA20/POLY1305(256) AEAD 20 ECDHE-ECDSA-AES128-GCM-SHA256 TLSv1.2 ECDH ECDSA AESGCM(128) AEAD 已支持 21 ECDHE-ECDSA-AES128-SHA TLSv1 ECDH ECDSA AES(128) SHA1 22 ECDHE-ECDSA-AES128-SHA256 TLSv1.2 ECDH ECDSA AES(128) SHA256 23 ECDHE-ECDSA-AES256-GCM-SHA384 TLSv1.2 ECDH ECDSA AESGCM(256) AEAD 已支持 24 ECDHE-ECDSA-AES256-SHA TLSv1 ECDH ECDSA AES(256) SHA1 25 ECDHE-ECDSA-AES256-SHA384 TLSv1.2 ECDH ECDSA AES(256) SHA384 26 ECDHE-ECDSA-CHACHA20-POLY1305 TLSv1.2 ECDH ECDSA CHACHA20/POLY1305(256) AEAD 27 ECDHE-PSK-AES128-CBC-SHA TLSv1 ECDHEPSK PSK AES(128) SHA1 28 ECDHE-PSK-AES128-CBC-SHA256 TLSv1 ECDHEPSK PSK AES(128) SHA256 29 ECDHE-PSK-AES256-CBC-SHA TLSv1 ECDHEPSK PSK AES(256) SHA1 30 ECDHE-PSK-AES256-CBC-SHA384 TLSv1 ECDHEPSK PSK AES(256) SHA384 31 ECDHE-PSK-CHACHA20-POLY1305 TLSv1.2 ECDHEPSK PSK CHACHA20/POLY1305(256) AEAD 32 ECDHE-RSA-AES128-GCM-SHA256 TLSv1.2 ECDH RSA AESGCM(128) AEAD 33 ECDHE-RSA-AES128-SHA TLSv1 ECDH RSA AES(128) SHA1 34 ECDHE-RSA-AES128-SHA256 TLSv1.2 ECDH RSA AES(128) SHA256 已支持 35 ECDHE-RSA-AES256-GCM-SHA384 TLSv1.2 ECDH RSA AESGCM(256) AEAD 已支持 36 ECDHE-RSA-AES256-SHA TLSv1 ECDH RSA AES(256) SHA1 37 ECDHE-RSA-AES256-SHA384 TLSv1.2 ECDH RSA AES(256) SHA384 38 ECDHE-RSA-CHACHA20-POLY1305 TLSv1.2 ECDH RSA CHACHA20/POLY1305(256) AEAD 39 PSK-AES128-CBC-SHA SSLv3 PSK PSK AES(128) SHA1 40 PSK-AES128-CBC-SHA256 TLSv1 PSK PSK AES(128) SHA256 41 PSK-AES128-GCM-SHA256 TLSv1.2 PSK PSK AESGCM(128) AEAD 42 PSK-AES256-CBC-SHA SSLv3 PSK PSK AES(256) SHA1 43 PSK-AES256-CBC-SHA384 TLSv1 PSK PSK AES(256) SHA384 44 PSK-AES256-GCM-SHA384 TLSv1.2 PSK PSK AESGCM(256) AEAD 45 PSK-CHACHA20-POLY1305 TLSv1.2 PSK PSK CHACHA20/POLY1305(256) AEAD 46 RSA-PSK-AES128-CBC-SHA SSLv3 RSAPSK RSA AES(128) SHA1 47 RSA-PSK-AES128-CBC-SHA256 TLSv1 RSAPSK RSA AES(128) SHA256 48 RSA-PSK-AES128-GCM-SHA256 TLSv1.2 RSAPSK RSA AESGCM(128) AEAD 49 RSA-PSK-AES256-CBC-SHA SSLv3 RSAPSK RSA AES(256) SHA1 50 RSA-PSK-AES256-CBC-SHA384 TLSv1 RSAPSK RSA AES(256) SHA384 51 RSA-PSK-AES256-GCM-SHA384 TLSv1.2 RSAPSK RSA AESGCM(256) AEAD 52 RSA-PSK-CHACHA20-POLY1305 TLSv1.2 RSAPSK RSA CHACHA20/POLY1305(256) AEAD 53 SRP-AES-128-CBC-SHA SSLv3 SRP SRP AES(128) SHA1 54 SRP-AES-256-CBC-SHA SSLv3 SRP SRP AES(256) SHA1 55 SRP-RSA-AES-128-CBC-SHA SSLv3 SRP RSA AES(128) SHA1 56 SRP-RSA-AES-256-CBC-SHA SSLv3 SRP RSA AES(256) SHA1 57 TLS_AES_128_CCM_8_SHA256 TLSv1.3 any any AESCCM8(128) AEAD TLS版本过高 58 TLS_AES_128_CCM_SHA256 TLSv1.3 any any AESCCM(128) AEAD TLS版本过高 59 TLS_AES_256_GCM_SHA384 TLSv1.3 any any AESGCM(256) AEAD TLS版本过高 60 TLS_CHACHA20_POLY1305_SHA256 TLSv1.3 any any CHACHA20/POLY1305(256) AEAD TLS版本过高 2.2 功能说明 2.2.1 使用流程 前置条件：生成证书 此处介绍基于openssl工具，生成自签名证书的流程，与之前版本相比，无任何区别。\n创建存放私钥与证书的文件夹\nmkdir certs cd certs mkdir ./demoCA ./demoCA/newcerts ./demoCA/private echo '01'\u003e./demoCA/serial touch ./demoCA/index.txt 配置openssl工具\n从Vastbase安装包中，获取openssl工具以及openss配置文件。假设Vastbae安装包存放在$GAUSSHOME目录。\ncp $GAUSSHOME/bin/openssl ./ chmod +x ./openssl export PATH=`pwd`:$PATH which openssl # 确保openssl来源于Vastbase安装包，避免因版本不同造成证书不可用 openssl version cp $GAUSSHOME/share/sslcert/gsql/openssl.cnf ./ export OPENSSL_CONF=`pwd`/openssl.cnf 创建CA私钥、CA证书\nopenssl genrsa -out demoCA/private/cakey.pem 2048 openssl req -new -config openssl.cnf -key demoCA/private/cakey.pem -subj /C=CN/ST=BJ/L=HaiDian/O=VAST/OU=SEC/CN=CA -out cacert.req openssl ca -selfsign -config openssl.cnf -batch -keyfile demoCA/private/cakey.pem -in cacert.req -out demoCA/cacert.pem 创建数据库私钥、数据库证书\nopenssl genrsa -out server.key 2048 openssl req -new -config openssl.cnf -key server.key -subj /C=CN/ST=BJ/L=HaiDian/O=VAST/OU=SEC/CN=server -out server.req openssl ca -config openssl.cnf -days 3650 -batch -in server.req -out server.crt 创建应用端私钥、应用端证书\nopenssl genrsa -out client.key 2048 openssl req -new -config openssl.cnf -key client.key -subj /C=CN/ST=BJ/L=HaiDian/O=VAST/OU=SEC/CN=client -out client.req openssl ca -config openssl.cnf -days 3650 -batch -in client.req -out client.crt 设置私钥与证书文件权限\nchmod 600 client* server* ca* demoCA/ca* 场景一：配置可解密的TLS算法套件 创建新用户\nvsql -d vastbase -c \"CREATE USER u1 PASSWORD 'u1.password';\" 配置SSL证书\n此处，假设数据库的数据目录为$VBDATA。\nexport VBDATA=$GAUSSHOME/data vb_guc set -D $VBDATA -c \"ssl=on\" vb_guc set -D $VBDATA -c \"require_ssl=on\" vb_guc set -D $VBDATA -c \"ssl_cert_file='`pwd`/server.crt'\" vb_guc set -D $VBDATA -c \"ssl_key_file='`pwd`/server.key'\" vb_guc set -D $VBDATA -c \"ssl_ca_file='`pwd`/demoCA/cacert.pem'\" 接下来，需配置TLS协议采用的默认算法套件\n之前版本，ssl_ciphers取值范围如下： ECDHE-ECDSA-AES256-GCM-SHA384 ECDHE-RSA-AES256-GCM-SHA384 DHE-RSA-AES256-GCM-SHA384 ECDHE-ECDSA-AES128-GCM-SHA256 DHE-RSA-AES128-GCM-SHA256 ECDHE-RSA-AES128-SHA256 ECDHE-ECDSA-SM4-CBC-SM3 4个仅tassl支持的国密算法套件 本版本，新增4个取值范围 AES128-SHA256\nAES256-SHA256\nAES128-GCM-SHA256\nAES256-GCM-SHA384\nvb_guc set -D $VBDATA -c \"ssl_ciphers='AES128-SHA256'\" 开启远程登录\nvb_guc set -D $VBDATA -c \"listen_addresses='*'\" 开启登录防火墙\n在pg_hba.conf中，添加一行配置，确保该配置在所有host配置的第1行\nvb_guc set -D $VBDATA -h \"host all all 0.0.0.0/0 sha256\" 重启数据库，使配置生效\n应用端配置私钥与证书\n应用端通过环境变量或连接参数配置私钥与证书。\nexport PGSSLMODE=verify-ca export PGSSLCERT=`pwd`/client.crt export PGSSLKEY=`pwd`/client.key export PGSSLROOTCERT=`pwd`/demoCA/cacert.pem 应用端连接数据库\nvsql -h localhost -p 5432 -d vastbase -U u1 -W 'u1.password' -r # 预期结果：连接成功，启动TLS协议，使用的算法为AES128-SHA256（vsql会显示采用的算法套件） 场景二：第三方工具解密TLS流量 按场景一配置数据库\n使用tcpdump监听数据库端口，准备抓包\n需要root用户执行，接下来抓包的数据将输出到vsql.pcap中\ntcpdump -i any -w ./vsql.pcap 'tcp port 5432' vsql通过TLS连接数据库\nvsql -h localhost -p 5432 -d vastbase -U u1 -W 'u1.password' -r 此时，步骤2会在后台抓取vsql与vastbase传输的所有数据，并输出到vsql.pcap中\nwindows机器下载vsql.pcap\nwindows机器下载server.key文件\n即ssl_key_file参数配置的文件\nwindows安装wireshark工具\nwireshark直接打开vsql.pcap\n效果如下图所示，可看到TLS握手过程，包括：选择算法套件、生成密钥流程等。此时，传输的数据是密文格式\nwireshark导入server.key\n以此点击：\n编辑 首选项 Protocols TLS：协议有点多，得好好找一下 RSA keys list Edit 点“+”号 配置： IP address：0.0.0.0 Port: 5432 Protocol：（不填） Key File：下载的server.key\n保存配置 此时，vsql.pcap会自动刷新成为以下内容：\n场景三：第三方工具解密JDBC TLS流量 JDBC无任何改动，当vastbase配置新算法套件时，JDBC也能正常使用TLS协议\n扩展场景：其他组件使用TLS协议 在使用TLS协议时，数据库端ssl_ciphers参数控制使用哪种算法套件，客户端无控制参数。\n此次修改，仅修改服务端，未修改客户端。vsql默认可使用新增算法套件。\n其他数据库工具/组件，可能会采用TLS协议访问数据库，当数据库端配置新增的算法套件时，其他数据库组件无需修改，可直接使用新增的算法套件。\nobs dcf 异常场景 无。此次修改ssl_ciphers的取值范围，新增的4个参数，直接传递给libssl.so，无异常场景。\n2.2.2 配置参数和文件 修改1个GUC ssl_ciphers的取值范围 修改前： ECDHE-ECDSA-AES256-GCM-SHA384 ECDHE-RSA-AES256-GCM-SHA384 DHE-RSA-AES256-GCM-SHA384 ECDHE-ECDSA-AES128-GCM-SHA256 DHE-RSA-AES128-GCM-SHA256 ECDHE-RSA-AES128-SHA256 ECDHE-ECDSA-SM4-CBC-SM3 4个仅tassl支持的国密算法套件 修改后：新增4个取值 AES128-SHA256 AES256-SHA256 AES128-GCM-SHA256 AES256-GCM-SHA384 2.2.3 数据相关性 无\n2.3 接口信息 修改1个GUC ssl_ciphers的取值范围。\n2.4 正反向行为 2.4.1 生效说明 ssl_ciphers 可配置为新的取值 vsql使用tls连接时，vsql可显示采用的算法套件为新增的算法套件 使用tcpdump工具抓包，wireshark工具解析，可查看算法套件 使用第三方工具，可解密网络流量 2.4.2 提示信息 未新增。vsql已支持打印tls协议的算法套件名称。\n2.4.3 约束和依赖 无\n2.5 安全性 2.5.1 权限控制 无\n2.5.2 审计 无\n2.6 影响范围 2.6.1 对已有UDT,UDF, ECPG的影响 如果采用tls协议访问数据库，当ssl_ciphers配置为新增的算法套件时，仍然可以正常使用tls。\n2.6.2 对系统函数的影响 无\n2.6.3 对系统CATALOG的影响 无\n2.6.4 对xlog日志格式、数据格式的影响 无\n2.6.5 与其他功能交互时的行为表现 无\n2.6.6 版本兼容性 旧版本驱动、旧版本vsql，可通过tls正常访问新版本数据库。\n2.6.7 用户行为变更 修改1个GUC ssl_ciphers的取值范围 修改前： ECDHE-ECDSA-AES256-GCM-SHA384 ECDHE-RSA-AES256-GCM-SHA384 DHE-RSA-AES256-GCM-SHA384 ECDHE-ECDSA-AES128-GCM-SHA256 DHE-RSA-AES128-GCM-SHA256 ECDHE-RSA-AES128-SHA256 ECDHE-ECDSA-SM4-CBC-SM3 4个仅tassl支持的国密算法套件 修改后：新增4个取值。如客户需使用第三方流量审计工具，需配置为新的取值，新的取值中密码生成协议为RSA协议，支持解密TLS流量。 AES128-SHA256 AES256-SHA256 AES128-GCM-SHA256 AES256-GCM-SHA384 2.7 指标相关 2.7.1 关键资源指标 无\n2.7.2 系统性指标 无\n2.7.3 性能指标 无\n2.8 测试建议 无\n2.8 其他说明 无\n",
+  "wordCount" : "1164",
+  "inLanguage": "en",
+  "datePublished": "2025-09-03T11:07:00+08:00",
+  "dateModified": "2026-08-14T17:47:31+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/projectdocs/10-requirement-ssl/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      海量 10 需求 SSL协议
+    </h1>
+    <div class="post-meta">
+      <span title='2025-09-03 11:07:00 +0800 CST'>September 3, 2025</span>&nbsp;·&nbsp;<span>6 min</span>&nbsp;·&nbsp;<span>1164 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#1-%e7%ae%80%e4%bb%8b" aria-label="1 简介">1 简介</a><ul>
+                        
+                <li>
+                    <a href="#11-%e7%9b%ae%e7%9a%84" aria-label="1.1 目的">1.1 目的</a></li>
+                <li>
+                    <a href="#12-%e9%80%82%e7%94%a8%e8%8c%83%e5%9b%b4" aria-label="1.2 适用范围">1.2 适用范围</a></li>
+                <li>
+                    <a href="#13-%e6%9c%af%e8%af%ad%e5%ae%9a%e4%b9%89%e9%a6%96%e5%ad%97%e6%af%8d%e7%bc%a9%e5%86%99%e8%af%8d%e5%92%8c%e7%bc%a9%e7%95%a5%e8%af%ad" aria-label="1.3 术语定义、首字母缩写词和缩略语">1.3 术语定义、首字母缩写词和缩略语</a></li>
+                <li>
+                    <a href="#13-%e5%8f%82%e8%80%83%e8%b5%84%e6%96%99" aria-label="1.3 参考资料">1.3 参考资料</a></li></ul>
+                </li>
+                <li>
+                    <a href="#2-tls%e5%8d%8f%e8%ae%ae%e6%94%af%e6%8c%81%e7%ac%ac%e4%b8%89%e6%96%b9%e6%b5%81%e9%87%8f%e5%ae%a1%e8%ae%a1" aria-label="2 TLS协议支持第三方流量审计">2 TLS协议支持第三方流量审计</a><ul>
+                        
+                <li>
+                    <a href="#21-%e5%8a%9f%e8%83%bd%e7%ae%80%e8%bf%b0" aria-label="2.1 功能简述">2.1 功能简述</a></li>
+                <li>
+                    <a href="#22-%e5%8a%9f%e8%83%bd%e8%af%b4%e6%98%8e" aria-label="2.2 功能说明">2.2 功能说明</a><ul>
+                        
+                <li>
+                    <a href="#221-%e4%bd%bf%e7%94%a8%e6%b5%81%e7%a8%8b" aria-label="2.2.1 使用流程">2.2.1 使用流程</a><ul>
+                        
+                <li>
+                    <a href="#%e5%89%8d%e7%bd%ae%e6%9d%a1%e4%bb%b6%e7%94%9f%e6%88%90%e8%af%81%e4%b9%a6" aria-label="前置条件：生成证书">前置条件：生成证书</a></li>
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e4%b8%80%e9%85%8d%e7%bd%ae%e5%8f%af%e8%a7%a3%e5%af%86%e7%9a%84tls%e7%ae%97%e6%b3%95%e5%a5%97%e4%bb%b6" aria-label="场景一：配置可解密的TLS算法套件">场景一：配置可解密的TLS算法套件</a></li>
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e4%ba%8c%e7%ac%ac%e4%b8%89%e6%96%b9%e5%b7%a5%e5%85%b7%e8%a7%a3%e5%af%86tls%e6%b5%81%e9%87%8f" aria-label="场景二：第三方工具解密TLS流量">场景二：第三方工具解密TLS流量</a></li>
+                <li>
+                    <a href="#%e5%9c%ba%e6%99%af%e4%b8%89%e7%ac%ac%e4%b8%89%e6%96%b9%e5%b7%a5%e5%85%b7%e8%a7%a3%e5%af%86jdbc-tls%e6%b5%81%e9%87%8f" aria-label="场景三：第三方工具解密JDBC TLS流量">场景三：第三方工具解密JDBC TLS流量</a></li>
+                <li>
+                    <a href="#%e6%89%a9%e5%b1%95%e5%9c%ba%e6%99%af%e5%85%b6%e4%bb%96%e7%bb%84%e4%bb%b6%e4%bd%bf%e7%94%a8tls%e5%8d%8f%e8%ae%ae" aria-label="扩展场景：其他组件使用TLS协议">扩展场景：其他组件使用TLS协议</a></li>
+                <li>
+                    <a href="#%e5%bc%82%e5%b8%b8%e5%9c%ba%e6%99%af" aria-label="异常场景">异常场景</a></li></ul>
+                </li>
+                <li>
+                    <a href="#222-%e9%85%8d%e7%bd%ae%e5%8f%82%e6%95%b0%e5%92%8c%e6%96%87%e4%bb%b6" aria-label="2.2.2 配置参数和文件">2.2.2 配置参数和文件</a></li>
+                <li>
+                    <a href="#223-%e6%95%b0%e6%8d%ae%e7%9b%b8%e5%85%b3%e6%80%a7" aria-label="2.2.3 数据相关性">2.2.3 数据相关性</a></li></ul>
+                </li>
+                <li>
+                    <a href="#23-%e6%8e%a5%e5%8f%a3%e4%bf%a1%e6%81%af" aria-label="2.3 接口信息">2.3 接口信息</a></li>
+                <li>
+                    <a href="#24-%e6%ad%a3%e5%8f%8d%e5%90%91%e8%a1%8c%e4%b8%ba" aria-label="2.4 正反向行为">2.4 正反向行为</a><ul>
+                        
+                <li>
+                    <a href="#241-%e7%94%9f%e6%95%88%e8%af%b4%e6%98%8e" aria-label="2.4.1 生效说明">2.4.1 生效说明</a></li>
+                <li>
+                    <a href="#242-%e6%8f%90%e7%a4%ba%e4%bf%a1%e6%81%af" aria-label="2.4.2 提示信息">2.4.2 提示信息</a></li>
+                <li>
+                    <a href="#243-%e7%ba%a6%e6%9d%9f%e5%92%8c%e4%be%9d%e8%b5%96" aria-label="2.4.3 约束和依赖">2.4.3 约束和依赖</a></li></ul>
+                </li>
+                <li>
+                    <a href="#25-%e5%ae%89%e5%85%a8%e6%80%a7" aria-label="2.5 安全性">2.5 安全性</a><ul>
+                        
+                <li>
+                    <a href="#251-%e6%9d%83%e9%99%90%e6%8e%a7%e5%88%b6" aria-label="2.5.1 权限控制">2.5.1 权限控制</a></li>
+                <li>
+                    <a href="#252-%e5%ae%a1%e8%ae%a1" aria-label="2.5.2 审计">2.5.2 审计</a></li></ul>
+                </li>
+                <li>
+                    <a href="#26-%e5%bd%b1%e5%93%8d%e8%8c%83%e5%9b%b4" aria-label="2.6 影响范围">2.6 影响范围</a><ul>
+                        
+                <li>
+                    <a href="#261-%e5%af%b9%e5%b7%b2%e6%9c%89udtudf-ecpg%e7%9a%84%e5%bd%b1%e5%93%8d" aria-label="2.6.1 对已有UDT,UDF, ECPG的影响">2.6.1 对已有UDT,UDF, ECPG的影响</a></li>
+                <li>
+                    <a href="#262-%e5%af%b9%e7%b3%bb%e7%bb%9f%e5%87%bd%e6%95%b0%e7%9a%84%e5%bd%b1%e5%93%8d" aria-label="2.6.2 对系统函数的影响">2.6.2 对系统函数的影响</a></li>
+                <li>
+                    <a href="#263-%e5%af%b9%e7%b3%bb%e7%bb%9fcatalog%e7%9a%84%e5%bd%b1%e5%93%8d" aria-label="2.6.3 对系统CATALOG的影响">2.6.3 对系统CATALOG的影响</a></li>
+                <li>
+                    <a href="#264-%e5%af%b9xlog%e6%97%a5%e5%bf%97%e6%a0%bc%e5%bc%8f%e6%95%b0%e6%8d%ae%e6%a0%bc%e5%bc%8f%e7%9a%84%e5%bd%b1%e5%93%8d" aria-label="2.6.4 对xlog日志格式、数据格式的影响">2.6.4 对xlog日志格式、数据格式的影响</a></li>
+                <li>
+                    <a href="#265-%e4%b8%8e%e5%85%b6%e4%bb%96%e5%8a%9f%e8%83%bd%e4%ba%a4%e4%ba%92%e6%97%b6%e7%9a%84%e8%a1%8c%e4%b8%ba%e8%a1%a8%e7%8e%b0" aria-label="2.6.5 与其他功能交互时的行为表现">2.6.5 与其他功能交互时的行为表现</a></li>
+                <li>
+                    <a href="#266-%e7%89%88%e6%9c%ac%e5%85%bc%e5%ae%b9%e6%80%a7" aria-label="2.6.6 版本兼容性">2.6.6 版本兼容性</a></li>
+                <li>
+                    <a href="#267-%e7%94%a8%e6%88%b7%e8%a1%8c%e4%b8%ba%e5%8f%98%e6%9b%b4" aria-label="2.6.7 用户行为变更">2.6.7 用户行为变更</a></li></ul>
+                </li>
+                <li>
+                    <a href="#27-%e6%8c%87%e6%a0%87%e7%9b%b8%e5%85%b3" aria-label="2.7 指标相关">2.7 指标相关</a><ul>
+                        
+                <li>
+                    <a href="#271-%e5%85%b3%e9%94%ae%e8%b5%84%e6%ba%90%e6%8c%87%e6%a0%87" aria-label="2.7.1 关键资源指标">2.7.1 关键资源指标</a></li>
+                <li>
+                    <a href="#272-%e7%b3%bb%e7%bb%9f%e6%80%a7%e6%8c%87%e6%a0%87" aria-label="2.7.2 系统性指标">2.7.2 系统性指标</a></li>
+                <li>
+                    <a href="#273-%e6%80%a7%e8%83%bd%e6%8c%87%e6%a0%87" aria-label="2.7.3 性能指标">2.7.3 性能指标</a></li></ul>
+                </li>
+                <li>
+                    <a href="#28-%e6%b5%8b%e8%af%95%e5%bb%ba%e8%ae%ae" aria-label="2.8 测试建议">2.8 测试建议</a></li>
+                <li>
+                    <a href="#28-%e5%85%b6%e4%bb%96%e8%af%b4%e6%98%8e" aria-label="2.8 其他说明">2.8 其他说明</a>
+                </li>
+            </ul>
+            </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h1 id="1-简介">1 简介<a hidden class="anchor" aria-hidden="true" href="#1-简介">#</a></h1>
+<h2 id="11-目的">1.1 目的<a hidden class="anchor" aria-hidden="true" href="#11-目的">#</a></h2>
+<p>在应用与数据库传输数据时，为避免攻击者对数据进行窃听、篡改、伪造、重放等攻击，Vastbase支持采用TLS协议保障数据机密性与完整性。<br>
+通过TLS协议，应用传输数据指至服务端路程如下：</p>
+<ol>
+<li>建立连接：与数据建立TCP连接</li>
+<li>生成密钥(TLS)：采用TLS协议协商生成密钥(连接级)</li>
+<li>加密数据(TLS)：使用密钥加密数据(SQL等)</li>
+<li>发送数据：通过TCP协议，发送数据密文至数据库</li>
+</ol>
+<p>客户可能采用第三方工具，截取网络流量，获取传输中的SQL等数据，进行流量审计。但是，在使用TLS协议的情况下，网络中的数据是密文形式，无法进行流量审计。为解决该问题，本文介绍如何让第三方工具获取密钥，以解密网络中的数据密文。</p>
+<h2 id="12-适用范围">1.2 适用范围<a hidden class="anchor" aria-hidden="true" href="#12-适用范围">#</a></h2>
+<p>本文适用于3.0.8 psu4以之后版本。未来本需求将同步至2.2.15版本。</p>
+<h2 id="13-术语定义首字母缩写词和缩略语">1.3 术语定义、首字母缩写词和缩略语<a hidden class="anchor" aria-hidden="true" href="#13-术语定义首字母缩写词和缩略语">#</a></h2>
+<ul>
+<li>SSL: Secure Sockets Layer，于保障网络通信安全的加密协议，早期协议，存在设计缺陷，目前由TLS协议替代。但是，SSL也可不特指SSL协议，可泛指所有通信安全加密协议。同时，由于历史原因，以及前向兼容，数据库中的很多参数与接口采用SSL命令，实际使用的是TLS协议。无需纠结TLS与SSL差异，vastbase中SSL等于TLS。</li>
+<li>TLS: Transport Layer Security，更安全的传输加密协议。早期版本1.0,1.1已不安全，主流版本为1.2,1.3。</li>
+</ul>
+<h2 id="13-参考资料">1.3 参考资料<a hidden class="anchor" aria-hidden="true" href="#13-参考资料">#</a></h2>
+<ul>
+<li>原始需求：<a href="https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001084569">https://www.tapd.cn/tapd_fe/60475194/story/detail/1160475194001084569</a></li>
+<li>openssl支持的所有cipers： <a href="https://docs.openssl.org/3.0/man1/openssl-ciphers/">https://docs.openssl.org/3.0/man1/openssl-ciphers/</a></li>
+<li>ssl与tls原理：博客写了一点点，没整理</li>
+</ul>
+<h1 id="2-tls协议支持第三方流量审计">2 TLS协议支持第三方流量审计<a hidden class="anchor" aria-hidden="true" href="#2-tls协议支持第三方流量审计">#</a></h1>
+<h2 id="21-功能简述">2.1 功能简述<a hidden class="anchor" aria-hidden="true" href="#21-功能简述">#</a></h2>
+<p>【需求现状】<br>
+目前，大部分第三方流量审计工具，可在一些特定场景下，解密由TLS协议加密后的数据。以vastbase为例，使用TLS协议分为以下阶段：</p>
+<ol>
+<li>生成证书、私钥文件</li>
+<li>vastbase端配置证书、私钥文件</li>
+<li>vsql端配置证书、私钥文件</li>
+<li>vsql连接vastbase<br>
+4.1 建立tcp连接<br>
+4.2 使用证书校验对方身份<br>
+4.3 双发协商选择算法套件：包括密钥生成协议、加密算法等<br>
+4.4 双方协商生成密钥</li>
+<li>vsql与vastbase传输数据<br>
+5.1 发送数据前，使用密钥加密数据<br>
+5.2 发送数据密文<br>
+在4.3步骤中，可配置不同的密钥生成协议，对于其中一部分协议，在步骤4.4中，第三方工具可获取密钥，第步骤5.2中，第三方工具截取数据密文后，即可解密数据。<br>
+但是，4.3步骤中，目前vastbase仅支持2种密钥生成协议，这2种协议都无法让第三方工具获取密钥。</li>
+</ol>
+<p>【密钥生成协议】<br>
+此处介绍2类常见的密钥生成协议：</p>
+<ul>
+<li>
+<p>一、DHE密钥协商协议<br>
+Vastbase目前支持的2种协议，都属于此类协议</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">client                                    server
+</span></span><span class="line"><span class="cl">+-------------------------------------------+-----------------------------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span>  &lt;-------- 0. 双方随机约定一些参数 ------&gt;  <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 1. 生成随机私钥 client_priv
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 2. 基于client_priv，计算公钥 client_pub
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 3. 发送公钥 client_pub ------------&gt;
+</span></span><span class="line"><span class="cl">                                            <span class="p">|</span> 4. 接收公钥 client_pub
+</span></span><span class="line"><span class="cl">                                            <span class="p">|</span> 5. 生成随机私钥 server_priv
+</span></span><span class="line"><span class="cl">                                            <span class="p">|</span> 6. 基于server_priv，计算公钥 server_pub
+</span></span><span class="line"><span class="cl">                            &lt;------------   <span class="p">|</span> 7. 发送公钥 server_pub
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 8. 接收公钥 server_pub
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 9. 基于client_priv，server_pub，计算密钥
+</span></span><span class="line"><span class="cl">                                            <span class="p">|</span> 10. 基于server_priv，client_pub，计算密钥
+</span></span><span class="line"><span class="cl">（第9步和第10步，可以计算出相同的密钥）
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">简单举个例子
+</span></span><span class="line"><span class="cl">client                                    server
+</span></span><span class="line"><span class="cl">+-------------------------------------------+-----------------------------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span>  &lt;----- 0. generate and send <span class="o">(</span>2,11<span class="o">)</span> ----&gt; <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 1. generate <span class="m">8</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 2. caculate <span class="o">(</span><span class="m">8</span> * 2<span class="o">)</span> % <span class="nv">11</span> <span class="o">=</span> <span class="m">5</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 3. send <span class="m">5</span> ----------&gt;  
+</span></span><span class="line"><span class="cl">                                            <span class="p">|</span> 4. receive <span class="m">5</span>
+</span></span><span class="line"><span class="cl">                                            <span class="p">|</span> 5. generate <span class="m">10</span>
+</span></span><span class="line"><span class="cl">                                            <span class="p">|</span> 6. caculate <span class="o">(</span><span class="m">10</span> * 2<span class="o">)</span> % <span class="nv">11</span> <span class="o">=</span> <span class="m">9</span>
+</span></span><span class="line"><span class="cl">                            &lt;------------   <span class="p">|</span> 7. send <span class="m">9</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 8. receive <span class="m">9</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 9. <span class="nv">key</span> <span class="o">=</span> <span class="o">(</span><span class="m">8</span> * 9<span class="o">)</span> % <span class="nv">11</span> <span class="o">=</span> <span class="m">6</span>
+</span></span><span class="line"><span class="cl">                                            <span class="p">|</span> 10. <span class="nv">key</span> <span class="o">=</span> <span class="o">(</span><span class="m">10</span> * 5<span class="o">)</span> % <span class="nv">11</span> <span class="o">=</span> <span class="m">6</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">攻击者：截获网络流量，获取2,11,5,9，无法计算出密钥为6
+</span></span></code></pre></div></li>
+<li>
+<p>二、RSA密钥交换协议<br>
+该协议支持第三方工具解密流量，客户选择的工具已适配该协议。TLS还支持其他PSK、SRP等协议，但是，由于这些协议比较少见，且客户选择的工具未适配，本次不适配其他协议。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">client                                    server
+</span></span><span class="line"><span class="cl">+-------------------------------------------+-----------------------------------
+</span></span><span class="line"><span class="cl">                                            <span class="p">|</span> 1. 提前配置私钥、公钥 server_priv, server_pub
+</span></span><span class="line"><span class="cl">                            &lt;------------   <span class="p">|</span> 2. 发送公钥 server_pub
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 3. 生成密钥 key
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 4. 使用公钥加密密钥 <span class="nv">enc_key</span> <span class="o">=</span> enncrypt<span class="o">(</span>key, server_pub<span class="o">)</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 5. 发送密钥 enc_key  --------&gt;
+</span></span><span class="line"><span class="cl">                                            <span class="p">|</span> 6. 接收密钥 enc_key
+</span></span><span class="line"><span class="cl">                                            <span class="p">|</span> 7. 解密密钥 <span class="nv">key</span> <span class="o">=</span> decrypt<span class="o">(</span>enc_key, server_priv<span class="o">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">攻击者：截获网络流量，获取公钥server_pub, 加密后的enc_key，因为没有私钥，无法解密得到key
+</span></span><span class="line"><span class="cl">第三方工具：如果提前拿到server_priv，并且截获网络流量获取en_key，则可解密得到key
+</span></span></code></pre></div></li>
+</ul>
+<p>【TLS算法套件】<br>
+TLS协议主要提供4个功能：</p>
+<ul>
+<li>身份认证（基于证书）</li>
+<li>密钥生成（对称密钥）</li>
+<li>数据机密性（对称加密）</li>
+<li>数据完整性</li>
+</ul>
+<p>用户使用TLS协议时，可选择不同算法套件，不同算法套件中，上述4个功能采用的协议或算法不同。<br>
+openssl 1.1.1n支持的算法套件有100+种，在编译libssl.so时，裁剪一些冷门的、不安全的算法套件后，vastbase使用的openssl支持60种。（执行openssl ciphers -v或者-v ‘ALL:eNULL’可查看）</p>
+<ul>
+<li>
+<p>内核已支持以下几种：</p>
+<ol>
+<li>ECDHE-ECDSA-AES256-GCM-SHA384</li>
+<li>ECDHE-RSA-AES256-GCM-SHA384</li>
+<li>DHE-RSA-AES256-GCM-SHA384</li>
+<li>ECDHE-ECDSA-AES128-GCM-SHA256</li>
+<li>DHE-RSA-AES128-GCM-SHA256</li>
+<li>ECDHE-RSA-AES128-SHA256</li>
+<li>ECDHE-ECDSA-SM4-CBC-SM3</li>
+<li>4个仅tassl支持的国密算法套件</li>
+</ol>
+</li>
+<li>
+<p>客户选择的第三方工具，支持7种：</p>
+<table>
+  <thead>
+      <tr>
+          <th>编号</th>
+          <th>算法套件</th>
+          <th>代码定义</th>
+          <th>支持情况</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td>AES256-SHA256</td>
+          <td>TLS_RSA_WITH_AES_256_CBC_SHA256</td>
+          <td>可支持</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td>AES128-SHA256</td>
+          <td>TLS_RSA_WITH_AES_128_CBC_SHA256</td>
+          <td>可支持</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td>DES-CBC3-SHA</td>
+          <td>TLS_RSA_WITH_3DES_EDE_CBC_SHA</td>
+          <td>含不安全算法3des，vastbase依赖的libssl.so编译裁剪</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td>DES-CBC3-SHA</td>
+          <td>SSL_RSA_WITH_3DES_EDE_CBC_SHA</td>
+          <td>含不安全算法3des，vastbase依赖的libssl.so编译裁剪</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td>AES256-SHA</td>
+          <td>SSL_RSA_WITH_AES_256_CBC_SHA</td>
+          <td>含不安全算法sha1，可支持，不建议支持</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td>AES128-SHA</td>
+          <td>TLS_RSA_WITH_AES_128_CBC_SHA</td>
+          <td>含不安全算法sha1，可支持，不建议支持</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td>AES256-GCM-SHA256</td>
+          <td>TLS_RSA_WITH_AES_256_GCM_SHA256</td>
+          <td>找不到，只有AES256-GCM-SHA384、AES128-GCM-SHA256</td>
+      </tr>
+  </tbody>
+</table>
+<p>客户提的几种看起来取名简单，和之前的风格不同，但这是openssl取的，这些名称都直接传递给libssl.so，openssl迭代过很多版本，执行openssl cipher -v显示的对应的名称就是以下4个。</p>
+<p>7种算法套中：</p>
+<ul>
+<li>第1、2种，算法是安全的，协议不太安全，但符合标准，整体算是安全的，可以不用参数控制</li>
+<li>第2，3种，算法非常不安全，我们的openssl都完全不支持</li>
+<li>第4，5种，算法不安全，如果要支持，需要参数控制</li>
+<li>第7种，找不到</li>
+</ul>
+<p>客户的要求，第三方工具能解密数据，因此只需至少支持其中1种即可，无需全都支持。<br>
+客户提出的7种，本次支持2种。另外，还有2种客户未提出，但也满足条件，疑似是第7种，使用GCM加密模式，性能更高，本次也支持：</p>
+<ul>
+<li>AES128-SHA256</li>
+<li>AES256-SHA256</li>
+<li>AES128-GCM-SHA256</li>
+<li>AES256-GCM-SHA384<br>
+（代码中的定义分别为：TLS1_TXT_RSA_WITH_AES_128_SHA256、TLS1_TXT_RSA_WITH_AES_256_SHA256、TLS1_TXT_RSA_WITH_AES_128_GCM_SHA256、TLS1_TXT_RSA_WITH_AES_256_GCM_SHA384）</li>
+</ul>
+</li>
+</ul>
+<p>以下是vastbase libssl.so支持的60种完整算法套件，仅供参考：</p>
+<table>
+  <thead>
+      <tr>
+          <th>#</th>
+          <th>Cipher Suite</th>
+          <th>Protocol</th>
+          <th>Kx</th>
+          <th>Au</th>
+          <th>Enc</th>
+          <th>Mac</th>
+          <th>内核支持</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td>AES128-GCM-SHA256</td>
+          <td>TLSv1.2</td>
+          <td>RSA</td>
+          <td>RSA</td>
+          <td>AESGCM(128)</td>
+          <td>AEAD</td>
+          <td>满足条件，本次支持</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td>AES128-SHA</td>
+          <td>SSLv3</td>
+          <td>RSA</td>
+          <td>RSA</td>
+          <td>AES(128)</td>
+          <td>SHA1</td>
+          <td>客户提出，不安全</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td>AES128-SHA256</td>
+          <td>TLSv1.2</td>
+          <td>RSA</td>
+          <td>RSA</td>
+          <td>AES(128)</td>
+          <td>SHA256</td>
+          <td>客户提出，本次支持</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td>AES256-GCM-SHA384</td>
+          <td>TLSv1.2</td>
+          <td>RSA</td>
+          <td>RSA</td>
+          <td>AESGCM(256)</td>
+          <td>AEAD</td>
+          <td>满足条件，本次可支持</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td>AES256-SHA</td>
+          <td>SSLv3</td>
+          <td>RSA</td>
+          <td>RSA</td>
+          <td>AES(256)</td>
+          <td>SHA1</td>
+          <td>客户提出，不安全</td>
+      </tr>
+      <tr>
+          <td>6</td>
+          <td>AES256-SHA256</td>
+          <td>TLSv1.2</td>
+          <td>RSA</td>
+          <td>RSA</td>
+          <td>AES(256)</td>
+          <td>SHA256</td>
+          <td>客户提出，本次支持</td>
+      </tr>
+      <tr>
+          <td>7</td>
+          <td>DHE-PSK-AES128-CBC-SHA</td>
+          <td>SSLv3</td>
+          <td>DHEPSK</td>
+          <td>PSK</td>
+          <td>AES(128)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>8</td>
+          <td>DHE-PSK-AES128-CBC-SHA256</td>
+          <td>TLSv1</td>
+          <td>DHEPSK</td>
+          <td>PSK</td>
+          <td>AES(128)</td>
+          <td>SHA256</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>9</td>
+          <td>DHE-PSK-AES128-GCM-SHA256</td>
+          <td>TLSv1.2</td>
+          <td>DHEPSK</td>
+          <td>PSK</td>
+          <td>AESGCM(128)</td>
+          <td>AEAD</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>10</td>
+          <td>DHE-PSK-AES256-CBC-SHA</td>
+          <td>SSLv3</td>
+          <td>DHEPSK</td>
+          <td>PSK</td>
+          <td>AES(256)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>11</td>
+          <td>DHE-PSK-AES256-CBC-SHA384</td>
+          <td>TLSv1</td>
+          <td>DHEPSK</td>
+          <td>PSK</td>
+          <td>AES(256)</td>
+          <td>SHA384</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>12</td>
+          <td>DHE-PSK-AES256-GCM-SHA384</td>
+          <td>TLSv1.2</td>
+          <td>DHEPSK</td>
+          <td>PSK</td>
+          <td>AESGCM(256)</td>
+          <td>AEAD</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>13</td>
+          <td>DHE-RSA-AES128-GCM-SHA256</td>
+          <td>TLSv1.2</td>
+          <td>DH</td>
+          <td>RSA</td>
+          <td>AESGCM(128)</td>
+          <td>AEAD</td>
+          <td>已支持</td>
+      </tr>
+      <tr>
+          <td>14</td>
+          <td>DHE-RSA-AES128-SHA</td>
+          <td>SSLv3</td>
+          <td>DH</td>
+          <td>RSA</td>
+          <td>AES(128)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>15</td>
+          <td>DHE-RSA-AES128-SHA256</td>
+          <td>TLSv1.2</td>
+          <td>DH</td>
+          <td>RSA</td>
+          <td>AES(128)</td>
+          <td>SHA256</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>16</td>
+          <td>DHE-RSA-AES256-GCM-SHA384</td>
+          <td>TLSv1.2</td>
+          <td>DH</td>
+          <td>RSA</td>
+          <td>AESGCM(256)</td>
+          <td>AEAD</td>
+          <td>已支持</td>
+      </tr>
+      <tr>
+          <td>17</td>
+          <td>DHE-RSA-AES256-SHA</td>
+          <td>SSLv3</td>
+          <td>DH</td>
+          <td>RSA</td>
+          <td>AES(256)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>18</td>
+          <td>DHE-RSA-AES256-SHA256</td>
+          <td>TLSv1.2</td>
+          <td>DH</td>
+          <td>RSA</td>
+          <td>AES(256)</td>
+          <td>SHA256</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>19</td>
+          <td>DHE-RSA-CHACHA20-POLY1305</td>
+          <td>TLSv1.2</td>
+          <td>DH</td>
+          <td>RSA</td>
+          <td>CHACHA20/POLY1305(256)</td>
+          <td>AEAD</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>20</td>
+          <td>ECDHE-ECDSA-AES128-GCM-SHA256</td>
+          <td>TLSv1.2</td>
+          <td>ECDH</td>
+          <td>ECDSA</td>
+          <td>AESGCM(128)</td>
+          <td>AEAD</td>
+          <td>已支持</td>
+      </tr>
+      <tr>
+          <td>21</td>
+          <td>ECDHE-ECDSA-AES128-SHA</td>
+          <td>TLSv1</td>
+          <td>ECDH</td>
+          <td>ECDSA</td>
+          <td>AES(128)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>22</td>
+          <td>ECDHE-ECDSA-AES128-SHA256</td>
+          <td>TLSv1.2</td>
+          <td>ECDH</td>
+          <td>ECDSA</td>
+          <td>AES(128)</td>
+          <td>SHA256</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>23</td>
+          <td>ECDHE-ECDSA-AES256-GCM-SHA384</td>
+          <td>TLSv1.2</td>
+          <td>ECDH</td>
+          <td>ECDSA</td>
+          <td>AESGCM(256)</td>
+          <td>AEAD</td>
+          <td>已支持</td>
+      </tr>
+      <tr>
+          <td>24</td>
+          <td>ECDHE-ECDSA-AES256-SHA</td>
+          <td>TLSv1</td>
+          <td>ECDH</td>
+          <td>ECDSA</td>
+          <td>AES(256)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>25</td>
+          <td>ECDHE-ECDSA-AES256-SHA384</td>
+          <td>TLSv1.2</td>
+          <td>ECDH</td>
+          <td>ECDSA</td>
+          <td>AES(256)</td>
+          <td>SHA384</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>26</td>
+          <td>ECDHE-ECDSA-CHACHA20-POLY1305</td>
+          <td>TLSv1.2</td>
+          <td>ECDH</td>
+          <td>ECDSA</td>
+          <td>CHACHA20/POLY1305(256)</td>
+          <td>AEAD</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>27</td>
+          <td>ECDHE-PSK-AES128-CBC-SHA</td>
+          <td>TLSv1</td>
+          <td>ECDHEPSK</td>
+          <td>PSK</td>
+          <td>AES(128)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>28</td>
+          <td>ECDHE-PSK-AES128-CBC-SHA256</td>
+          <td>TLSv1</td>
+          <td>ECDHEPSK</td>
+          <td>PSK</td>
+          <td>AES(128)</td>
+          <td>SHA256</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>29</td>
+          <td>ECDHE-PSK-AES256-CBC-SHA</td>
+          <td>TLSv1</td>
+          <td>ECDHEPSK</td>
+          <td>PSK</td>
+          <td>AES(256)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>30</td>
+          <td>ECDHE-PSK-AES256-CBC-SHA384</td>
+          <td>TLSv1</td>
+          <td>ECDHEPSK</td>
+          <td>PSK</td>
+          <td>AES(256)</td>
+          <td>SHA384</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>31</td>
+          <td>ECDHE-PSK-CHACHA20-POLY1305</td>
+          <td>TLSv1.2</td>
+          <td>ECDHEPSK</td>
+          <td>PSK</td>
+          <td>CHACHA20/POLY1305(256)</td>
+          <td>AEAD</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>32</td>
+          <td>ECDHE-RSA-AES128-GCM-SHA256</td>
+          <td>TLSv1.2</td>
+          <td>ECDH</td>
+          <td>RSA</td>
+          <td>AESGCM(128)</td>
+          <td>AEAD</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>33</td>
+          <td>ECDHE-RSA-AES128-SHA</td>
+          <td>TLSv1</td>
+          <td>ECDH</td>
+          <td>RSA</td>
+          <td>AES(128)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>34</td>
+          <td>ECDHE-RSA-AES128-SHA256</td>
+          <td>TLSv1.2</td>
+          <td>ECDH</td>
+          <td>RSA</td>
+          <td>AES(128)</td>
+          <td>SHA256</td>
+          <td>已支持</td>
+      </tr>
+      <tr>
+          <td>35</td>
+          <td>ECDHE-RSA-AES256-GCM-SHA384</td>
+          <td>TLSv1.2</td>
+          <td>ECDH</td>
+          <td>RSA</td>
+          <td>AESGCM(256)</td>
+          <td>AEAD</td>
+          <td>已支持</td>
+      </tr>
+      <tr>
+          <td>36</td>
+          <td>ECDHE-RSA-AES256-SHA</td>
+          <td>TLSv1</td>
+          <td>ECDH</td>
+          <td>RSA</td>
+          <td>AES(256)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>37</td>
+          <td>ECDHE-RSA-AES256-SHA384</td>
+          <td>TLSv1.2</td>
+          <td>ECDH</td>
+          <td>RSA</td>
+          <td>AES(256)</td>
+          <td>SHA384</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>38</td>
+          <td>ECDHE-RSA-CHACHA20-POLY1305</td>
+          <td>TLSv1.2</td>
+          <td>ECDH</td>
+          <td>RSA</td>
+          <td>CHACHA20/POLY1305(256)</td>
+          <td>AEAD</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>39</td>
+          <td>PSK-AES128-CBC-SHA</td>
+          <td>SSLv3</td>
+          <td>PSK</td>
+          <td>PSK</td>
+          <td>AES(128)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>40</td>
+          <td>PSK-AES128-CBC-SHA256</td>
+          <td>TLSv1</td>
+          <td>PSK</td>
+          <td>PSK</td>
+          <td>AES(128)</td>
+          <td>SHA256</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>41</td>
+          <td>PSK-AES128-GCM-SHA256</td>
+          <td>TLSv1.2</td>
+          <td>PSK</td>
+          <td>PSK</td>
+          <td>AESGCM(128)</td>
+          <td>AEAD</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>42</td>
+          <td>PSK-AES256-CBC-SHA</td>
+          <td>SSLv3</td>
+          <td>PSK</td>
+          <td>PSK</td>
+          <td>AES(256)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>43</td>
+          <td>PSK-AES256-CBC-SHA384</td>
+          <td>TLSv1</td>
+          <td>PSK</td>
+          <td>PSK</td>
+          <td>AES(256)</td>
+          <td>SHA384</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>44</td>
+          <td>PSK-AES256-GCM-SHA384</td>
+          <td>TLSv1.2</td>
+          <td>PSK</td>
+          <td>PSK</td>
+          <td>AESGCM(256)</td>
+          <td>AEAD</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>45</td>
+          <td>PSK-CHACHA20-POLY1305</td>
+          <td>TLSv1.2</td>
+          <td>PSK</td>
+          <td>PSK</td>
+          <td>CHACHA20/POLY1305(256)</td>
+          <td>AEAD</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>46</td>
+          <td>RSA-PSK-AES128-CBC-SHA</td>
+          <td>SSLv3</td>
+          <td>RSAPSK</td>
+          <td>RSA</td>
+          <td>AES(128)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>47</td>
+          <td>RSA-PSK-AES128-CBC-SHA256</td>
+          <td>TLSv1</td>
+          <td>RSAPSK</td>
+          <td>RSA</td>
+          <td>AES(128)</td>
+          <td>SHA256</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>48</td>
+          <td>RSA-PSK-AES128-GCM-SHA256</td>
+          <td>TLSv1.2</td>
+          <td>RSAPSK</td>
+          <td>RSA</td>
+          <td>AESGCM(128)</td>
+          <td>AEAD</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>49</td>
+          <td>RSA-PSK-AES256-CBC-SHA</td>
+          <td>SSLv3</td>
+          <td>RSAPSK</td>
+          <td>RSA</td>
+          <td>AES(256)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>50</td>
+          <td>RSA-PSK-AES256-CBC-SHA384</td>
+          <td>TLSv1</td>
+          <td>RSAPSK</td>
+          <td>RSA</td>
+          <td>AES(256)</td>
+          <td>SHA384</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>51</td>
+          <td>RSA-PSK-AES256-GCM-SHA384</td>
+          <td>TLSv1.2</td>
+          <td>RSAPSK</td>
+          <td>RSA</td>
+          <td>AESGCM(256)</td>
+          <td>AEAD</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>52</td>
+          <td>RSA-PSK-CHACHA20-POLY1305</td>
+          <td>TLSv1.2</td>
+          <td>RSAPSK</td>
+          <td>RSA</td>
+          <td>CHACHA20/POLY1305(256)</td>
+          <td>AEAD</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>53</td>
+          <td>SRP-AES-128-CBC-SHA</td>
+          <td>SSLv3</td>
+          <td>SRP</td>
+          <td>SRP</td>
+          <td>AES(128)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>54</td>
+          <td>SRP-AES-256-CBC-SHA</td>
+          <td>SSLv3</td>
+          <td>SRP</td>
+          <td>SRP</td>
+          <td>AES(256)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>55</td>
+          <td>SRP-RSA-AES-128-CBC-SHA</td>
+          <td>SSLv3</td>
+          <td>SRP</td>
+          <td>RSA</td>
+          <td>AES(128)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>56</td>
+          <td>SRP-RSA-AES-256-CBC-SHA</td>
+          <td>SSLv3</td>
+          <td>SRP</td>
+          <td>RSA</td>
+          <td>AES(256)</td>
+          <td>SHA1</td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>57</td>
+          <td>TLS_AES_128_CCM_8_SHA256</td>
+          <td>TLSv1.3</td>
+          <td>any</td>
+          <td>any</td>
+          <td>AESCCM8(128)</td>
+          <td>AEAD</td>
+          <td>TLS版本过高</td>
+      </tr>
+      <tr>
+          <td>58</td>
+          <td>TLS_AES_128_CCM_SHA256</td>
+          <td>TLSv1.3</td>
+          <td>any</td>
+          <td>any</td>
+          <td>AESCCM(128)</td>
+          <td>AEAD</td>
+          <td>TLS版本过高</td>
+      </tr>
+      <tr>
+          <td>59</td>
+          <td>TLS_AES_256_GCM_SHA384</td>
+          <td>TLSv1.3</td>
+          <td>any</td>
+          <td>any</td>
+          <td>AESGCM(256)</td>
+          <td>AEAD</td>
+          <td>TLS版本过高</td>
+      </tr>
+      <tr>
+          <td>60</td>
+          <td>TLS_CHACHA20_POLY1305_SHA256</td>
+          <td>TLSv1.3</td>
+          <td>any</td>
+          <td>any</td>
+          <td>CHACHA20/POLY1305(256)</td>
+          <td>AEAD</td>
+          <td>TLS版本过高</td>
+      </tr>
+  </tbody>
+</table>
+<h2 id="22-功能说明">2.2 功能说明<a hidden class="anchor" aria-hidden="true" href="#22-功能说明">#</a></h2>
+<h3 id="221-使用流程">2.2.1 使用流程<a hidden class="anchor" aria-hidden="true" href="#221-使用流程">#</a></h3>
+<h4 id="前置条件生成证书">前置条件：生成证书<a hidden class="anchor" aria-hidden="true" href="#前置条件生成证书">#</a></h4>
+<p>此处介绍基于openssl工具，生成自签名证书的流程，与之前版本相比，无任何区别。</p>
+<ol>
+<li>
+<p>创建存放私钥与证书的文件夹</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">mkdir certs
+</span></span><span class="line"><span class="cl"><span class="nb">cd</span> certs
+</span></span><span class="line"><span class="cl">mkdir ./demoCA ./demoCA/newcerts ./demoCA/private
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s1">&#39;01&#39;</span>&gt;./demoCA/serial
+</span></span><span class="line"><span class="cl">touch ./demoCA/index.txt
+</span></span></code></pre></div></li>
+<li>
+<p>配置openssl工具<br>
+从Vastbase安装包中，获取openssl工具以及openss配置文件。假设Vastbae安装包存放在$GAUSSHOME目录。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">cp <span class="nv">$GAUSSHOME</span>/bin/openssl ./
+</span></span><span class="line"><span class="cl">chmod +x ./openssl
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">PATH</span><span class="o">=</span><span class="sb">`</span><span class="nb">pwd</span><span class="sb">`</span>:<span class="nv">$PATH</span>
+</span></span><span class="line"><span class="cl">which openssl <span class="c1"># 确保openssl来源于Vastbase安装包，避免因版本不同造成证书不可用</span>
+</span></span><span class="line"><span class="cl">openssl version
+</span></span><span class="line"><span class="cl">cp <span class="nv">$GAUSSHOME</span>/share/sslcert/gsql/openssl.cnf ./
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">OPENSSL_CONF</span><span class="o">=</span><span class="sb">`</span><span class="nb">pwd</span><span class="sb">`</span>/openssl.cnf
+</span></span></code></pre></div></li>
+<li>
+<p>创建CA私钥、CA证书</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">openssl genrsa -out demoCA/private/cakey.pem <span class="m">2048</span>
+</span></span><span class="line"><span class="cl">openssl req -new -config openssl.cnf -key demoCA/private/cakey.pem -subj /C<span class="o">=</span>CN/ST<span class="o">=</span>BJ/L<span class="o">=</span>HaiDian/O<span class="o">=</span>VAST/OU<span class="o">=</span>SEC/CN<span class="o">=</span>CA -out cacert.req
+</span></span><span class="line"><span class="cl">openssl ca -selfsign -config openssl.cnf -batch -keyfile demoCA/private/cakey.pem -in cacert.req -out demoCA/cacert.pem
+</span></span></code></pre></div></li>
+<li>
+<p>创建数据库私钥、数据库证书</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">openssl genrsa -out server.key <span class="m">2048</span>
+</span></span><span class="line"><span class="cl">openssl req -new -config openssl.cnf -key server.key -subj /C<span class="o">=</span>CN/ST<span class="o">=</span>BJ/L<span class="o">=</span>HaiDian/O<span class="o">=</span>VAST/OU<span class="o">=</span>SEC/CN<span class="o">=</span>server -out server.req
+</span></span><span class="line"><span class="cl">openssl ca -config openssl.cnf -days <span class="m">3650</span> -batch -in server.req -out server.crt
+</span></span></code></pre></div></li>
+<li>
+<p>创建应用端私钥、应用端证书</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">openssl genrsa -out client.key <span class="m">2048</span>
+</span></span><span class="line"><span class="cl">openssl req -new -config openssl.cnf  -key client.key -subj /C<span class="o">=</span>CN/ST<span class="o">=</span>BJ/L<span class="o">=</span>HaiDian/O<span class="o">=</span>VAST/OU<span class="o">=</span>SEC/CN<span class="o">=</span>client -out client.req
+</span></span><span class="line"><span class="cl">openssl ca -config openssl.cnf -days <span class="m">3650</span> -batch -in client.req -out client.crt
+</span></span></code></pre></div></li>
+<li>
+<p>设置私钥与证书文件权限</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">chmod <span class="m">600</span> client* server* ca* demoCA/ca*
+</span></span></code></pre></div></li>
+</ol>
+<h4 id="场景一配置可解密的tls算法套件">场景一：配置可解密的TLS算法套件<a hidden class="anchor" aria-hidden="true" href="#场景一配置可解密的tls算法套件">#</a></h4>
+<ol>
+<li>
+<p>创建新用户</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="n">vsql</span><span class="w"> </span><span class="o">-</span><span class="n">d</span><span class="w"> </span><span class="n">vastbase</span><span class="w"> </span><span class="o">-</span><span class="k">c</span><span class="w"> </span><span class="s2">&#34;CREATE USER u1 PASSWORD &#39;u1.password&#39;;&#34;</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>配置SSL证书<br>
+此处，假设数据库的数据目录为$VBDATA。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">VBDATA</span><span class="o">=</span><span class="nv">$GAUSSHOME</span>/data
+</span></span><span class="line"><span class="cl">vb_guc <span class="nb">set</span> -D <span class="nv">$VBDATA</span> -c <span class="s2">&#34;ssl=on&#34;</span>
+</span></span><span class="line"><span class="cl">vb_guc <span class="nb">set</span> -D <span class="nv">$VBDATA</span> -c <span class="s2">&#34;require_ssl=on&#34;</span>
+</span></span><span class="line"><span class="cl">vb_guc <span class="nb">set</span> -D <span class="nv">$VBDATA</span> -c <span class="s2">&#34;ssl_cert_file=&#39;`pwd`/server.crt&#39;&#34;</span>
+</span></span><span class="line"><span class="cl">vb_guc <span class="nb">set</span> -D <span class="nv">$VBDATA</span> -c <span class="s2">&#34;ssl_key_file=&#39;`pwd`/server.key&#39;&#34;</span>
+</span></span><span class="line"><span class="cl">vb_guc <span class="nb">set</span> -D <span class="nv">$VBDATA</span> -c <span class="s2">&#34;ssl_ca_file=&#39;`pwd`/demoCA/cacert.pem&#39;&#34;</span>
+</span></span></code></pre></div><p>接下来，需配置TLS协议采用的默认算法套件</p>
+<ul>
+<li>之前版本，ssl_ciphers取值范围如下：
+<ol>
+<li>ECDHE-ECDSA-AES256-GCM-SHA384</li>
+<li>ECDHE-RSA-AES256-GCM-SHA384</li>
+<li>DHE-RSA-AES256-GCM-SHA384</li>
+<li>ECDHE-ECDSA-AES128-GCM-SHA256</li>
+<li>DHE-RSA-AES128-GCM-SHA256</li>
+<li>ECDHE-RSA-AES128-SHA256</li>
+<li>ECDHE-ECDSA-SM4-CBC-SM3</li>
+<li>4个仅tassl支持的国密算法套件</li>
+</ol>
+</li>
+<li>本版本，新增4个取值范围
+<ul>
+<li>
+<p>AES128-SHA256</p>
+</li>
+<li>
+<p>AES256-SHA256</p>
+</li>
+<li>
+<p>AES128-GCM-SHA256</p>
+</li>
+<li>
+<p>AES256-GCM-SHA384</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">vb_guc <span class="nb">set</span> -D <span class="nv">$VBDATA</span> -c <span class="s2">&#34;ssl_ciphers=&#39;AES128-SHA256&#39;&#34;</span>
+</span></span></code></pre></div></li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>开启远程登录</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">vb_guc <span class="nb">set</span> -D <span class="nv">$VBDATA</span> -c <span class="s2">&#34;listen_addresses=&#39;*&#39;&#34;</span>
+</span></span></code></pre></div></li>
+<li>
+<p>开启登录防火墙<br>
+在pg_hba.conf中，添加一行配置，确保该配置在所有host配置的第1行</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">vb_guc <span class="nb">set</span> -D <span class="nv">$VBDATA</span> -h <span class="s2">&#34;host all all 0.0.0.0/0 sha256&#34;</span>
+</span></span></code></pre></div></li>
+<li>
+<p>重启数据库，使配置生效</p>
+</li>
+<li>
+<p>应用端配置私钥与证书<br>
+应用端通过环境变量或连接参数配置私钥与证书。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">PGSSLMODE</span><span class="o">=</span>verify-ca
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">PGSSLCERT</span><span class="o">=</span><span class="sb">`</span><span class="nb">pwd</span><span class="sb">`</span>/client.crt
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">PGSSLKEY</span><span class="o">=</span><span class="sb">`</span><span class="nb">pwd</span><span class="sb">`</span>/client.key
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">PGSSLROOTCERT</span><span class="o">=</span><span class="sb">`</span><span class="nb">pwd</span><span class="sb">`</span>/demoCA/cacert.pem
+</span></span></code></pre></div></li>
+<li>
+<p>应用端连接数据库</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">vsql -h localhost -p <span class="m">5432</span> -d vastbase -U u1 -W <span class="s1">&#39;u1.password&#39;</span> -r
+</span></span><span class="line"><span class="cl"><span class="c1"># 预期结果：连接成功，启动TLS协议，使用的算法为AES128-SHA256（vsql会显示采用的算法套件）</span>
+</span></span></code></pre></div></li>
+</ol>
+<h4 id="场景二第三方工具解密tls流量">场景二：第三方工具解密TLS流量<a hidden class="anchor" aria-hidden="true" href="#场景二第三方工具解密tls流量">#</a></h4>
+<ol>
+<li>
+<p>按场景一配置数据库</p>
+</li>
+<li>
+<p>使用tcpdump监听数据库端口，准备抓包<br>
+需要root用户执行，接下来抓包的数据将输出到vsql.pcap中</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">tcpdump -i any -w ./vsql.pcap <span class="s1">&#39;tcp port 5432&#39;</span>
+</span></span></code></pre></div></li>
+<li>
+<p>vsql通过TLS连接数据库</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">vsql -h localhost -p <span class="m">5432</span> -d vastbase -U u1 -W <span class="s1">&#39;u1.password&#39;</span> -r
+</span></span></code></pre></div><p>此时，步骤2会在后台抓取vsql与vastbase传输的所有数据，并输出到vsql.pcap中</p>
+</li>
+<li>
+<p>windows机器下载vsql.pcap</p>
+</li>
+<li>
+<p>windows机器下载server.key文件<br>
+即ssl_key_file参数配置的文件</p>
+</li>
+<li>
+<p>windows安装wireshark工具</p>
+</li>
+<li>
+<p>wireshark直接打开vsql.pcap<br>
+效果如下图所示，可看到TLS握手过程，包括：选择算法套件、生成密钥流程等。此时，传输的数据是密文格式<br>
+<img alt="decrypt" loading="lazy" src="/images/ProjectDocs/10-requirement-ssl/decrypt.png"> <img alt="tcpdump" loading="lazy" src="/images/ProjectDocs/10-requirement-ssl/tcpdump.png"></p>
+</li>
+<li>
+<p>wireshark导入server.key<br>
+以此点击：</p>
+<ul>
+<li>编辑</li>
+<li>首选项</li>
+<li>Protocols</li>
+<li>TLS：协议有点多，得好好找一下</li>
+<li>RSA keys list</li>
+<li>Edit</li>
+<li>点“+”号</li>
+<li>配置：
+<ul>
+<li>IP address：0.0.0.0</li>
+<li>Port: 5432</li>
+<li>Protocol：（不填）</li>
+<li>Key File：下载的server.key<br>
+保存配置</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>此时，vsql.pcap会自动刷新成为以下内容：<br>
+<img alt="decrypt" loading="lazy" src="/images/ProjectDocs/10-requirement-ssl/decrypt.png"><img alt="decrypt" loading="lazy" src="/images/ProjectDocs/10-requirement-ssl/decrypt.png"></p>
+</li>
+</ol>
+<h4 id="场景三第三方工具解密jdbc-tls流量">场景三：第三方工具解密JDBC TLS流量<a hidden class="anchor" aria-hidden="true" href="#场景三第三方工具解密jdbc-tls流量">#</a></h4>
+<p>JDBC无任何改动，当vastbase配置新算法套件时，JDBC也能正常使用TLS协议</p>
+<h4 id="扩展场景其他组件使用tls协议">扩展场景：其他组件使用TLS协议<a hidden class="anchor" aria-hidden="true" href="#扩展场景其他组件使用tls协议">#</a></h4>
+<p>在使用TLS协议时，数据库端ssl_ciphers参数控制使用哪种算法套件，客户端无控制参数。<br>
+此次修改，仅修改服务端，未修改客户端。vsql默认可使用新增算法套件。<br>
+其他数据库工具/组件，可能会采用TLS协议访问数据库，当数据库端配置新增的算法套件时，其他数据库组件无需修改，可直接使用新增的算法套件。</p>
+<ul>
+<li>obs</li>
+<li>dcf</li>
+</ul>
+<h4 id="异常场景">异常场景<a hidden class="anchor" aria-hidden="true" href="#异常场景">#</a></h4>
+<p>无。此次修改ssl_ciphers的取值范围，新增的4个参数，直接传递给libssl.so，无异常场景。</p>
+<h3 id="222-配置参数和文件">2.2.2 配置参数和文件<a hidden class="anchor" aria-hidden="true" href="#222-配置参数和文件">#</a></h3>
+<ol>
+<li>修改1个GUC ssl_ciphers的取值范围
+<ul>
+<li>修改前：
+<ol>
+<li>ECDHE-ECDSA-AES256-GCM-SHA384</li>
+<li>ECDHE-RSA-AES256-GCM-SHA384</li>
+<li>DHE-RSA-AES256-GCM-SHA384</li>
+<li>ECDHE-ECDSA-AES128-GCM-SHA256</li>
+<li>DHE-RSA-AES128-GCM-SHA256</li>
+<li>ECDHE-RSA-AES128-SHA256</li>
+<li>ECDHE-ECDSA-SM4-CBC-SM3</li>
+<li>4个仅tassl支持的国密算法套件</li>
+</ol>
+</li>
+<li>修改后：新增4个取值
+<ul>
+<li>AES128-SHA256</li>
+<li>AES256-SHA256</li>
+<li>AES128-GCM-SHA256</li>
+<li>AES256-GCM-SHA384</li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+<h3 id="223-数据相关性">2.2.3 数据相关性<a hidden class="anchor" aria-hidden="true" href="#223-数据相关性">#</a></h3>
+<p>无</p>
+<h2 id="23-接口信息">2.3 接口信息<a hidden class="anchor" aria-hidden="true" href="#23-接口信息">#</a></h2>
+<p>修改1个GUC ssl_ciphers的取值范围。</p>
+<h2 id="24-正反向行为">2.4 正反向行为<a hidden class="anchor" aria-hidden="true" href="#24-正反向行为">#</a></h2>
+<h3 id="241-生效说明">2.4.1 生效说明<a hidden class="anchor" aria-hidden="true" href="#241-生效说明">#</a></h3>
+<ol>
+<li>ssl_ciphers 可配置为新的取值</li>
+<li>vsql使用tls连接时，vsql可显示采用的算法套件为新增的算法套件</li>
+<li>使用tcpdump工具抓包，wireshark工具解析，可查看算法套件</li>
+<li>使用第三方工具，可解密网络流量</li>
+</ol>
+<h3 id="242-提示信息">2.4.2 提示信息<a hidden class="anchor" aria-hidden="true" href="#242-提示信息">#</a></h3>
+<p>未新增。vsql已支持打印tls协议的算法套件名称。</p>
+<h3 id="243-约束和依赖">2.4.3 约束和依赖<a hidden class="anchor" aria-hidden="true" href="#243-约束和依赖">#</a></h3>
+<p>无</p>
+<h2 id="25-安全性">2.5 安全性<a hidden class="anchor" aria-hidden="true" href="#25-安全性">#</a></h2>
+<h3 id="251-权限控制">2.5.1 权限控制<a hidden class="anchor" aria-hidden="true" href="#251-权限控制">#</a></h3>
+<p>无</p>
+<h3 id="252-审计">2.5.2 审计<a hidden class="anchor" aria-hidden="true" href="#252-审计">#</a></h3>
+<p>无</p>
+<h2 id="26-影响范围">2.6 影响范围<a hidden class="anchor" aria-hidden="true" href="#26-影响范围">#</a></h2>
+<h3 id="261-对已有udtudf-ecpg的影响">2.6.1 对已有UDT,UDF, ECPG的影响<a hidden class="anchor" aria-hidden="true" href="#261-对已有udtudf-ecpg的影响">#</a></h3>
+<p>如果采用tls协议访问数据库，当ssl_ciphers配置为新增的算法套件时，仍然可以正常使用tls。</p>
+<h3 id="262-对系统函数的影响">2.6.2 对系统函数的影响<a hidden class="anchor" aria-hidden="true" href="#262-对系统函数的影响">#</a></h3>
+<p>无</p>
+<h3 id="263-对系统catalog的影响">2.6.3 对系统CATALOG的影响<a hidden class="anchor" aria-hidden="true" href="#263-对系统catalog的影响">#</a></h3>
+<p>无</p>
+<h3 id="264-对xlog日志格式数据格式的影响">2.6.4 对xlog日志格式、数据格式的影响<a hidden class="anchor" aria-hidden="true" href="#264-对xlog日志格式数据格式的影响">#</a></h3>
+<p>无</p>
+<h3 id="265-与其他功能交互时的行为表现">2.6.5 与其他功能交互时的行为表现<a hidden class="anchor" aria-hidden="true" href="#265-与其他功能交互时的行为表现">#</a></h3>
+<p>无</p>
+<h3 id="266-版本兼容性">2.6.6 版本兼容性<a hidden class="anchor" aria-hidden="true" href="#266-版本兼容性">#</a></h3>
+<p>旧版本驱动、旧版本vsql，可通过tls正常访问新版本数据库。</p>
+<h3 id="267-用户行为变更">2.6.7 用户行为变更<a hidden class="anchor" aria-hidden="true" href="#267-用户行为变更">#</a></h3>
+<ol>
+<li>修改1个GUC ssl_ciphers的取值范围
+<ul>
+<li>修改前：
+<ol>
+<li>ECDHE-ECDSA-AES256-GCM-SHA384</li>
+<li>ECDHE-RSA-AES256-GCM-SHA384</li>
+<li>DHE-RSA-AES256-GCM-SHA384</li>
+<li>ECDHE-ECDSA-AES128-GCM-SHA256</li>
+<li>DHE-RSA-AES128-GCM-SHA256</li>
+<li>ECDHE-RSA-AES128-SHA256</li>
+<li>ECDHE-ECDSA-SM4-CBC-SM3</li>
+<li>4个仅tassl支持的国密算法套件</li>
+</ol>
+</li>
+<li>修改后：新增4个取值。如客户需使用第三方流量审计工具，需配置为新的取值，新的取值中密码生成协议为RSA协议，支持解密TLS流量。
+<ul>
+<li>AES128-SHA256</li>
+<li>AES256-SHA256</li>
+<li>AES128-GCM-SHA256</li>
+<li>AES256-GCM-SHA384</li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+<h2 id="27-指标相关">2.7 指标相关<a hidden class="anchor" aria-hidden="true" href="#27-指标相关">#</a></h2>
+<h3 id="271-关键资源指标">2.7.1 关键资源指标<a hidden class="anchor" aria-hidden="true" href="#271-关键资源指标">#</a></h3>
+<p>无</p>
+<h3 id="272-系统性指标">2.7.2 系统性指标<a hidden class="anchor" aria-hidden="true" href="#272-系统性指标">#</a></h3>
+<p>无</p>
+<h3 id="273-性能指标">2.7.3 性能指标<a hidden class="anchor" aria-hidden="true" href="#273-性能指标">#</a></h3>
+<p>无</p>
+<h2 id="28-测试建议">2.8 测试建议<a hidden class="anchor" aria-hidden="true" href="#28-测试建议">#</a></h2>
+<p>无</p>
+<h2 id="28-其他说明">2.8 其他说明<a hidden class="anchor" aria-hidden="true" href="#28-其他说明">#</a></h2>
+<p>无</p>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/ssl/">SSL</a></li><li><a href="http://localhost:1313/tags/%E9%9C%80%E6%B1%82%E6%96%87%E6%A1%A3/">需求文档</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/projectdocs/15-requirement-logical-replication/">海量 15 需求 逻辑复制性能优化</a></li><li><a href="/posts/projectdocs/14-requirement-mac/">海量 mac 需求</a></li><li><a href="/posts/projectdocs/13-requirement-tde/">海量 透明加密 需求</a></li><li><a href="/posts/projectdocs/11-requirement-logical-replication/">海量 11 需求 逻辑复制性能优化</a></li><li><a href="/posts/projectdocs/10-design-ssl/">海量 10 设计 SSL协议</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./项目文档</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

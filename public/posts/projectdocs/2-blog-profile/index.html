@@ -1,0 +1,1819 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>海量 2 博客 profile | Kernel Notes</title>
+<meta name="keywords" content="身份认证">
+<meta name="description" content="
+摘要：本文主要分为3个章节：
+
+介绍Vastbase基于密码的身份认证机制，介绍密码相关配置参数，指出当前控制参数的局限性，提出PROFILE功能支持细粒度设置密码相关配置参数。
+介绍Vastbase的PROFILE功能如何使用，包括管理PROFILE功能、管理PROFILE参数、管理用户PROFILE
+介绍Vastbase身份认证流程与原理，介绍PROFILE功能的实现原理
+
+
+目录
+
+1 PROFILE 功能背景
+
+1.1 身份认证机制
+1.2 身份认证配置
+1.3 身份认证优化
+
+
+2 PROFILE 功能使用
+
+2.1 PROFILE 简单示例
+2.2 管理 PROFILE 功能
+2.3 管理 PROFILE 参数
+2.4 管理 用户 PROFILE
+
+
+3 PROFILE 功能原理
+
+3.1 身份认证元数据
+3.2 身份认证流程
+
+
+
+1 PROFILE 功能背景
+1.1 身份认证机制
+Vastbase身份认证模块，主要采用基于密码的认证机制，常用的密码操作包括：
+
+
+创建密码
+创建新用户时，需指定密码。语法示例如下：
+CREATE USER u1 PASSWORD &#39;u1.password&#39;;
+Vastbase接收密码后，计算密码的哈希值，并将密码哈希值、密码创建时间等存储至系统表中。
+
+
+使用密码
+用户连接Vastbase时，需提供密码，使用vsql连接的命令如下：
+vsql -h {host} -p {port} -U u1 -W &#39;u1.password&#39; -d vastbase -r
+Vastbase会与vsql进行身份认证交互，基于存储的密码哈希值，校验密码是否正确。同时，Vastbase还会进行其他检查，比如：密码是否过期、密码错误次数是否过多等。
+
+
+修改密码
+用户修改密码时，语法示例如下：">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/projectdocs/2-blog-profile/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/projectdocs/2-blog-profile/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/projectdocs/2-blog-profile/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="海量 2 博客 profile">
+  <meta property="og:description" content=" 摘要：本文主要分为3个章节：
+介绍Vastbase基于密码的身份认证机制，介绍密码相关配置参数，指出当前控制参数的局限性，提出PROFILE功能支持细粒度设置密码相关配置参数。 介绍Vastbase的PROFILE功能如何使用，包括管理PROFILE功能、管理PROFILE参数、管理用户PROFILE 介绍Vastbase身份认证流程与原理，介绍PROFILE功能的实现原理 目录
+1 PROFILE 功能背景 1.1 身份认证机制 1.2 身份认证配置 1.3 身份认证优化 2 PROFILE 功能使用 2.1 PROFILE 简单示例 2.2 管理 PROFILE 功能 2.3 管理 PROFILE 参数 2.4 管理 用户 PROFILE 3 PROFILE 功能原理 3.1 身份认证元数据 3.2 身份认证流程 1 PROFILE 功能背景 1.1 身份认证机制 Vastbase身份认证模块，主要采用基于密码的认证机制，常用的密码操作包括：
+创建密码
+创建新用户时，需指定密码。语法示例如下：
+CREATE USER u1 PASSWORD &#39;u1.password&#39;; Vastbase接收密码后，计算密码的哈希值，并将密码哈希值、密码创建时间等存储至系统表中。
+使用密码
+用户连接Vastbase时，需提供密码，使用vsql连接的命令如下：
+vsql -h {host} -p {port} -U u1 -W &#39;u1.password&#39; -d vastbase -r Vastbase会与vsql进行身份认证交互，基于存储的密码哈希值，校验密码是否正确。同时，Vastbase还会进行其他检查，比如：密码是否过期、密码错误次数是否过多等。
+修改密码
+用户修改密码时，语法示例如下：">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-05-22T10:00:00+08:00">
+    <meta property="article:modified_time" content="2026-08-14T17:47:31+08:00">
+    <meta property="article:tag" content="身份认证">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="海量 2 博客 profile">
+<meta name="twitter:description" content="
+摘要：本文主要分为3个章节：
+
+介绍Vastbase基于密码的身份认证机制，介绍密码相关配置参数，指出当前控制参数的局限性，提出PROFILE功能支持细粒度设置密码相关配置参数。
+介绍Vastbase的PROFILE功能如何使用，包括管理PROFILE功能、管理PROFILE参数、管理用户PROFILE
+介绍Vastbase身份认证流程与原理，介绍PROFILE功能的实现原理
+
+
+目录
+
+1 PROFILE 功能背景
+
+1.1 身份认证机制
+1.2 身份认证配置
+1.3 身份认证优化
+
+
+2 PROFILE 功能使用
+
+2.1 PROFILE 简单示例
+2.2 管理 PROFILE 功能
+2.3 管理 PROFILE 参数
+2.4 管理 用户 PROFILE
+
+
+3 PROFILE 功能原理
+
+3.1 身份认证元数据
+3.2 身份认证流程
+
+
+
+1 PROFILE 功能背景
+1.1 身份认证机制
+Vastbase身份认证模块，主要采用基于密码的认证机制，常用的密码操作包括：
+
+
+创建密码
+创建新用户时，需指定密码。语法示例如下：
+CREATE USER u1 PASSWORD &#39;u1.password&#39;;
+Vastbase接收密码后，计算密码的哈希值，并将密码哈希值、密码创建时间等存储至系统表中。
+
+
+使用密码
+用户连接Vastbase时，需提供密码，使用vsql连接的命令如下：
+vsql -h {host} -p {port} -U u1 -W &#39;u1.password&#39; -d vastbase -r
+Vastbase会与vsql进行身份认证交互，基于存储的密码哈希值，校验密码是否正确。同时，Vastbase还会进行其他检查，比如：密码是否过期、密码错误次数是否过多等。
+
+
+修改密码
+用户修改密码时，语法示例如下：">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "海量 2 博客 profile",
+      "item": "http://localhost:1313/posts/projectdocs/2-blog-profile/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "海量 2 博客 profile",
+  "name": "海量 2 博客 profile",
+  "description": " 摘要：本文主要分为3个章节：\n介绍Vastbase基于密码的身份认证机制，介绍密码相关配置参数，指出当前控制参数的局限性，提出PROFILE功能支持细粒度设置密码相关配置参数。 介绍Vastbase的PROFILE功能如何使用，包括管理PROFILE功能、管理PROFILE参数、管理用户PROFILE 介绍Vastbase身份认证流程与原理，介绍PROFILE功能的实现原理 目录\n1 PROFILE 功能背景 1.1 身份认证机制 1.2 身份认证配置 1.3 身份认证优化 2 PROFILE 功能使用 2.1 PROFILE 简单示例 2.2 管理 PROFILE 功能 2.3 管理 PROFILE 参数 2.4 管理 用户 PROFILE 3 PROFILE 功能原理 3.1 身份认证元数据 3.2 身份认证流程 1 PROFILE 功能背景 1.1 身份认证机制 Vastbase身份认证模块，主要采用基于密码的认证机制，常用的密码操作包括：\n创建密码\n创建新用户时，需指定密码。语法示例如下：\nCREATE USER u1 PASSWORD \u0026#39;u1.password\u0026#39;; Vastbase接收密码后，计算密码的哈希值，并将密码哈希值、密码创建时间等存储至系统表中。\n使用密码\n用户连接Vastbase时，需提供密码，使用vsql连接的命令如下：\nvsql -h {host} -p {port} -U u1 -W \u0026#39;u1.password\u0026#39; -d vastbase -r Vastbase会与vsql进行身份认证交互，基于存储的密码哈希值，校验密码是否正确。同时，Vastbase还会进行其他检查，比如：密码是否过期、密码错误次数是否过多等。\n修改密码\n用户修改密码时，语法示例如下：\n",
+  "keywords": [
+    "身份认证"
+  ],
+  "articleBody": " 摘要：本文主要分为3个章节：\n介绍Vastbase基于密码的身份认证机制，介绍密码相关配置参数，指出当前控制参数的局限性，提出PROFILE功能支持细粒度设置密码相关配置参数。 介绍Vastbase的PROFILE功能如何使用，包括管理PROFILE功能、管理PROFILE参数、管理用户PROFILE 介绍Vastbase身份认证流程与原理，介绍PROFILE功能的实现原理 目录\n1 PROFILE 功能背景 1.1 身份认证机制 1.2 身份认证配置 1.3 身份认证优化 2 PROFILE 功能使用 2.1 PROFILE 简单示例 2.2 管理 PROFILE 功能 2.3 管理 PROFILE 参数 2.4 管理 用户 PROFILE 3 PROFILE 功能原理 3.1 身份认证元数据 3.2 身份认证流程 1 PROFILE 功能背景 1.1 身份认证机制 Vastbase身份认证模块，主要采用基于密码的认证机制，常用的密码操作包括：\n创建密码\n创建新用户时，需指定密码。语法示例如下：\nCREATE USER u1 PASSWORD 'u1.password'; Vastbase接收密码后，计算密码的哈希值，并将密码哈希值、密码创建时间等存储至系统表中。\n使用密码\n用户连接Vastbase时，需提供密码，使用vsql连接的命令如下：\nvsql -h {host} -p {port} -U u1 -W 'u1.password' -d vastbase -r Vastbase会与vsql进行身份认证交互，基于存储的密码哈希值，校验密码是否正确。同时，Vastbase还会进行其他检查，比如：密码是否过期、密码错误次数是否过多等。\n修改密码\n用户修改密码时，语法示例如下：\nALTER USER u1 PASSWORD 'u1.newpass'; vastbsae出于安全考虑，会检查新密码是否已曾用过的旧密码相同。\n1.2 身份认证配置 Vastbase会校验、检查密码，包括密码过期、密码复用等场景。在校验前，用户可配置校验、检查参数。在3.0.8.1版本前的Vastbase中，相关参数由GUC控制。\n查询相关GUC的命令如下：\nSELECT name, setting, unit, short_desc, min_val, max_val, boot_val FROM pg_settings WHERE name in ('password_effect_time', 'failed_login_attempts', 'password_lock_time', 'password_reuse_time', 'password_reuse_max'); 相关GUC的功能与取值如下：\n编号 GUC参数 参数功能 取值范围 默认值 单位 1 password_effect_time 使用密码时，检查密码创建时间，控制密码有效期 [30, 36500] 36500 天 2 failed_login_attempts 使用密码时，控制密码错误次数阈值，如果次数达到阈值，则账号会被暂时锁定 [1,1000] 5 次 3 password_lock_time 使用密码时，如果密码错误次数达到阈值，控制账号锁定时间 [1, 525600] 1440 分钟 4 password_reuse_time 修改密码时，如果新密码与曾使用过的旧密码相同，控制不能与近期使用过的相同 [30, 90] 30 天 5 password_reuser_max 修改密码时，如果新密码与曾使用过的旧密码相同，控制不能与最近几次使用过的相同 [1, 100] 3 次 1.3 身份认证优化 身份认证问题：\n上述5个GUC参数，对所有用户生效，即所有用户使用相同的配置参数。但是，一个集群，存在多个用户，每个用户角色不同，有高权限的系统管理员，有低权限的普通用户，不同用户的密码有效期、密码错误阈值等，要求也应不同。通过GUC参数，控制粒度较粗，无法详细为不同用户设置不用的配置参数。\n身份认证优化：\n3.0.8.1版本Vastbase，在身份认证模块，主要针对配置方式进行了优化。PROFILE功能，解决相关配置参数控制粒度粗的问题。\nPROFILE功能，支持为不用的用户，设置不同的配置参数，以实现细粒度控制。包括密码有效期、密码错误次数阈值等在内的参数，默认情况下，不再由GUC参数password_effect_time、failed_login_attempts等控制，而是由同名或名称接近的PROFILE参数控制，不用用户可设置不用的PROFILE参数。\nOracle兼容性：\nOracle 8版本开始支持PROFILE特性，为保证兼容性，提高易用性，Vastbase的PROFILE特性，在参数名称、参数功能、参数取值范围、参数单位、参数配置范围等，将与Oracle一致。\nOracle 23版本支持18个PROFILE参数，分为密码管理、资源管理类。Vastbase支持7个PROFILE参数，主要是密码管理类。\n注意：在Oracle兼容性下，才可使用PROFILE功能。\n2 PROFILE 功能使用 2.1 PROFILE 简单示例 首先，以一个简单的例子，简单介绍PROFILE的使用方法。\n假设，需创建用户u1，该用户的密码有效期为10天，密码错误次数阈值为3次。\n创建PROFILE，可理解为创建配置组，创建时可同时设置参数值。\nCREATE PROFILE pro1 LIMIT password_effect_time 10 failed_login_attempts 3; 创建用户，并为用户设置PROFILE，即设置配置组。\nCREATE USER u1 PASSWORD 'u1.password' PROFILE pro1; 用户u1的密码有效期、密码错误次数阈值等，将不再有GUC参数控制，而是由PROFILE参数控制，PROFILE参数存储于系统表中。\nVastbase PROFILE功能的使用方法，与Oracle基本一致。\n2.2 管理 PROFILE 功能 PROFILE功能是否开启，由GUC参数resource_limit控制。\nresource_limit取值为on，表示开启PROFILE功能，开启PROFILE功能后，以下5个GUC参数，将不再生效，而是由PROFILE参数代替，PROFILE参数存储于系统表中：\npassword_effect_time failed_login_attempts password_lock_time password_reuse_time password_reuse_max 另外，身份认证成功的用户，用户会话超时时间，也不再由GUC参数session_timeout控制，由PROFILE参数代替。\n对于新安装的3.0.8.1及之后版本的Vastbase集群，如果是Oracle兼容性，resource_limit默认值为on，即默认开启PROFILE功能，并替代6个GUC参数。\n对于已存在的3.0.8.1之前的Vastbase集群，升级至3.0.8.1时，resource_limit默认值为off，即升级场景不会修改数据库行为，不会导致6个GUC参数失效。\n用户可手动设置GUC参数resource_limit的值为on或off，以开启或关闭PRIFILE功能。resource_limit为Postmaster级别的GUC参数，设置后，需重启集群，才能生效。\n2.3 管理 PROFILE 参数 PROFILE功能新增3个语法，支持创建、修改、删除PROFILE，语法格式如下：\n-- 创建 CREATE PROFILE profile_name [ LIMIT {setting_name setting_value ...} ] -- 修改 ALTER PROFILE profile_name LIMIT {setting_name setting_value ...} -- 删除 DROP PROFILE [IF EXISTS] profile_name [, profile_name, ...] 其中，setting_name表示PROFILE配置参数，目前支持7个参数：\nPROFILE配置名 被替代的GUC配置名 功能 password_life_time password_effect_time 无变化 password_grace_time - 如果密码超过有效期，控制继续使用账号的宽容期 failed_login_attempts failed_login_attempts 无变化 password_lock_time password_lock_time 无变化 password_reuse_time password_reuse_time 无变化 password_reuse_max password_reuse_max 无变化 idle_time session_timeout 无变化 与原GUC相比，上述参数的取值范围、参数单位等存在差异。\n使用示例如下：\n创建PROFILE\n-- 创建PROFILE，参数均使用默认值 CREATE PROFILE pro1; -- 创建PROFILE，同时设置参数值，可设置1个或多个参数，参数之间使用空格分隔。在pro2中，为主动设置的其他5个参数，均使用默认值 CREATE PROFILE pro2 LIMIT password_life_time 30 failed_login_attempts 3; -- 参数取值可设置为 unlimited，即对相关功能不做限制。例如将password_life_time设置为unlimited，表示密码永远不会过期 CREATE PROFILE pro3 LIMIT password_life_time unlimited; 查询PROFILE\n-- 所有PROFILE均存储于系统表中 SELECT * FROM vb_profiles; 安装集群时，Vastbase内置1个名为default的PROFILE，该PROFILE中7个参数取值均为unlimited。查询vb_profiles的结果如下：\nprofile | setname | setval | valunit | valtype | valmin | valmax | valdefault | setkind -- unlimited含义 ---------+-----------------------+-----------+---------+--------------------+------------+------------+---------- default | failed_login_attempts | unlimited | times | int | 1 | 2147483646 | 10 | password -- 等价INT_MAX，允许无限次登录失败 default | password_lock_time | unlimited | days | double | 0.00001 | 24855 | 1 | password -- 等价0，账号永远不锁 default | password_life_time | unlimited | days | double | 0.00001 | 24855 | 180 | password -- 等价DBL_MAX，密码永远有效 default | password_grace_time | unlimited | days | double | 0.00001 | 24855 | 7 | password -- 等价DBL_MAX，密码过期也永远可用 default | password_reuse_time | unlimited | days | double | 0.00001 | 24855 | 1 | password -- 等价0，密码可无限复用 default | password_reuse_max | unlimited | times | int | 1 | 2147483646 | 1 | password -- 等价INT_MAX，密码可无限复用 default | idle_time | unlimited | minutes | double | 0.00001 | 2147483646 | 10 | kernel -- 等价INT_MAX，会话永远不过期 -- 提示：0.00001 days约为0.8 second，24855 days约为70 years 各列含义如下：\n列名 含义 profile PROFILE 名，可理解为配置组 setname PROFILE 配置参数名 setval 配置参数 实际值 valunit 参数值 单位 valtype 参数值 数据类型 valmin 参数值 最小值 valmax 参数值 最大值 valdefault 参数值 默认值，执行CREATE PROFILE语法时，未主动设置值的配置参数，默认使用该列中的值 settype 配置参数 分类 另外，查询视图DBA_PROFILES的结果，与查询系统表vb_profiles效果接近。\nSELECT * FROM DBA_PROFILES; 修改PROFILE\n-- 修改PROFILE，可修改1个或多个参数，参数之间使用空格分隔 ALTER PROFILE pro1 LIMIT password_life_time 100 password_reuse_max unlimited; 删除PROFILE\nDROP PROFILE pro1; -- 删除PROFILE，一次可删除多个 DROP PROFILE IF EXISTS pro1,pro2,pro3; -- 注意：Vastbase内置的名为default的PROFILE不能被删除 2.4 管理 用户 PROFILE PROFILE功能支持为不同用户设置、修改不同的PROFILE，即不同的配置组。设置语法如下：\n-- 创建用户时，为用户设置PROFILE CREATE USER user_name PASSWORD password [ PROFILE profile_name ] -- 对于已存在的用户，修改用户PROFILE ALTER USER user_name [ PROFILE profile_name ] 如果未主动为用户设置PROFILE，则用户默认使用名为default的PROFILE。\n使用示例如下：\n设置用户PROFILE\n-- 前提：请确保已通过 CREATE PROFILE 语法设置对应的PROFILE CREATE USER u1 PASSWORD 'u1.password' PROFILE pro1; 查询用户PROFILE\nSELECT * FROM vb_user_profiles WHERE rolname = 'u1'; 查询结果示例如下：\nroloid | rolname | profile --------+---------+--------- 28214 | u1 | pro1 修改用户PROFILE\n-- 前提：请确保已通过 CREATE PROFILE 语法设置对应的PROFILE ALTER USER u1 PROFILE pro2; 3 PROFILE 功能原理 3.1 身份认证元数据 系统表pg_authid\n创建用户时，Vastbase会为用户分配唯一的用户id，并在系统表pg_authid中，记录用户名、用户id、密码哈希值等信息。\nCREATE USER u1 PASSWORD 'u1.password'; SELECT rolname,oid,rolpassword FROM pg_authid WHERE rolname = 'u1'; -- 示例输出： rolname | oid | rolpassword ---------+-------+---------------------------- u1 | 28214 | sha25684899a888d999b97... 系统表pg_user_status\n创建用户时，Vastbase会在系统表pg_user_status中，初始话密码失败次数、密码锁定状态、密码锁定时间等信息。\n登录用户时，如果密码错误，Vastbase会更新系统表中密码失败次数等信息，并校验是否达到锁定条件。\nSELECT roloid,failcount,rolstatus，locktime FROM pg_user_status WHERE roloid = 28214; -- 示例输出： roloid | failcount | rolstatus | locktime --------+-----------+-----------+-------------------------- 28214 | 0 | 0 | 2025-05-01 10:40:41.... 系统表pg_auth_history\n修改密码时，Vastbase会在系统表pg_auth_history中，记录所有曾用过的密码\nALTER USER u1 PASSWORD 'u1.newpass'; SELECT roloid,passwordtime,rolpassword FROM pg_auth_history WHERE roloid = 28214; -- 示例输出： roloid | passwordtime | rolpassword --------+-------------------------+------------------------------ 28214 | 2025-05-01 10:40:41.... | sha25684899a888d999b97... 28214 | 2025-05-08 13:25:07.... | sha256b019838a88f989c8... 3.2 身份认证流程 未开启PROFILE功能的场景下，身份认证的简要流程如下图所示：（途中系统表1、2、3分别代表pg_authid、pg_user_status、pg_auth_history。）\n开启PROFILE功能的场景下，上述流程中，第8步将不再从GUC中获取密码相关参数，而是替换为以下2步：\n根据用户id，从系统表vb_user_profiles中，查找用户使用的PROFILE。 从系统表vb_profiles中，查找指定PROFILE的7个配置参数，并缓存 ",
+  "wordCount" : "684",
+  "inLanguage": "en",
+  "datePublished": "2025-05-22T10:00:00+08:00",
+  "dateModified": "2026-08-14T17:47:31+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/projectdocs/2-blog-profile/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      海量 2 博客 profile
+    </h1>
+    <div class="post-meta">
+      <span title='2025-05-22 10:00:00 +0800 CST'>May 22, 2025</span>&nbsp;·&nbsp;<span>4 min</span>&nbsp;·&nbsp;<span>684 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#1-profile-%e5%8a%9f%e8%83%bd%e8%83%8c%e6%99%af" aria-label="1 PROFILE 功能背景">1 PROFILE 功能背景</a><ul>
+                        
+                <li>
+                    <a href="#11-%e8%ba%ab%e4%bb%bd%e8%ae%a4%e8%af%81%e6%9c%ba%e5%88%b6" aria-label="1.1 身份认证机制">1.1 身份认证机制</a></li>
+                <li>
+                    <a href="#12-%e8%ba%ab%e4%bb%bd%e8%ae%a4%e8%af%81%e9%85%8d%e7%bd%ae" aria-label="1.2 身份认证配置">1.2 身份认证配置</a></li>
+                <li>
+                    <a href="#13-%e8%ba%ab%e4%bb%bd%e8%ae%a4%e8%af%81%e4%bc%98%e5%8c%96" aria-label="1.3 身份认证优化">1.3 身份认证优化</a></li></ul>
+                </li>
+                <li>
+                    <a href="#2-profile-%e5%8a%9f%e8%83%bd%e4%bd%bf%e7%94%a8" aria-label="2 PROFILE 功能使用">2 PROFILE 功能使用</a><ul>
+                        
+                <li>
+                    <a href="#21-profile-%e7%ae%80%e5%8d%95%e7%a4%ba%e4%be%8b" aria-label="2.1 PROFILE 简单示例">2.1 PROFILE 简单示例</a></li>
+                <li>
+                    <a href="#22-%e7%ae%a1%e7%90%86-profile-%e5%8a%9f%e8%83%bd" aria-label="2.2 管理 PROFILE 功能">2.2 管理 PROFILE 功能</a></li>
+                <li>
+                    <a href="#23-%e7%ae%a1%e7%90%86-profile-%e5%8f%82%e6%95%b0" aria-label="2.3 管理 PROFILE 参数">2.3 管理 PROFILE 参数</a></li>
+                <li>
+                    <a href="#24-%e7%ae%a1%e7%90%86-%e7%94%a8%e6%88%b7-profile" aria-label="2.4 管理 用户 PROFILE">2.4 管理 用户 PROFILE</a></li></ul>
+                </li>
+                <li>
+                    <a href="#3-profile-%e5%8a%9f%e8%83%bd%e5%8e%9f%e7%90%86" aria-label="3 PROFILE 功能原理">3 PROFILE 功能原理</a><ul>
+                        
+                <li>
+                    <a href="#31-%e8%ba%ab%e4%bb%bd%e8%ae%a4%e8%af%81%e5%85%83%e6%95%b0%e6%8d%ae" aria-label="3.1 身份认证元数据">3.1 身份认证元数据</a></li>
+                <li>
+                    <a href="#32-%e8%ba%ab%e4%bb%bd%e8%ae%a4%e8%af%81%e6%b5%81%e7%a8%8b" aria-label="3.2 身份认证流程">3.2 身份认证流程</a>
+                </li>
+            </ul>
+            </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><blockquote>
+<p>摘要：本文主要分为3个章节：</p>
+<ol>
+<li>介绍Vastbase基于密码的身份认证机制，介绍密码相关配置参数，指出当前控制参数的局限性，提出PROFILE功能支持细粒度设置密码相关配置参数。</li>
+<li>介绍Vastbase的PROFILE功能如何使用，包括管理PROFILE功能、管理PROFILE参数、管理用户PROFILE</li>
+<li>介绍Vastbase身份认证流程与原理，介绍PROFILE功能的实现原理</li>
+</ol>
+</blockquote>
+<p><strong>目录</strong></p>
+<ol>
+<li><a href="#1-PROFILE-%E5%8A%9F%E8%83%BD%E8%83%8C%E6%99%AF">1 PROFILE 功能背景</a>
+<ol>
+<li><a href="#1-1-%E8%BA%AB%E4%BB%BD%E8%AE%A4%E8%AF%81%E6%9C%BA%E5%88%B6">1.1 身份认证机制</a></li>
+<li><a href="#1-2-%E8%BA%AB%E4%BB%BD%E8%AE%A4%E8%AF%81%E9%85%8D%E7%BD%AE">1.2 身份认证配置</a></li>
+<li><a href="#1-3-%E8%BA%AB%E4%BB%BD%E8%AE%A4%E8%AF%81%E4%BC%98%E5%8C%96">1.3 身份认证优化</a></li>
+</ol>
+</li>
+<li><a href="#2-PROFILE-%E5%8A%9F%E8%83%BD%E4%BD%BF%E7%94%A8">2 PROFILE 功能使用</a>
+<ol>
+<li><a href="#2-1-PROFILE-%E7%AE%80%E5%8D%95%E7%A4%BA%E4%BE%8B">2.1 PROFILE 简单示例</a></li>
+<li><a href="#2-2-%E7%AE%A1%E7%90%86-PROFILE-%E5%8A%9F%E8%83%BD">2.2 管理 PROFILE 功能</a></li>
+<li><a href="#2-3-%E7%AE%A1%E7%90%86-PROFILE-%E5%8F%82%E6%95%B0">2.3 管理 PROFILE 参数</a></li>
+<li><a href="#2-4-%E7%AE%A1%E7%90%86-%E7%94%A8%E6%88%B7-PROFILE">2.4 管理 用户 PROFILE</a></li>
+</ol>
+</li>
+<li><a href="#3-PROFILE-%E5%8A%9F%E8%83%BD%E5%8E%9F%E7%90%86">3 PROFILE 功能原理</a>
+<ol>
+<li><a href="#3-1-%E8%BA%AB%E4%BB%BD%E8%AE%A4%E8%AF%81%E5%85%83%E6%95%B0%E6%8D%AE">3.1 身份认证元数据</a></li>
+<li><a href="#3-2-%E8%BA%AB%E4%BB%BD%E8%AE%A4%E8%AF%81%E6%B5%81%E7%A8%8B">3.2 身份认证流程</a></li>
+</ol>
+</li>
+</ol>
+<h1 id="1-profile-功能背景">1 PROFILE 功能背景<a hidden class="anchor" aria-hidden="true" href="#1-profile-功能背景">#</a></h1>
+<h2 id="11-身份认证机制">1.1 身份认证机制<a hidden class="anchor" aria-hidden="true" href="#11-身份认证机制">#</a></h2>
+<p>Vastbase身份认证模块，主要采用基于密码的认证机制，常用的密码操作包括：</p>
+<ol>
+<li>
+<p>创建密码<br>
+创建新用户时，需指定密码。语法示例如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">&#39;u1.password&#39;</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><p>Vastbase接收密码后，计算密码的哈希值，并将密码哈希值、密码创建时间等存储至系统表中。</p>
+</li>
+<li>
+<p>使用密码<br>
+用户连接Vastbase时，需提供密码，使用vsql连接的命令如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="n">vsql</span><span class="w"> </span><span class="o">-</span><span class="n">h</span><span class="w"> </span><span class="err">{</span><span class="k">host</span><span class="err">}</span><span class="w"> </span><span class="o">-</span><span class="n">p</span><span class="w"> </span><span class="err">{</span><span class="n">port</span><span class="err">}</span><span class="w"> </span><span class="o">-</span><span class="n">U</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="o">-</span><span class="n">W</span><span class="w"> </span><span class="s1">&#39;u1.password&#39;</span><span class="w"> </span><span class="o">-</span><span class="n">d</span><span class="w"> </span><span class="n">vastbase</span><span class="w"> </span><span class="o">-</span><span class="n">r</span><span class="w">
+</span></span></span></code></pre></div><p>Vastbase会与vsql进行身份认证交互，基于存储的密码哈希值，校验密码是否正确。同时，Vastbase还会进行其他检查，比如：密码是否过期、密码错误次数是否过多等。</p>
+</li>
+<li>
+<p>修改密码<br>
+用户修改密码时，语法示例如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">&#39;u1.newpass&#39;</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><p>vastbsae出于安全考虑，会检查新密码是否已曾用过的旧密码相同。</p>
+</li>
+</ol>
+<h2 id="12-身份认证配置">1.2 身份认证配置<a hidden class="anchor" aria-hidden="true" href="#12-身份认证配置">#</a></h2>
+<p>Vastbase会校验、检查密码，包括密码过期、密码复用等场景。在校验前，用户可配置校验、检查参数。在3.0.8.1版本前的Vastbase中，相关参数由GUC控制。</p>
+<ol>
+<li>
+<p>查询相关GUC的命令如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">setting</span><span class="p">,</span><span class="w"> </span><span class="n">unit</span><span class="p">,</span><span class="w"> </span><span class="n">short_desc</span><span class="p">,</span><span class="w"> </span><span class="n">min_val</span><span class="p">,</span><span class="w"> </span><span class="n">max_val</span><span class="p">,</span><span class="w"> </span><span class="n">boot_val</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">FROM</span><span class="w"> </span><span class="n">pg_settings</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">WHERE</span><span class="w"> </span><span class="n">name</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="p">(</span><span class="s1">&#39;password_effect_time&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;failed_login_attempts&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;password_lock_time&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;password_reuse_time&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;password_reuse_max&#39;</span><span class="p">);</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>相关GUC的功能与取值如下：</p>
+<table>
+  <thead>
+      <tr>
+          <th>编号</th>
+          <th>GUC参数</th>
+          <th>参数功能</th>
+          <th>取值范围</th>
+          <th>默认值</th>
+          <th>单位</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>1</td>
+          <td>password_effect_time</td>
+          <td>使用密码时，检查密码创建时间，控制密码有效期</td>
+          <td>[30, 36500]</td>
+          <td>36500</td>
+          <td>天</td>
+      </tr>
+      <tr>
+          <td>2</td>
+          <td>failed_login_attempts</td>
+          <td>使用密码时，控制密码错误次数阈值，如果次数达到阈值，则账号会被暂时锁定</td>
+          <td>[1,1000]</td>
+          <td>5</td>
+          <td>次</td>
+      </tr>
+      <tr>
+          <td>3</td>
+          <td>password_lock_time</td>
+          <td>使用密码时，如果密码错误次数达到阈值，控制账号锁定时间</td>
+          <td>[1, 525600]</td>
+          <td>1440</td>
+          <td>分钟</td>
+      </tr>
+      <tr>
+          <td>4</td>
+          <td>password_reuse_time</td>
+          <td>修改密码时，如果新密码与曾使用过的旧密码相同，控制不能与近期使用过的相同</td>
+          <td>[30, 90]</td>
+          <td>30</td>
+          <td>天</td>
+      </tr>
+      <tr>
+          <td>5</td>
+          <td>password_reuser_max</td>
+          <td>修改密码时，如果新密码与曾使用过的旧密码相同，控制不能与最近几次使用过的相同</td>
+          <td>[1, 100]</td>
+          <td>3</td>
+          <td>次</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+</ol>
+<h2 id="13-身份认证优化">1.3 身份认证优化<a hidden class="anchor" aria-hidden="true" href="#13-身份认证优化">#</a></h2>
+<ul>
+<li>
+<p>身份认证问题：<br>
+上述5个GUC参数，对所有用户生效，即所有用户使用相同的配置参数。但是，一个集群，存在多个用户，每个用户角色不同，有高权限的系统管理员，有低权限的普通用户，不同用户的密码有效期、密码错误阈值等，要求也应不同。通过GUC参数，控制粒度较粗，无法详细为不同用户设置不用的配置参数。</p>
+</li>
+<li>
+<p>身份认证优化：<br>
+3.0.8.1版本Vastbase，在身份认证模块，主要针对配置方式进行了优化。PROFILE功能，解决相关配置参数控制粒度粗的问题。<br>
+PROFILE功能，支持为不用的用户，设置不同的配置参数，以实现细粒度控制。包括密码有效期、密码错误次数阈值等在内的参数，默认情况下，不再由GUC参数password_effect_time、failed_login_attempts等控制，而是由同名或名称接近的PROFILE参数控制，不用用户可设置不用的PROFILE参数。</p>
+</li>
+<li>
+<p>Oracle兼容性：<br>
+Oracle 8版本开始支持PROFILE特性，为保证兼容性，提高易用性，Vastbase的PROFILE特性，在参数名称、参数功能、参数取值范围、参数单位、参数配置范围等，将与Oracle一致。<br>
+Oracle 23版本支持18个PROFILE参数，分为密码管理、资源管理类。Vastbase支持7个PROFILE参数，主要是密码管理类。</p>
+</li>
+</ul>
+<p>注意：在Oracle兼容性下，才可使用PROFILE功能。</p>
+<h1 id="2-profile-功能使用">2 PROFILE 功能使用<a hidden class="anchor" aria-hidden="true" href="#2-profile-功能使用">#</a></h1>
+<h2 id="21-profile-简单示例">2.1 PROFILE 简单示例<a hidden class="anchor" aria-hidden="true" href="#21-profile-简单示例">#</a></h2>
+<p>首先，以一个简单的例子，简单介绍PROFILE的使用方法。</p>
+<ol>
+<li>
+<p>假设，需创建用户u1，该用户的密码有效期为10天，密码错误次数阈值为3次。</p>
+</li>
+<li>
+<p>创建PROFILE，可理解为创建配置组，创建时可同时设置参数值。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">pro1</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="n">password_effect_time</span><span class="w"> </span><span class="mi">10</span><span class="w"> </span><span class="n">failed_login_attempts</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>创建用户，并为用户设置PROFILE，即设置配置组。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">&#39;u1.password&#39;</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">pro1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>用户u1的密码有效期、密码错误次数阈值等，将不再有GUC参数控制，而是由PROFILE参数控制，PROFILE参数存储于系统表中。</p>
+</li>
+</ol>
+<p>Vastbase PROFILE功能的使用方法，与Oracle基本一致。</p>
+<h2 id="22-管理-profile-功能">2.2 管理 PROFILE 功能<a hidden class="anchor" aria-hidden="true" href="#22-管理-profile-功能">#</a></h2>
+<p>PROFILE功能是否开启，由GUC参数resource_limit控制。<br>
+resource_limit取值为on，表示开启PROFILE功能，开启PROFILE功能后，以下5个GUC参数，将不再生效，而是由PROFILE参数代替，PROFILE参数存储于系统表中：</p>
+<ol>
+<li>password_effect_time</li>
+<li>failed_login_attempts</li>
+<li>password_lock_time</li>
+<li>password_reuse_time</li>
+<li>password_reuse_max</li>
+</ol>
+<p>另外，身份认证成功的用户，用户会话超时时间，也不再由GUC参数session_timeout控制，由PROFILE参数代替。</p>
+<p>对于新安装的3.0.8.1及之后版本的Vastbase集群，如果是Oracle兼容性，resource_limit默认值为on，即默认开启PROFILE功能，并替代6个GUC参数。<br>
+对于已存在的3.0.8.1之前的Vastbase集群，升级至3.0.8.1时，resource_limit默认值为off，即升级场景不会修改数据库行为，不会导致6个GUC参数失效。</p>
+<p>用户可手动设置GUC参数resource_limit的值为on或off，以开启或关闭PRIFILE功能。resource_limit为Postmaster级别的GUC参数，设置后，需重启集群，才能生效。</p>
+<h2 id="23-管理-profile-参数">2.3 管理 PROFILE 参数<a hidden class="anchor" aria-hidden="true" href="#23-管理-profile-参数">#</a></h2>
+<p>PROFILE功能新增3个语法，支持创建、修改、删除PROFILE，语法格式如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 创建
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">profile_name</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="err">{</span><span class="n">setting_name</span><span class="w"> </span><span class="n">setting_value</span><span class="w"> </span><span class="p">...</span><span class="err">}</span><span class="w"> </span><span class="p">]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 修改
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">profile_name</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="err">{</span><span class="n">setting_name</span><span class="w"> </span><span class="n">setting_value</span><span class="w"> </span><span class="p">...</span><span class="err">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 删除
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="p">[</span><span class="k">IF</span><span class="w"> </span><span class="k">EXISTS</span><span class="p">]</span><span class="w"> </span><span class="n">profile_name</span><span class="w"> </span><span class="p">[,</span><span class="w"> </span><span class="n">profile_name</span><span class="p">,</span><span class="w"> </span><span class="p">...]</span><span class="w">
+</span></span></span></code></pre></div><p>其中，setting_name表示PROFILE配置参数，目前支持7个参数：</p>
+<table>
+  <thead>
+      <tr>
+          <th>PROFILE配置名</th>
+          <th>被替代的GUC配置名</th>
+          <th>功能</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>password_life_time</td>
+          <td>password_effect_time</td>
+          <td>无变化</td>
+      </tr>
+      <tr>
+          <td>password_grace_time</td>
+          <td>-</td>
+          <td>如果密码超过有效期，控制继续使用账号的宽容期</td>
+      </tr>
+      <tr>
+          <td>failed_login_attempts</td>
+          <td>failed_login_attempts</td>
+          <td>无变化</td>
+      </tr>
+      <tr>
+          <td>password_lock_time</td>
+          <td>password_lock_time</td>
+          <td>无变化</td>
+      </tr>
+      <tr>
+          <td>password_reuse_time</td>
+          <td>password_reuse_time</td>
+          <td>无变化</td>
+      </tr>
+      <tr>
+          <td>password_reuse_max</td>
+          <td>password_reuse_max</td>
+          <td>无变化</td>
+      </tr>
+      <tr>
+          <td>idle_time</td>
+          <td>session_timeout</td>
+          <td>无变化</td>
+      </tr>
+  </tbody>
+</table>
+<p>与原GUC相比，上述参数的取值范围、参数单位等存在差异。</p>
+<p>使用示例如下：</p>
+<ol>
+<li>
+<p>创建PROFILE</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 创建PROFILE，参数均使用默认值
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">pro1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 创建PROFILE，同时设置参数值，可设置1个或多个参数，参数之间使用空格分隔。在pro2中，为主动设置的其他5个参数，均使用默认值
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">pro2</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="n">password_life_time</span><span class="w"> </span><span class="mi">30</span><span class="w"> </span><span class="n">failed_login_attempts</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 参数取值可设置为 unlimited，即对相关功能不做限制。例如将password_life_time设置为unlimited，表示密码永远不会过期
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">pro3</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="n">password_life_time</span><span class="w"> </span><span class="n">unlimited</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>查询PROFILE</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 所有PROFILE均存储于系统表中
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">vb_profiles</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><p>安装集群时，Vastbase内置1个名为default的PROFILE，该PROFILE中7个参数取值均为unlimited。查询vb_profiles的结果如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="n">profile</span><span class="w">  </span><span class="o">|</span><span class="w">   </span><span class="n">setname</span><span class="w">             </span><span class="o">|</span><span class="w">   </span><span class="n">setval</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">valunit</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">valtype</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">valmin</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">valmax</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="n">valdefault</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">setkind</span><span class="w">     </span><span class="c1">-- unlimited含义
+</span></span></span><span class="line"><span class="cl"><span class="c1">---------+-----------------------+-----------+---------+--------------------+------------+------------+----------
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">failed_login_attempts</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">times</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="nb">int</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="mi">2147483646</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">10</span><span class="w">         </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">    </span><span class="c1">-- 等价INT_MAX，允许无限次登录失败
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">password_lock_time</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">days</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">double</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">00001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">24855</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">    </span><span class="c1">-- 等价0，账号永远不锁
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">password_life_time</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">days</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">double</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">00001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">24855</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">180</span><span class="w">        </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">    </span><span class="c1">-- 等价DBL_MAX，密码永远有效
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">password_grace_time</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">days</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">double</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">00001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">24855</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">7</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">    </span><span class="c1">-- 等价DBL_MAX，密码过期也永远可用
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">password_reuse_time</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">days</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">double</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">00001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">24855</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">    </span><span class="c1">-- 等价0，密码可无限复用
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">password_reuse_max</span><span class="w">    </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">times</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="nb">int</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">       </span><span class="o">|</span><span class="w"> </span><span class="mi">2147483646</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">1</span><span class="w">          </span><span class="o">|</span><span class="w"> </span><span class="n">password</span><span class="w">    </span><span class="c1">-- 等价INT_MAX，密码可无限复用
+</span></span></span><span class="line"><span class="cl"><span class="k">default</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="n">idle_time</span><span class="w">             </span><span class="o">|</span><span class="w"> </span><span class="n">unlimited</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">minutes</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">double</span><span class="w">   </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="p">.</span><span class="mi">00001</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">2147483646</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="mi">10</span><span class="w">         </span><span class="o">|</span><span class="w"> </span><span class="n">kernel</span><span class="w">      </span><span class="c1">-- 等价INT_MAX，会话永远不过期
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 提示：0.00001 days约为0.8 second，24855 days约为70 years
+</span></span></span></code></pre></div><p>各列含义如下：</p>
+<table>
+  <thead>
+      <tr>
+          <th>列名</th>
+          <th>含义</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>profile</td>
+          <td>PROFILE 名，可理解为配置组</td>
+      </tr>
+      <tr>
+          <td>setname</td>
+          <td>PROFILE 配置参数名</td>
+      </tr>
+      <tr>
+          <td>setval</td>
+          <td>配置参数 实际值</td>
+      </tr>
+      <tr>
+          <td>valunit</td>
+          <td>参数值 单位</td>
+      </tr>
+      <tr>
+          <td>valtype</td>
+          <td>参数值 数据类型</td>
+      </tr>
+      <tr>
+          <td>valmin</td>
+          <td>参数值 最小值</td>
+      </tr>
+      <tr>
+          <td>valmax</td>
+          <td>参数值 最大值</td>
+      </tr>
+      <tr>
+          <td>valdefault</td>
+          <td>参数值 默认值，执行CREATE PROFILE语法时，未主动设置值的配置参数，默认使用该列中的值</td>
+      </tr>
+      <tr>
+          <td>settype</td>
+          <td>配置参数 分类</td>
+      </tr>
+  </tbody>
+</table>
+<p>另外，查询视图DBA_PROFILES的结果，与查询系统表vb_profiles效果接近。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">DBA_PROFILES</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>修改PROFILE</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 修改PROFILE，可修改1个或多个参数，参数之间使用空格分隔
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">pro1</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="n">password_life_time</span><span class="w"> </span><span class="mi">100</span><span class="w"> </span><span class="n">password_reuse_max</span><span class="w"> </span><span class="n">unlimited</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>删除PROFILE</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">pro1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 删除PROFILE，一次可删除多个
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="k">IF</span><span class="w"> </span><span class="k">EXISTS</span><span class="w"> </span><span class="n">pro1</span><span class="p">,</span><span class="n">pro2</span><span class="p">,</span><span class="n">pro3</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 注意：Vastbase内置的名为default的PROFILE不能被删除
+</span></span></span></code></pre></div></li>
+</ol>
+<h2 id="24-管理-用户-profile">2.4 管理 用户 PROFILE<a hidden class="anchor" aria-hidden="true" href="#24-管理-用户-profile">#</a></h2>
+<p>PROFILE功能支持为不同用户设置、修改不同的PROFILE，即不同的配置组。设置语法如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 创建用户时，为用户设置PROFILE
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">user_name</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="n">password</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">profile_name</span><span class="w"> </span><span class="p">]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 对于已存在的用户，修改用户PROFILE
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">user_name</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">profile_name</span><span class="w"> </span><span class="p">]</span><span class="w">
+</span></span></span></code></pre></div><p>如果未主动为用户设置PROFILE，则用户默认使用名为default的PROFILE。</p>
+<p>使用示例如下：</p>
+<ol>
+<li>
+<p>设置用户PROFILE</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 前提：请确保已通过 CREATE PROFILE 语法设置对应的PROFILE
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">&#39;u1.password&#39;</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">pro1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>查询用户PROFILE</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">vb_user_profiles</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">rolname</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;u1&#39;</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><p>查询结果示例如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="w"> </span><span class="n">roloid</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">rolname</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">profile</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">--------+---------+---------
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="mi">28214</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">u1</span><span class="w">      </span><span class="o">|</span><span class="w"> </span><span class="n">pro1</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>修改用户PROFILE</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 前提：请确保已通过 CREATE PROFILE 语法设置对应的PROFILE
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="n">PROFILE</span><span class="w"> </span><span class="n">pro2</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+</ol>
+<h1 id="3-profile-功能原理">3 PROFILE 功能原理<a hidden class="anchor" aria-hidden="true" href="#3-profile-功能原理">#</a></h1>
+<h2 id="31-身份认证元数据">3.1 身份认证元数据<a hidden class="anchor" aria-hidden="true" href="#31-身份认证元数据">#</a></h2>
+<ol>
+<li>
+<p>系统表pg_authid<br>
+创建用户时，Vastbase会为用户分配唯一的用户id，并在系统表pg_authid中，记录用户名、用户id、密码哈希值等信息。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">&#39;u1.password&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">rolname</span><span class="p">,</span><span class="n">oid</span><span class="p">,</span><span class="n">rolpassword</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_authid</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">rolname</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;u1&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 示例输出：
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="n">rolname</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">oid</span><span class="w">   </span><span class="o">|</span><span class="w">   </span><span class="n">rolpassword</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">---------+-------+----------------------------
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="n">u1</span><span class="w">     </span><span class="o">|</span><span class="w"> </span><span class="mi">28214</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">sha25684899a888d999b97</span><span class="p">...</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>系统表pg_user_status<br>
+创建用户时，Vastbase会在系统表pg_user_status中，初始话密码失败次数、密码锁定状态、密码锁定时间等信息。<br>
+登录用户时，如果密码错误，Vastbase会更新系统表中密码失败次数等信息，并校验是否达到锁定条件。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">roloid</span><span class="p">,</span><span class="n">failcount</span><span class="p">,</span><span class="n">rolstatus</span><span class="err">，</span><span class="n">locktime</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_user_status</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">roloid</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">28214</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 示例输出：
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="n">roloid</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">failcount</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">rolstatus</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">locktime</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">--------+-----------+-----------+--------------------------
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="mi">28214</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="w">         </span><span class="o">|</span><span class="w"> </span><span class="mi">0</span><span class="w">         </span><span class="o">|</span><span class="w"> </span><span class="mi">2025</span><span class="o">-</span><span class="mi">05</span><span class="o">-</span><span class="mi">01</span><span class="w"> </span><span class="mi">10</span><span class="p">:</span><span class="mi">40</span><span class="p">:</span><span class="mi">41</span><span class="p">....</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>系统表pg_auth_history<br>
+修改密码时，Vastbase会在系统表pg_auth_history中，记录所有曾用过的密码</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">ALTER</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">u1</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">&#39;u1.newpass&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">roloid</span><span class="p">,</span><span class="n">passwordtime</span><span class="p">,</span><span class="n">rolpassword</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_auth_history</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">roloid</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">28214</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 示例输出：
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="n">roloid</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">passwordtime</span><span class="w">            </span><span class="o">|</span><span class="w"> </span><span class="n">rolpassword</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">--------+-------------------------+------------------------------
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="mi">28214</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="mi">2025</span><span class="o">-</span><span class="mi">05</span><span class="o">-</span><span class="mi">01</span><span class="w"> </span><span class="mi">10</span><span class="p">:</span><span class="mi">40</span><span class="p">:</span><span class="mi">41</span><span class="p">....</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">sha25684899a888d999b97</span><span class="p">...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="mi">28214</span><span class="w">  </span><span class="o">|</span><span class="w"> </span><span class="mi">2025</span><span class="o">-</span><span class="mi">05</span><span class="o">-</span><span class="mi">08</span><span class="w"> </span><span class="mi">13</span><span class="p">:</span><span class="mi">25</span><span class="p">:</span><span class="mi">07</span><span class="p">....</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">sha256b019838a88f989c8</span><span class="p">...</span><span class="w">
+</span></span></span></code></pre></div></li>
+</ol>
+<h2 id="32-身份认证流程">3.2 身份认证流程<a hidden class="anchor" aria-hidden="true" href="#32-身份认证流程">#</a></h2>
+<p>未开启PROFILE功能的场景下，身份认证的简要流程如下图所示：（途中系统表1、2、3分别代表pg_authid、pg_user_status、pg_auth_history。）</p>
+<p><img alt="auth" loading="lazy" src="/images/ProjectDocs/2-blog-profile/auth.png"></p>
+<p>开启PROFILE功能的场景下，上述流程中，第8步将不再从GUC中获取密码相关参数，而是替换为以下2步：</p>
+<ol>
+<li>根据用户id，从系统表vb_user_profiles中，查找用户使用的PROFILE。</li>
+<li>从系统表vb_profiles中，查找指定PROFILE的7个配置参数，并缓存</li>
+</ol>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/%E8%BA%AB%E4%BB%BD%E8%AE%A4%E8%AF%81/">身份认证</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/projectdocs/8-requirement-hikvision-auth/">海量 8 需求 海康身份认证</a></li><li><a href="/posts/projectdocs/4-requirement-scram-sha256/">海量 4 需求 scram-sha256</a></li><li><a href="/posts/projectdocs/2-testcase-profile/">海量 2 用例 profile</a></li><li><a href="/posts/projectdocs/2-design-profile/">海量 2 设计 profile</a></li><li><a href="/posts/projectdocs/2-design-profile-oracle/">海量 2 设计 oracle profile</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./项目文档</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

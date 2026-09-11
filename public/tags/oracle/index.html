@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>Oracle | Kernel Notes</title>
+<meta name="keywords" content="">
+<meta name="description" content="">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/tags/oracle/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" type="application/rss+xml" href="http://localhost:1313/tags/oracle/index.xml" title="rss">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/tags/oracle/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/tags/oracle/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="Oracle">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Oracle">
+<meta name="twitter:description" content="">
+
+</head>
+<body class="list" id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"> 
+<header class="page-header">
+  <h1>
+    Oracle
+  </h1>
+</header>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 1 用例 oracle加密函数
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>CREATE SCHEMA pgcrypto_2_text; SET search_path TO pgcrypto_2_text; /* ------------------------------------------------------------------------------------------------ * part 0: create some utils functions * ------------------------------------------------------------------------------------------------ */ CREATE FUNCTION strtoraw(string VARCHAR2) RETURN RAW IS BEGIN RETURN utl_raw.cast_to_raw(string); END; / CREATE FUNCTION rawtostr(rawdata RAW) RETURN VARCHAR2 IS BEGIN RETURN utl_raw.cast_to_varchar2(rawdata); END; / -- get data type name CREATE OR REPLACE FUNCTION oidgettype(typeoid OID) RETURNS TEXT AS $$ BEGIN RETURN (SELECT typname FROM pg_type WHERE oid = typeoid); END; $$ LANGUAGE plpgsql; CREATE OR REPLACE FUNCTION oidgettype(typeoids OIDVECTOR) RETURNS TEXT[] AS $$ DECLARE result TEXT[] := &#39;{}&#39;; typoid OID; typename TEXT; BEGIN FOREACH typoid IN ARRAY typeoids LOOP SELECT typname INTO typename FROM pg_type WHERE oid = typoid; result := array_append(result, COALESCE(typename, &#39;Unknown OID&#39;)); END LOOP; RETURN result; END; $$ LANGUAGE plpgsql; -- find all functions from dbms_obfuscation_toolkit CREATE VIEW allfuncs AS SELECT proname name,pronargs args,oidgettype(prorettype) output,oidgettype(proargtypes) input FROM pg_proc WHERE pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = &#39;dbms_obfuscation_toolkit&#39;) ORDER BY 1,3,2; /* ------------------------------------------------------------------------------------------------ * part 1: install pgcrypt with different versions * ------------------------------------------------------------------------------------------------ */ -- available version SELECT * FROM pg_available_extension_versions WHERE name = &#39;pgcrypto&#39;; -- 2.0 (default version) CREATE EXTENSION pgcrypto; SELECT * FROM pg_extension WHERE extname = &#39;pgcrypto&#39;; SELECT * FROM allfuncs; DROP EXTENSION pgcrypto; -- 1.2 (old version) CREATE EXTENSION pgcrypto WITH VERSION &#39;1.2&#39;; SELECT * FROM pg_extension WHERE extname = &#39;pgcrypto&#39;; SELECT * FROM allfuncs; DROP EXTENSION pgcrypto; -- 2.0 --&gt; 1.2 CREATE EXTENSION pgcrypto; SELECT * FROM pg_extension WHERE extname = &#39;pgcrypto&#39;; ALTER EXTENSION pgcrypto UPDATE TO &#39;1.2&#39;; SELECT * FROM pg_extension WHERE extname = &#39;pgcrypto&#39;; SELECT * FROM allfuncs; DROP EXTENSION pgcrypto; -- 1.2 --&gt; 2.0 CREATE EXTENSION pgcrypto WITH VERSION &#39;1.2&#39;; SELECT * FROM pg_extension WHERE extname = &#39;pgcrypto&#39;; ALTER EXTENSION pgcrypto UPDATE TO &#39;2.0&#39;; SELECT * FROM pg_extension WHERE extname = &#39;pgcrypto&#39;; SELECT * FROM allfuncs; DROP EXTENSION pgcrypto; /* ------------------------------------------------------------------------------------------------ * part 2: core functions * ------------------------------------------------------------------------------------------------ */ CREATE EXTENSION pgcrypto; -- 1 desencrypt SELECT dbms_obfuscation_toolkit.desencrypt(strtoraw(&#39;11111111&#39;), strtoraw(&#39;11111111&#39;)) FROM dual; SELECT dbms_obfuscation_toolkit.desencrypt(strtoraw(&#39;1111111111111111&#39;), strtoraw(&#39;11111111&#39;)) FROM dual; -- 2 desdecrypt SELECT rawtostr(dbms_obfuscation_toolkit.desdecrypt(hextoraw(&#39;655EA628CF62585F&#39;), strtoraw(&#39;11111111&#39;))) FROM dual; SELECT rawtostr(dbms_obfuscation_toolkit.desdecrypt(hextoraw(&#39;655EA628CF62585F20D3B8A6E657876B&#39;), strtoraw(&#39;11111111&#39;))) FROM dual; -- 3 des3encrypt SELECT dbms_obfuscation_toolkit.des3encrypt(strtoraw(&#39;11111111&#39;), strtoraw(&#39;1111111122222222&#39;), 0, strtoraw(&#39;11111111&#39;)) FROM dual; SELECT dbms_obfuscation_toolkit.des3encrypt(strtoraw(&#39;1111111111111111&#39;), strtoraw(&#39;1111111122222222&#39;), 0, strtoraw(&#39;11111111&#39;)) FROM dual; -- 4 des3decrypt SELECT rawtostr(dbms_obfuscation_toolkit.des3decrypt(hextoraw(&#39;0D28E17571051319&#39;), strtoraw(&#39;1111111122222222&#39;), 0, strtoraw(&#39;11111111&#39;))) FROM dual; SELECT rawtostr(dbms_obfuscation_toolkit.des3decrypt(hextoraw(&#39;0D28E17571051319ACCE2D19D9AED5C8&#39;), strtoraw(&#39;1111111122222222&#39;), 0, strtoraw(&#39;11111111&#39;))) FROM dual; -- 5 des3encrypt -- without iv SELECT dbms_obfuscation_toolkit.des3encrypt(strtoraw(&#39;11111111&#39;), strtoraw(&#39;1111111122222222&#39;)) FROM dual; SELECT dbms_obfuscation_toolkit.des3encrypt(strtoraw(&#39;1111111111111111&#39;), strtoraw(&#39;1111111122222222&#39;)) FROM dual; -- 6 des3decrypt -- without iv SELECT rawtostr(dbms_obfuscation_toolkit.des3decrypt(hextoraw(&#39;7934131269E334A2&#39;), strtoraw(&#39;1111111122222222&#39;))) FROM dual; SELECT rawtostr(dbms_obfuscation_toolkit.des3decrypt(hextoraw(&#39;7934131269E334A2BCC64878CC5A075A&#39;), strtoraw(&#39;1111111122222222&#39;))) FROM dual; /* ------------------------------------------------------------------------------------------------ * part 3: different args * ------------------------------------------------------------------------------------------------ */ -- 1 des CREATE TABLE tplain (id INT, plain TEXT, key TEXT); INSERT INTO tplain VALUES (1, &#39;&#39;, &#39;&#39;), (2, NULL, NULL), -- different plain (11, NULL, &#39;88888888&#39;), (12, &#39;&#39;, &#39;88888888&#39;), (13, &#39;1&#39;, &#39;88888888&#39;), (14, &#39;7777777&#39;, &#39;88888888&#39;), (15, &#39;88888888&#39;, &#39;88888888&#39;), (16, &#39;999999999&#39;, &#39;88888888&#39;), (17, &#39;17171717171717171&#39;, &#39;88888888&#39;), (18, &#39;242424242424242422424242&#39;,&#39;88888888&#39;), -- different key (31, &#39;88888888&#39;, NULL), (32, &#39;88888888&#39;, &#39;&#39;), (33, &#39;88888888&#39;, &#39;1&#39;), (34, &#39;88888888&#39;, &#39;7777777&#39;), (37, &#39;88888888&#39;, &#39;88888888&#39;), (38, &#39;88888888&#39;, &#39;999999999&#39;), (37, &#39;88888888&#39;, &#39;17171717171717171&#39;), (38, &#39;88888888&#39;, &#39;242424242424242422424242&#39;); CREATE TABLE tcipher (id INT, key TEXT, cipher RAW); INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 1; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 2; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 11; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 12; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 13; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 14; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 15; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 16; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 17; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 18; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 31; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 32; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 33; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 34; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 35; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 36; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 37; INSERT INTO tcipher SELECT id, key, dbms_obfuscation_toolkit.desencrypt(strtoraw(plain), strtoraw(key)) FROM tplain WHERE id = 38; SELECT id,cipher,length(cipher) FROM tcipher ORDER BY id; SELECT id,rawtostr(dbms_obfuscation_toolkit.desdecrypt(cipher, strtoraw(key))) FROM tcipher ORDER BY id; DROP TABLE tplain,tcipher; -- 2 3des CREATE TABLE tplain (id INT, plain TEXT, keymod INT, key TEXT, iv TEXT); INSERT INTO tplain VALUES (1, &#39;&#39;, 0, &#39;&#39;, &#39;&#39;), (2, NULL, 0, NULL, NULL), -- different plain (11, NULL, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (12, &#39;&#39;, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (13, &#39;1&#39;, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (14, &#39;7777777&#39;, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (15, &#39;88888888&#39;, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (16, &#39;999999999&#39;, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (17, &#39;17171717171717171&#39;, 0, &#39;1616161616161616&#39;, &#39;88888888&#39;), (18, &#39;242424242424242422424242&#39;,0, &#39;1616161616161616&#39;, &#39;88888888&#39;), -- different keymod (31, &#39;1616161616161616&#39;, NULL, &#39;1616161616161616&#39;, &#39;88888888&#39;), (32, &#39;1616161616161616&#39;, -1, &#39;1616161616161616&#39;, &#39;88888888&#39;), (33, &#39;1616161616161616&#39;, -1.1, &#39;1616161616161616&#39;, &#39;88888888&#39;), (34, &#39;1616161616161616&#39;, 1.1, &#39;1616161616161616&#39;, &#39;88888888&#39;), (35, &#39;1616161616161616&#39;, 2, &#39;1616161616161616&#39;, &#39;88888888&#39;), (36, &#39;1616161616161616&#39;, &#39;0&#39;, &#39;1616161616161616&#39;, &#39;88888888&#39;), (37, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;88888888&#39;), -- different key (51, &#39;1616161616161616&#39;, 0, NULL, &#39;88888888&#39;), (52, &#39;1616161616161616&#39;, 0, &#39;&#39;, &#39;88888888&#39;), (53, &#39;1616161616161616&#39;, 0, &#39;1&#39;, &#39;88888888&#39;), (54, &#39;1616161616161616&#39;, 0, &#39;7777777&#39;, &#39;88888888&#39;), (55, &#39;1616161616161616&#39;, 0, &#39;88888888&#39;, &#39;88888888&#39;), (56, &#39;1616161616161616&#39;, 0, &#39;999999999&#39;, &#39;88888888&#39;), (57, &#39;1616161616161616&#39;, 0, &#39;17171717171717171&#39;, &#39;88888888&#39;), (58, &#39;1616161616161616&#39;, 0, &#39;242424242424242422424242&#39;, &#39;88888888&#39;), (59, &#39;1616161616161616&#39;, 0, &#39;272727272727272727272727272&#39;, &#39;88888888&#39;), (61, &#39;1616161616161616&#39;, 1, NULL, &#39;88888888&#39;), (62, &#39;1616161616161616&#39;, 1, &#39;&#39;, &#39;88888888&#39;), (63, &#39;1616161616161616&#39;, 1, &#39;1&#39;, &#39;88888888&#39;), (64, &#39;1616161616161616&#39;, 1, &#39;7777777&#39;, &#39;88888888&#39;), (65, &#39;1616161616161616&#39;, 1, &#39;88888888&#39;, &#39;88888888&#39;), (66, &#39;1616161616161616&#39;, 1, &#39;999999999&#39;, &#39;88888888&#39;), (67, &#39;1616161616161616&#39;, 1, &#39;17171717171717171&#39;, &#39;88888888&#39;), (68, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;88888888&#39;), (69, &#39;1616161616161616&#39;, 1, &#39;272727272727272727272727272&#39;, &#39;88888888&#39;), -- different iv (81, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, NULL), (82, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;&#39;), (83, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;1&#39;), (84, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;7777777&#39;), (85, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;88888888&#39;), (86, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;999999999&#39;), (87, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;17171717171717171&#39;), (88, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;242424242424242422424242&#39;), (89, &#39;1616161616161616&#39;, 1, &#39;242424242424242422424242&#39;, &#39;272727272727272727272727272&#39;); CREATE TABLE tcipher (id INT, CIPHER RAW, keymod INT, key TEXT, iv TEXT); INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 1; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 2; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 11; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 12; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 13; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 14; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 15; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 16; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 17; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 18; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 31; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 32; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 33; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 34; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 35; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 36; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 37; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 51; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 52; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 53; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 54; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 55; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 56; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 57; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 58; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 59; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 61; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 62; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 63; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 64; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 65; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 66; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 67; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 68; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 69; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 81; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 82; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 83; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 84; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 85; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 86; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 87; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 88; INSERT INTO tcipher SELECT id, dbms_obfuscation_toolkit.des3encrypt(strtoraw(plain), strtoraw(key), keymod, strtoraw(iv)), keymod, key, iv FROM tplain WHERE id = 89; SELECT * FROM tcipher; SELECT id, rawtostr(dbms_obfuscation_toolkit.des3decrypt(cipher, strtoraw(key), keymod, strtoraw(iv))) FROM tcipher ORDER BY id; DROP TABLE tplain, tcipher; /* ------------------------------------------------------------------------------------------------ * part 4: other functions * ------------------------------------------------------------------------------------------------ */ SELECT length(dbms_obfuscation_toolkit.desgetkey(strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;))) FROM dual; SELECT length(dbms_obfuscation_toolkit.des3getkey(0, strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;))) FROM dual; SELECT length(dbms_obfuscation_toolkit.des3getkey(1, strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;))) FROM dual; SELECT dbms_obfuscation_toolkit.md5(strtoraw(&#39;1111111111111111&#39;)) FROM dual; CREATE TABLE deskey(id INT, key RAW); CREATE TABLE des3key0 (id INT, key RAW); CREATE TABLE des3key1 (id INT, key RAW); INSERT INTO deskey SELECT generate_series(1, 1000), dbms_obfuscation_toolkit.desgetkey(strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;)); INSERT INTO des3key0 SELECT generate_series(1, 1000), dbms_obfuscation_toolkit.des3getkey(0, strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;)); INSERT INTO des3key1 SELECT generate_series(1, 1000), dbms_obfuscation_toolkit.des3getkey(1, strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;)); CREATE TABLE allcnt (cnt INT); INSERT INTO allcnt SELECT count(*) FROM deskey GROUP BY key; INSERT INTO allcnt SELECT count(*) FROM des3key0 GROUP BY key; INSERT INTO allcnt SELECT count(*) FROM des3key1 GROUP BY key; SELECT cnt,count(*) FROM allcnt GROUP BY cnt; -- test (need to spend too much time) -- CREATE TABLE moretime(id INT, key RAW); -- INSERT INTO moretime SELECT generate_series(1, 100000), -- dbms_obfuscation_toolkit.desgetkey(strtoraw(&#39;11111111112222222222333333333344444444445555555555666666666677777777778888888888&#39;)); -- -- 预期 key列重复的字符不多 -- SELECT * FROM moretime ORDER BY key ASC LIMIT 10; -- SELECT * FROM moretime ORDER BY key DESC LIMIT 10; -- DROP TABLE moretime; DROP TABLE deskey, des3key0, des3key1, allcnt; DROP EXTENSION pgcrypto; RESET search_path; DROP SCHEMA pgcrypto_2_text CASCADE; </p>
+  </div>
+  <footer class="entry-footer"><span title='2025-02-25 15:31:00 +0800 CST'>February 25, 2025</span>&nbsp;·&nbsp;<span>10 min</span>&nbsp;·&nbsp;<span>2026 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 1 用例 oracle加密函数" href="http://localhost:1313/posts/projectdocs/1-testcase-oracle-crypto-func/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 1 设计 oracle加密函数
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 设置默认版本
+contrib/pgcrypto/pgcrypto.control defaultl_version = &#39;2.0&#39; dbcompatibilities = &#39;A, B, PG&#39; 生成同名的sql文件
+touch contrib/pgcrypto/pgcrypto-2.0.sql 安装sql文件
+# pgcrypto.control与pgcrypt.*.sql文件 ll $GAUSSHOME/share/postgresql/extension | grep pgcrypto 加载插件
+# 执行：CREATE EXTENSION pgcrypto .. CreateExtension check_valild_extension_name # 检查插件名：要求不含 &#39;-&#39;、不含&#39;..&#39;等路径字符 get_extension_oid heap_open(&#39;pg_extension&#39;) systable_beginscan # 遍历系统表 pg_extension：确保插件存在 read_extension_control_file parse_extension_control_file get_extension_control_filename sprintf(&#34;{share}/extension/{extension_name}.control&#34;) ParreConfigFp # 获取 directory, default_version, module_pathname, dbcompatibilities 等参数 get_extension_script_filename get_extension_script_direcotry if name is &#39;pgcrypto&#39;: sprintf(&#34;{script_dir}/crypto-a.sql&#34;) read_extension_script_file InsertExtensionTuple # 插入系统表 pg_extension execute_extension_script ApplyExtensionUpdates </p>
+  </div>
+  <footer class="entry-footer"><span title='2025-02-25 09:49:00 +0800 CST'>February 25, 2025</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>65 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 1 设计 oracle加密函数" href="http://localhost:1313/posts/projectdocs/1-design-oracle-crypto-func/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 1 需求 oracle加密函数
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 简介 1.1 目的 早期版本的oracle提供一个包含多个加密函数的包，用户可通过SQL语法调用加密函数，实现数据加密功能。本文主要介绍以下几点：
+oracle加密包的功能与使用方法 vastbase实现oracle加密包 vastbase加密包的功能与使用方法 本文档可指导开发者、测试者熟悉vastbase加密包特性的功能场景。
+本文档的内容已被上传至tapd，tapd上，排版更好看，测试用例更方便复制。建议直接从tapd上查看本文档原文： https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007194
+1.2 适用范围 vastbase 3.0.8及之后版本。
+1.3 术语定义、首字母缩写词和缩略语 DES：Data Encryption Standard，数据加密标准，一种早期通用的加密算法 3DES：Triple DES，基于DES演进的一种早期通用的加密算法 MD5：Message-Digest Algorithm，一种早期通用的数据摘要算法 1.3 参考资料 oracle dbms_obfuscation_toolkit 函数介绍：https://docs.oracle.com/cd/A97630_01/appdev.920/a96590/adgsec04.htm oracle dbms_obfuscation_toolkit 函数参数：https://docs.oracle.com/cd/B10500_01/appdev.920/a96612/d_obtoo2.htm tapd上，本需求文档： https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007194 tapd上，本需求的测试用例： https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001007197 2 支持oracle加密插件dbms_obfuscation_toolkit 2.1 功能简述 早期版本oracle提供7个内置加密函数。早在4年或更早之前的旧版本vastbase中，也提供7个与oracle一致的加密函数，这7个函数，函数名、函数入参与oracle一致，但是，6个函数输出、15个函数参数约束与oracle不一致，本特性将重构这些加密函数，确保函数的输出、约束等与oracle一致。
+一、基础知识 加密的原理
+加密算法有很多种，不同场景中，适合的加密算法类型不同。对存储数据加密，通常采用对称密码算法，此处主要介绍对称密码算法：
+加密原理：输入1个明文，输入1个密钥，对明文和密钥进行一些可逆的运算（比如异或，代换），可得到1个密文。密钥通常是随机生成的 加密算法：DES算法，发布于1977年，已确定为不安全加密算法。3DES算法，调用3次DES算法，生成3个密钥，安全性与DES差别不大，也属于不安全的加密算法。AES算法，发布于2001年，通用的国际标准，替代不安全的DES算法 数据库加密函数
+几乎所有数据库，都提供内置加密函数，让用户通过SQL语句调用。最典型的场景如下：
+-- 假设，数据库提供函数encrypt(明文，密钥，加密算法)，输出为密文 -- 用户想表&#39;t1&#39;中存储数据&#39;shenkun&#39;，则存储的语法如下：（用户自己保管密钥） INSERT INTO t1 VALUES (encrypt(&#39;shenkun&#39;, &#39;一串随机的密钥&#39;, &#39;aes&#39;)); 二、Oracle加密包 早期版本的oracle中，包含1个名为dbms_obfuscation_toolkit的包，提供7个函数，主要实现加密、解密等功能：
+版本信息：oracle 8i版本开始提供，oracle 10g版本开始不被推荐使用，由dbms_crypto代替，oracle 21c版本正式移除 函数列表： 生成随机数：desgetkey(seed) -&gt; key 加密：desencrypt(input, key) -&gt; encrypted_data 解密：descdecrypt(input, key) -&gt; decrypted_data 生成随机数：des3getkey(which=&gt;0, seed) -&gt; key 加密：des3encrypt(input, key, which=&gt;0, iv=&gt;012345678abcdef) -&gt; encrypted_data 解密：des3decrypt(input, key, which=&gt;0, iv=&gt;012345678abcdef) -&gt; decrypted_data 哈希：md5(input) -&gt; checksum 函数参数：函数参数有2种数据类型：varchar2, raw。与raw类型相比，如果是varchar2类型，参数名需加上_string后缀。比如，raw类型的入参名为input，则varcha2类型入参名为input_string 函数限制： desgetkey：seed长度最短为80字节 desencrypt：input长度是8字节的整数倍；key最短为8字节，超过8字节的部分被丢弃 descdecrypt：input长度是8字节的整数倍；key最短为8字节，超过8字节的部分被丢弃 des3getkey: seed长度最短为80字节 des3encrypt：input长度是8字节的整数倍；which为0时，key最短为16字节，超过16字节的部分被丢弃；which为1时，key最短为24字节，超过24字节的部分被丢弃 des3dencrypt：input长度是8字节的整数倍；which为0时，key最短为16字节，超过16字节的部分被丢弃；which为1时，key最短为24字节，超过24字节的部分被丢弃 md5：无 参考文档 函数介绍：函数背景、注意事项等：https://docs.oracle.com/cd/A97630_01/appdev.920/a96590/adgsec04.htm 函数参数：参数类型、调用示例等：https://docs.oracle.com/cd/B10500_01/appdev.920/a96612/d_obtoo2.htm 以下是上述函数的调用示例：
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-02-19 16:20:00 +0800 CST'>February 19, 2025</span>&nbsp;·&nbsp;<span>10 min</span>&nbsp;·&nbsp;<span>1956 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 1 需求 oracle加密函数" href="http://localhost:1313/posts/projectdocs/1-requirement-oracle-crypto-func/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 2 设计 oracle profile
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>2 代码
+新增试图
+SELECT * FROM pg_user_settings; -- 新增视图 pg_user_settings SELECT rolname,profile FROM pg_authid WHERE rolcanlogin = true LEFT JOIN vb_profile ON rolname | setname | setting | settype | settype | setsource --------&#43;-----------------------&#43;----------&#43;---------&#43;-------------&#43;---------------- u1 | password_effect_time | 90 | int | profile guc | pro1 | cluster guc | postgresql.conf 参数1: failed_login_attempts # opegauss使用1个内存中的hash表，存储密码失败次数 ClientAuthentication # 进行身份认证时，如果认证失败，则更新hash表中的失败次数值 UpdateFailCountToHashTable InitAccountLockHashTable hash_search # 如果失败次数超过GUC限制，则锁定账户 if failed_login_attempts： lockflag = True 参数2: password_lock_time 参数3: password_effect_time # 通过内置函数，主动查看密码剩余天数 gs_password_deadline GetCurrentUserId # 1 获取当前用户 GetUserCurrentPwdtime # 2 从系统表pg_auth_history中，获取密码创建时间passwordtime heap_open(&#39;pg_auth_history&#39;) systable_beginscan floor(u_sess-&gt;attr.attr_security.Password_effect_time) # 3 从guc参数password_effect_time中获取密码有效天数 # 计算步骤2和3中的时间，返回剩余过期天数 参数4: password_reuse_max AddAuthHistory systable_beginscan(&#39;pg_auth_history&#39;) # 1 从系统表pg_auth_history中，获取曾用过的密码rolpassword，获取生成密码的时间passwordtime systable_getnext_back # 倒着从系统表扫描，即先扫描不太古老的旧密码，再扫描更古老的旧密码 pg_sha256_encrypt # 使用旧密码的salt，加密新密码 if strncmp : # 比较新密码是否与旧密码相等 hasSame = True # 如果新旧密码相等，计算新旧密码间隔天数，与GUC参数password_reuse_time比较，判断是否满足密码重用时间限制 if now - pg_auth_history.passwordtime &gt; &#39;password_reuse_time&#39;： isTimeSafe = True # 计算这是倒数第几个密码 changeTimes&#43;&#43; if changeTimes &gt; &#39;password_reuse_max&#39;: isMaxSafe # 满足 password_reuse_time 和 password_reuse_max 中任意一个条件，都可以修改密码 # - 要么用好几次之前的密码（满足 password_reuse_max 条件） # - 要么用很旧之间使用的密码（满足 password_reuse_time 条件） if hasSame and not isTimeSafe and not isMaxSafe: # 报错 参数5: password_reuse_time</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-02-20 19:24:00 +0800 CST'>February 20, 2025</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>159 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 2 设计 oracle profile" href="http://localhost:1313/posts/projectdocs/2-design-profile-oracle/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">海量 3 需求 oracle resource
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>| -| -| -| -| -| -| -|
+| 1 | FAILED_LOGIN_ATTEMPTS | [1, max] unlimited | failed_login_attempts | [1,1000] | 认证类 | 登录数据库时，如果密码错误次数超过&lt;本参数&gt;，则账号会被锁定，短期内无法再登录 |
+| 2 | PASSWORD_LOCK_TIME | [1, max] unlimited | password_lock_time | [1,525600]min | 认证类 | 如果因密码错误次数过多，导致账号被锁，将锁定&lt;本参数&gt;的时间 |
+| 3 | PASSWORD_LIFE_TIME | [1, max] unlimited | password_effect_time | [30,36500]day | 认证类 | 设置或更新用户密码时，超过&lt;本参数&gt;的时间，密码会过期（oracle与vastase表现不同） |
+| 4 | PASSWORD_GRACE_TIME | - | - | - | 认证类 | 如果密码过期，在&lt;本参数&gt;的时间内，密码仍可使用 |
+| 5 | PASSWORD_REUSE_TIME | [1, max] unlimited | password_reuse_time | [30, 90]day | 认证类 | 用户设置密码时，如果密码在过去的&lt;本参数&gt;的时间内别用过，则密码不能复用，opengauss [0,3650] |
+| 6 | PASSWORD_REUSE_MAX | - | password_reuse_max | [1,100] | 认证类 | 用户设置密码时，如果密码已被重复使用过&lt;本参数&gt;的次数，则密码不能复用 |
+| 7 | INACTIVE_ACCONT_TIME | - | - | - | 认证类 | 如果一个账号在&lt;本参数&gt;的时间内，未登录过，则锁定账号 |
+| 8 | PASSWORD_VERIFY_FUNCTION | - | - | - | 认证类 | 用户设置密码时，调用&lt;本参数&gt;指定的函数，检查密码是否符合要求 |
+| 9 | PASSWORD_ROLLOVER_TIME | - | - | - | 认证类 | 新旧密码滚动更新天数 |
+| 10 | SESSIONS_PER_USER | - | - | - | 资源类 | 1个用户可建立的最大连接数 |
+| 11 | CPU_PER_SESSION | - | - | - | 资源类 | 1个连接可使用CPU时间数 |
+| 12 | CPU_PER_CALL | - | - | - | 资源类 | 1个调用（比如1个SQL）可使用CPU时间数 |
+| 13 | CONNECT_TIME | - | - | - | 资源类 | 1个连接可持续的时间 |
+| 14 | IDLE_TIME | [1, max] unlimited | session_timeout | [0,86400] | 资源类 | 1个连接空闲时间限制 |
+| 15 | LOGICAL_READS_PER_CALL | - | - | - | 资源类 | 1次调用（比如1个SQL）允许读写的page数量 |
+| 16 | LOGICAL_READS_PER_SESSION | - | - | - | 资源类 | 1个连接允许读取的page数量 |
+| 17 | PRIVATE_SGA | - | - | - | 资源类 | 1个连接可使用的共享内存空间大小 |
+| 18 | CONPOSITE_LIMIT | - | - | - | 资源类 | 1个连接可可使用的总资源：按cpu时间、连接时间、page读写数等加权求和 |
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-03-24 10:42:00 +0800 CST'>March 24, 2025</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>317 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 海量 3 需求 oracle resource" href="http://localhost:1313/posts/projectdocs/3-requirement-oracle-resource/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">数据库安全 Oracle
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>https://www.tapd.cn/60475194/markdown_wikis/show/#1160475194001006330
+3 异常参数 3.1 DES encrypt 封装函数
+CREATE OR REPLACE FUNCTION desencrypt(hex_plain VARCHAR2, hex_key VARCHAR2) RETURN VARCHAR2 IS cipher RAW(100); BEGIN dbms_obfuscation_toolkit.desencrypt(hextoraw(hex_plain), hextoraw(hex_key), encrypted_data=&gt;cipher); RETURN rawtohex(cipher); END; / 函数格式
+desencrypt(plain, key, cipher); 约束：
+构造用例
+明文长度 密钥长度 输出：密文长度 示例 结果 一、正常用例 8 8 8 desencrypt() abc 16 8 16 desencrypt() abc 一、明文长度异常 0 8 16 desencrypt() 明文不是8的倍数 1 8 - desencrypt() 明文不是8的倍数 7 8 - desencrypt() 明文不是8的倍数 15 8 - desencrypt() 明文不是8的倍数 二、密钥长度异常 8 0 8 desencrypt() 密钥长度不是8 8 1 8 desencrypt() 密钥长度不是8 8 15 8 desencrypt() 密钥长度不是8 8 16 8 desencrypt() 密钥长度不是8 3.2 DES decrypt 3.3 3DES encrypt 封装函数
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-25 11:07:00 +0800 CST'>January 25, 2025</span>&nbsp;·&nbsp;<span>3 min</span>&nbsp;·&nbsp;<span>435 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to 数据库安全 Oracle" href="http://localhost:1313/posts/security/4-oracle-security/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">Oracle 1 SQL
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 Oracle 集群管理 1.2 登录数据库 sqlplus / as sysdba 2 Oracle 语法 2.1 数据类型 仅列举常见数据类型：
+大类 类型 解释 数值 INT or INTGER 整数 - NUMBESR(p, s) p: 精度，整数和小数总位数，s: 小数位数 - SMALLINT 等于 NUMBESR(38) - FLOAT(p) 浮点数，p: 二进制精度，最大126 字符 CHAR(n) 固定长度字符，n: 长度，不足n用空格填充 - VARCHAR2(n) 可变长度字符，n: 最大长度，最大4000 时间 DATE 日期 - TIMESTAMP 日期和时间 二进制 CLOB 长文本数据 2.2 常用SQL 常见语法
+-- 1 创建表 CREATE TABLE t1 (c1 INT, c2 VARCHAR2(10)); -- 2 插入数据 INSERT INTO t1 VALUES (1, &#39;abcc&#39;); INSERT INTO t1 VALUES (2, &#39;ddee&#39;); -- 3 查询数据 SELECT * FROM t1 WHERE c1 &gt; 0; -- 4 更新数据 UPDATE t1 SET c2 = &#39;abbc&#39; WHERE c1 = 1; -- 5 删除数据 DELETE FROM t1 WHERE c1 = 2; -- 6 删除表 DROP TABLE t1; 内置函数
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-02-20 14:06:00 +0800 CST'>February 20, 2025</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>222 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to Oracle 1 SQL" href="http://localhost:1313/posts/database/oracle-2-sql/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">Oracle 安全特性
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 概述 来源：https://docs.oracle.com/en/database/oracle/oracle-database/23/dbseg
+基础安全
+身份认证 密码最小长度 连续失败锁定 账户锁定 新旧密码重复 密码有效期 访问控制 敏感数据发现 传输加密 安全审计 高级安全
+透明加密 数据脱敏 访问控制 行级访问控制 数据库保险柜：细粒度访问控制 </p>
+  </div>
+  <footer class="entry-footer"><span title='2025-02-07 11:55:00 +0800 CST'>February 7, 2025</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>20 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to Oracle 安全特性" href="http://localhost:1313/posts/database/oracle-security/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">Oracle 基本介绍
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>1 Oracle 集群管理 1.2 登录数据库 sqlplus / as sysdba 2 Oracle 语法 2.1 数据类型 仅列举常见数据类型：
+大类 类型 解释 数值 INT or INTGER 整数 - NUMBESR(p, s) p: 精度，整数和小数总位数，s: 小数位数 - SMALLINT 等于 NUMBESR(38) - FLOAT(p) 浮点数，p: 二进制精度，最大126 字符 CHAR(n) 固定长度字符，n: 长度，不足n用空格填充 - VARCHAR2(n) 可变长度字符，n: 最大长度，最大4000 时间 DATE 日期 - TIMESTAMP 日期和时间 二进制 CLOB 长文本数据 2.2 常用SQL 常见语法
+-- 1 创建表 CREATE TABLE t1 (c1 INT, c2 VARCHAR2(10)); -- 2 插入数据 INSERT INTO t1 VALUES (1, &#39;abcc&#39;); INSERT INTO t1 VALUES (2, &#39;ddee&#39;); -- 3 查询数据 SELECT * FROM t1 WHERE c1 &gt; 0; -- 4 更新数据 UPDATE t1 SET c2 = &#39;abbc&#39; WHERE c1 = 1; -- 5 删除数据 DELETE FROM t1 WHERE c1 = 2; -- 6 删除表 DROP TABLE t1; 内置函数
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2025-01-25 11:24:00 +0800 CST'>January 25, 2025</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>222 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <a class="entry-link" aria-label="post link to Oracle 基本介绍" href="http://localhost:1313/posts/database/oracle-overview/"></a>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

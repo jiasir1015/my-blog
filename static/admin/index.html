@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>写作 · Kernel Notes</title>
+  <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/monokai-sublime.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/highlight.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <a class="brand" href="/">← Kernel Notes</a>
+        <h1>写作</h1>
+        <p class="hint" id="apiStatus">连接编辑服务中…</p>
+      </div>
+
+      <div class="toolbar">
+        <button type="button" id="btnNew" class="btn primary">新建文章</button>
+        <button type="button" id="btnRefresh" class="btn">刷新</button>
+      </div>
+
+      <input type="search" id="fileFilter" class="filter" placeholder="筛选路径…" />
+
+      <div class="file-list" id="fileList"></div>
+    </aside>
+
+    <main class="main">
+      <div class="editor-bar">
+        <div class="path-row">
+          <span class="label">路径</span>
+          <code id="currentPath" class="path">未选择文件</code>
+        </div>
+        <div class="actions">
+          <button type="button" id="btnImage" class="btn" disabled title="上传图片并插入 Markdown（也可粘贴 / 拖拽）">插入图片</button>
+          <button type="button" id="btnPdf" class="btn" disabled title="上传 PDF 电子书并插入阅读器">插入 PDF</button>
+          <input type="file" id="imageInput" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden multiple />
+          <input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden multiple />
+          <button type="button" id="btnPreview" class="btn" title="显示/隐藏右侧实时预览">隐藏预览</button>
+          <button type="button" id="btnSave" class="btn primary" disabled>保存</button>
+          <button type="button" id="btnDelete" class="btn danger" disabled>删除</button>
+        </div>
+      </div>
+
+      <div class="panes split" id="panes">
+        <textarea id="editor" class="editor" spellcheck="false" placeholder="选择或新建一篇 Markdown…&#10;&#10;提示：可粘贴截图 / 拖拽图片；用「插入 PDF」上传电子书。" disabled></textarea>
+        <article id="preview" class="preview"></article>
+      </div>
+
+      <div class="status-bar">
+        <span id="saveStatus"></span>
+        <span id="wordCount"></span>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="newDialog">
+    <form method="dialog" id="newForm">
+      <h2>新建 Markdown</h2>
+      <label>
+        标题
+        <input name="title" id="newTitle" required placeholder="文章标题" />
+      </label>
+      <label>
+        文件名（slug）
+        <input name="slug" id="newSlug" required placeholder="my-post" />
+      </label>
+      <label>
+        目录
+        <select name="dir" id="newDir"></select>
+      </label>
+      <label>
+        分类（categories）
+        <input name="category" id="newCategory" placeholder="自动取目录名" />
+      </label>
+      <div class="dialog-actions">
+        <button type="submit" class="btn primary" value="create">创建</button>
+        <button type="button" class="btn" id="btnCancelNew">取消</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="./app.js"></script>
+</body>
+</html>

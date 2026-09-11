@@ -1,0 +1,2894 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>操作系统 2 原理 | Kernel Notes</title>
+<meta name="keywords" content="操作系统">
+<meta name="description" content="目录
+
+
+架构
+
+
+CPU
+
+
+内存管理
+
+
+进程线程
+
+
+文件系统
+
+
+目录
+
+
+0 架构
+
+0.1 OS功能
+0.2 OS特征
+0.3 OS结构
+0.4 OS分类
+
+
+
+1 CPU
+
+1.1 CPU 结构
+1.2 寄存器
+1.3 汇编指令
+1.4 程序
+1.5 操作系统
+
+
+
+2 内存管理
+
+结构
+
+
+
+
+3 进程线程
+
+1.1 概述
+
+
+2 进程通信
+
+2.1 分类
+2.1 代码
+
+一 信号
+二 信号量 （Posix）
+三 消息队列
+四 管道
+五 共享内存
+六 套接字
+
+
+2.3 命令
+
+
+4 文件系统
+
+0 架构
+0.1 OS功能
+从资源管理角度划分：
+
+进程/线程管理
+内存管理
+文件管理
+设备管理
+用户接口
+
+0.2 OS特征
+
+并发
+共享
+虚拟
+随机：不可预测的事件，状态随机
+
+0.3 OS结构
+整体架构：">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/os/os-2-principles/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/os/os-2-principles/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/os/os-2-principles/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="操作系统 2 原理">
+  <meta property="og:description" content="目录 架构
+CPU
+内存管理
+进程线程
+文件系统
+目录
+0 架构
+0.1 OS功能 0.2 OS特征 0.3 OS结构 0.4 OS分类 1 CPU
+1.1 CPU 结构 1.2 寄存器 1.3 汇编指令 1.4 程序 1.5 操作系统 2 内存管理
+结构 3 进程线程 1.1 概述 2 进程通信 2.1 分类 2.1 代码 一 信号 二 信号量 （Posix） 三 消息队列 四 管道 五 共享内存 六 套接字 2.3 命令 4 文件系统 0 架构 0.1 OS功能 从资源管理角度划分：
+进程/线程管理 内存管理 文件管理 设备管理 用户接口 0.2 OS特征 并发 共享 虚拟 随机：不可预测的事件，状态随机 0.3 OS结构 整体架构：">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-01-21T13:55:00+08:00">
+    <meta property="article:modified_time" content="2026-08-14T17:47:31+08:00">
+    <meta property="article:tag" content="操作系统">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="操作系统 2 原理">
+<meta name="twitter:description" content="目录
+
+
+架构
+
+
+CPU
+
+
+内存管理
+
+
+进程线程
+
+
+文件系统
+
+
+目录
+
+
+0 架构
+
+0.1 OS功能
+0.2 OS特征
+0.3 OS结构
+0.4 OS分类
+
+
+
+1 CPU
+
+1.1 CPU 结构
+1.2 寄存器
+1.3 汇编指令
+1.4 程序
+1.5 操作系统
+
+
+
+2 内存管理
+
+结构
+
+
+
+
+3 进程线程
+
+1.1 概述
+
+
+2 进程通信
+
+2.1 分类
+2.1 代码
+
+一 信号
+二 信号量 （Posix）
+三 消息队列
+四 管道
+五 共享内存
+六 套接字
+
+
+2.3 命令
+
+
+4 文件系统
+
+0 架构
+0.1 OS功能
+从资源管理角度划分：
+
+进程/线程管理
+内存管理
+文件管理
+设备管理
+用户接口
+
+0.2 OS特征
+
+并发
+共享
+虚拟
+随机：不可预测的事件，状态随机
+
+0.3 OS结构
+整体架构：">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "操作系统 2 原理",
+      "item": "http://localhost:1313/posts/os/os-2-principles/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "操作系统 2 原理",
+  "name": "操作系统 2 原理",
+  "description": "目录 架构\nCPU\n内存管理\n进程线程\n文件系统\n目录\n0 架构\n0.1 OS功能 0.2 OS特征 0.3 OS结构 0.4 OS分类 1 CPU\n1.1 CPU 结构 1.2 寄存器 1.3 汇编指令 1.4 程序 1.5 操作系统 2 内存管理\n结构 3 进程线程 1.1 概述 2 进程通信 2.1 分类 2.1 代码 一 信号 二 信号量 （Posix） 三 消息队列 四 管道 五 共享内存 六 套接字 2.3 命令 4 文件系统 0 架构 0.1 OS功能 从资源管理角度划分：\n进程/线程管理 内存管理 文件管理 设备管理 用户接口 0.2 OS特征 并发 共享 虚拟 随机：不可预测的事件，状态随机 0.3 OS结构 整体架构：\n",
+  "keywords": [
+    "操作系统"
+  ],
+  "articleBody": "目录 架构\nCPU\n内存管理\n进程线程\n文件系统\n目录\n0 架构\n0.1 OS功能 0.2 OS特征 0.3 OS结构 0.4 OS分类 1 CPU\n1.1 CPU 结构 1.2 寄存器 1.3 汇编指令 1.4 程序 1.5 操作系统 2 内存管理\n结构 3 进程线程 1.1 概述 2 进程通信 2.1 分类 2.1 代码 一 信号 二 信号量 （Posix） 三 消息队列 四 管道 五 共享内存 六 套接字 2.3 命令 4 文件系统 0 架构 0.1 OS功能 从资源管理角度划分：\n进程/线程管理 内存管理 文件管理 设备管理 用户接口 0.2 OS特征 并发 共享 虚拟 随机：不可预测的事件，状态随机 0.3 OS结构 整体架构：\n应用程序 系统调用 OS内核 硬件 0.4 OS分类 批处理OS：任务串行 分时OS：任务时间片 实时OS：外部请求及时响应 个人计算机OS：任务通信、资源共享 网络操作OS： 分布式OS： 嵌入式OS： 1 CPU 1.1 CPU 结构 CPU 构成 运算器 控制器 寄存器：控制寄存器、状态寄存器 高速缓存 寄存器（8086 14个寄存器） 段寄存器（4）：CS, DS, SS, ES CS: 代码段寄存器 IP：指令寄存器 （CS + IP -\u003e 代码地址） DS: 数据段寄存器 （DS + 地址 -\u003e 数据地址） SS：栈寄存器 SP：栈顶寄存器 （SS + SP -\u003e 栈顶寄存器） ES: 指针寄存器：IP, SP CPU寻址方式 直接寻址 : [1] 寄存器间接寻址 [bx] 寄存器相对寻址 [bx + 1] 基址变址寻址 [bx + si] 相对基址变址寻址 [bx + si + 1] CPU特权级别（x86架构支持4个cpu特权级别，不同级别支持的指令集不同） R0：内核态 R1: R2: R3: 用户态 CPU执行状态 状态分类 内核态：操作系统程序 用户态：用户程序 状态转换 转换类型 用户态 -\u003e 内核态：中断，异常，陷入（操作系统提供给用户的接口） 内核态 -\u003e 用户态：设置程序状态字PSW 中断：来自IO设备、其他硬件设备（硬件异步） 分类 IO中断 时钟中断 硬件故障 中断行为：保存当前进度，处理中断，返回下一条指令 cpu 取下一条指令 cpu 执行指令 cpu 执行一条指令后，扫描中断寄存器，查看是否有中断信号 如果有中断，中断硬件保存现场 中断硬件将触发器的内容送入PSW对应位置，查找中断向量表，调用中断处理程序 中断向量表 0-19：不可屏蔽中断和异常 0 除0 1 单步调试 4 算数溢出 6 非法操作数 12 栈异常 13 保护性错误 14 缺页异常 20-31：保留 32-127：外部中断 128：系统调用异常 \u003c– （重要） 129-238：外部中断 239：本地APIC时钟中断 … 255 本地APIC伪中断 多核CPU处理中断 中断控制器 GIC Generic Interrupt Controller：全局中断的分发与管理，判断中断交给哪个CPU 异常（软件同步） 分类 陷入：有意识安排，返回下一条指令：系统调用 故障：可恢复错误，返回当前指令：缺页异常、段错误 终止：不可恢复错误、算术溢出、除0、… 异常处理 1.进入异常时： 保存处理器状态 准备高特权级执行环境 选择并执行合适的异常处理代码 2.处理异常时： 获取异常信息（调用参数、原因等） 3.结束异常时： 恢复处理器状态 返回低优先级 继续执行流 CPU指令类型 特权指令：启动IO、内存清0、修改程序状态字、设置时钟、允许/禁止中断 非特权指令：控制转移、算数运算、取数指令 1.2 寄存器 https://www.bilibili.com/video/BV1zW411n79C?p=7\u0026spm_id_from=pageDriver\u0026vd_source=027eab78efac77b882eeae0ff84cb89e\n单位：\n1 word 字 = 16位 = 2b 8086有14个寄存器，每个CPU 1 word\n通用寄存器（4）：AX,BC,CX,DX 寄存器功能：\n/* 1. 16位CPU 8086 */ typedef int WORD; /* WORD = 16 */ /* 2. CPU */ WORD _memory_[110240] = {0}; /*--------------------------------------*/ /* ---------------------* */ WORD AX; /* */ WORD BX; /* */ WORD CX; /* */ WORD DX; /* */ /* */ WORD SI; //字符串复制 /* */ WORD DI; /* */ /* */ WORD SS; WORD BP; WORD SP; /* ========= */ WORD stack_segment[1024] WORD CS; WORD IP; /* ========= */ WORD code_segment[4096]; WORD DS; /* [] */ /* */ WORD data_segment[4096]; WORD ES; /* */ /**************************/ BP是SS栈偏移 mv [bp] -\u003e mv [ss + bp] /* ---------------------* */ /*-------------------------------------*/ 1.3 汇编指令 #define SP__ (stack_segment[SP]) #define IP__ (code_segment[IP]) /* 取地址 mov ax [0x0f] */ #define l_l(a) (data_segment[DS + a]) /* [a], [a + 1]处理数组 */ /* decleare */ #define dw(a, ...) (code_segment[0] = a; code_segment[1] = b) /* decleare word */ #define db(str) (code_segment[0] = str[0]; code_segment[1] = str[1]) /* decleare bytes */ /* 汇编指令 */ #define mov(a, b) (a = b) #define add(a, b) (a += b) #define sub(a, b) (a -= b) #define push(a) {SP -= 2; SP__ = a;} #define pop(a) {a = SP__; SP += 2;} // a 用于接收出栈的数据 #define inc(a) (a++) #define loop(pos) (CX--; if CX != 0 goto pos) /* see func doloop() */ #define and(a, b) #define or(a, b) #define _int(a) 1.4 程序 从代码到执行的流程\n编写 编译 链接（可执行文件） 执行 编译过程\nint main() { int b = 2 * 2 * 2; return 0; } 编译结果\nassume cs:abc ; 声明代码段 abc segment mov ax, 2 add ax, ax add ax, ax mov ax, 4c00h ; 程序返回值 int 21H ; 中断 abc ends end 循环\nassume cs:abc ; 声明代码段 abc segment mov ax, 2 mov cx, 11 ; cx 用于计算循环 s: add ax, ax loop s mov ax, 4c00h ; 程序返回值 int 21H ; 中断 abc ends end 代码段中存放数据\nassume cs:codesg codesg segment dw 1, 2, 3, 4 /* 这四个数存放在代码段中，位置在代码段起始位置 */ start mov ax,0 /* 使用start关键字，设置代码段指令起始位置，防止CPU将上述数据读为code */ codesg ends end start /* end可声明代码从哪开始执行 */ 代码段，数据段，栈段\nassume cs:code1, ds:data1, ss:stack1 ; 声明 data1 segment dw 1,2,3,4 data1 ends stack1 segment dw 0,0,0,0 stack1 ends code1 segment start mov ax, stack1 mov ss, ax mov ax, data1 mov ds, ax code1 ends end start 寻址：\nreg : 通用寄存器\nsreg : 段寄存器\nip是特殊寄存器\nreg：ax bx cx sp bp si di\nsreg: ds ss cs es\n可用于内存单元寻址：bx bp si di\n单独或4种组合出现：bx,si bx,di bp,si bp,di\nmov [bp] = mov ss:[bp]\ncpu寻址方式：\n直接寻址 : [1] 寄存器间接寻址 [bx] 寄存器相对寻址 [bx + 1] 基址变址寻址 [bx + si] 相对基址变址寻址 [bx + si + 1] 强制类型转换：\nmv word ptr ax 1\ndiv [除数]\n参数长度（位）\n除数 被除数\n8 16 (存放在ax中)\n16 32 (存放在dx和ax中)\nax放商，dx放余数\n8086转移指令：\n无条件转移 jmp 条件转移 循环指令 loop 过程 即函数 中断 编译器指令offset\n以一段代码段为例：\nstart: mov ax,offset start ; 等价于 mov ax 0\ns: mov ax,offset s ; 等价于mov ax,3\njmp 无条件转移\n实现：修改ip，或修改 cp 和 ip jmp short 标号\n段内段转移，IP修改范围为[-128, 127]\n示例：\nstart: mov ax,0\njmp short s ; 无条件转移到s （内部实现：从当前位置开始算，按偏移地址转移）\nadd ax,1\ns: inc ax\n(内部实现：ip += offset s - offset MYSELF)\n1.5 操作系统 https://www.bilibili.com/video/BV1D441117ib?p=8\u0026spm_id_from=pageDriver\u0026vd_source=027eab78efac77b882eeae0ff84cb89e\nCPU状态： 内核态：操作系统程序 用户态：用户程序 CPU指令类型： 特权指令：启动IO、内存清0、修改程序状态字、设置时钟、允许/禁止中断 非特权指令：控制转移、算数运算、取数指令 CPU特权级别：x86架构支持4个cpu特权级别，不同级别支持的指令集不同 R0：内核态 R1: R2: R3: 用户态 CPU状态转换： 用户态 -\u003e 内核态：中断，异常，陷入（操作系统提供给用户的接口） 内核态 -\u003e 用户态：设置程序状态字PSW 中断类型：来自IO设备、其他硬件设别（） IO中断 时钟中断 硬件故障 中断行为：保存当前进度，处理中断，返回下一条指令 cpu 取下一条指令 cpu 执行指令 cpu 执行一条指令后，扫描中断寄存器，查看是否有中断信号 如果有中断，中断硬件保存现场 中断硬件将触发器的内容送入PSW对应位置，查找中断向量表，调用中断处理程序 中断向量表： 0-19：不可屏蔽中断和异常 0 除0 1 单步调试 4 算数溢出 6 非法操作数 12 栈异常 13 保护性错误 14 缺页异常 20-31：保留 32-127：外部中断 128：系统调用异常 \u003c– （重要） 129-238：外部中断 239：本地APIC时钟中断 … 255 本地APIC伪中断 异常分类： 陷入：有意识安排，返回下一条指令 故障：可恢复错误，返回当前指令 终止：不可恢复错误 异常举例： 系统调用 页故障/页错误 断点指令 程序性异常：算术溢出、除0、… 系统调用功能：用户调用操作系统功能，包括进程管理、文件管理、设备管理等 系统调用方式：c函数库封装系统调用，用户调用c函数库。每个系统调用都有系统调用号。 系统调用执行流程： 中断/异常机制：硬件保护现场，查找中断向量表，调用系统调用入口程序 系统调用入口程序：保存现场，参数压栈，查找系统调用表，调用系统调用例程或内核函数 执行系统调用例程 恢复线程，返回用户程序 2 内存管理 结构 分段 设计\n虚拟地址分为若干大小的段 段表存储分段信息 每个进程1个段表，操作系统1个全局段表 实现\n虚拟地址为：[段号 + 段内偏移]（段号-\u003e段基址 + 段内偏移） 物理地址：以段为单位分配 - 段表 --------+--------+-------- 段号 | 段基址 | 段长度 --------+--------+-------- 0 | 0x... | 2k 1 | 0x... | 5k --------+--------+--------- 优点\n逻辑连续 缺点\n分段粒度粗，容易产生外部碎片 分页 设计\n物理内存划分为连续、等长的物理页 虚拟页与物理页大小相等 虚拟页可映射至任意物理页 每个进程1个页表（或1级页表） 实现\n[虚拟页号 + 页内偏移] - 页表 --------+---------- 虚拟页号 | 物理页号 --------+---------- 0 | 10 1 | 13 --------+---------- 优点\n解决外部碎片 应用程序时空局限性：执行时，使用的数据或代码是连续的 缺点\n页表过大（解决：多级页表 -\u003e 剪枝） 多级页表：[虚拟页号_0:虚拟页号_1:虚拟页号_2:虚拟页号_3 + 页内偏移] 优化\nTLB （性能）\n位置：位于CPU内部 功能：缓存虚拟页号到物理页号的映射关系 作用：先查TLB，如果TLB未命中，再查缓存 刷新：切换页表时，刷新全部TLB（优化：TLB缓存项记录页表标签，切换页表时无需全部刷新） [CPU] --\u003e [TLB] --\u003e [页表] [p3] [p9] [p5] 结构：根据CPU缓存 L1 L2 L3 分级结构 -\u003e TLB 也是分级结构 swapping （大小）\n功能：虚拟内存 \u003e 物理内存时，将内存页存放到磁盘 算法：FIFO、LRU/MRU、Clock 缺页异常 （稳定）\n原因：物理内存需求过大 处理：等待磁盘IO，将物理页读取至内存 伙伴系统（利用率）\n问题：外部碎片：空闲但不连续；内部碎片：分配空间过大 实现：分裂与合并 - 伙伴系统 时间1： [ ] 时间2： [ ] [ ] 时间3： [ ] [ ] 空闲链表：较大空间分裂时，将多余的部分移入上一空间数组链表\n- 空闲数组链表 [ 2^0 ] [ 2^1 ] -\u003e [] -\u003e [] [ 2^2 ] -\u003e [] 写时复制（共享）\n3 进程线程 1.1 概述 进程 定义：Process/Task/Job 定义：某个数据集合上一次运行活动。资源分配单位。\n实现：进程控制块 Process Control Block PCB：进程描述符，进程属性\n基本信息：pid, 进程名，userid CPU现场：寄存器，程序计数器，状态字PSW，栈指针，页表指针 控制信息：状态，优先级，代码执行入口，程序磁盘地址，运行统计信息（执行时间，页面调度），进程同步与通信，进程队列指针，进程消息队列指针 资源信息：虚拟地址空间，打开的文件 状态：\n分类：\n就绪态：CPU不空闲 -\u003e 运行：被调度程序选中 运行态： -\u003e 就绪：时间片用完，高优先级抢占 -\u003e 等待：系统调用、IO、进程通信、… 等待态：阻塞 -\u003e 就绪：等待事件发生 创建态： 终止态：进程结束，统计运行信息，资源回收 挂起态：调节负载）（进程映像交换到磁盘） linux 进程状态：\nfork() -\u003e 就绪态 -\u003e 运行态 +--\u003e 浅度睡眠 --+ | | +--\u003e 深度睡眠 --+ | |--\u003e 就绪态 （wake_up / 信号） +--\u003e 暂停 --+ | | +--\u003e 僵尸 --+ 就绪-\u003e运行：schedule() 运行-\u003e就绪：时间片结束 运行-\u003e浅度睡眠：等待资源，interruptible_sleep_on()，schedule() 运行-\u003e深度睡眠：等待资源，sleep_on()，schedule() 运行-\u003e暂停：ptrace调试，schedule() 进程队列\n进程状态改变：从一个队列出队，进入另一个队列\n等待队列：等待事件不同，有多个等待队列\n进程生命周期\n创建 fork/exec：分配pid，分配pcb，复制父进程地址空间（linux优化：当子进程要写父进程地址时，才复制地址空间），继承父进程共享资源(打开的文件，工作目录)，设置队列指针 阻塞 wait 等待子进程：自己执行阻塞原语 唤醒 挂起 激活 撤销 exit：关闭文件，回收内存，撤销pcb 进程切换\n进程地址空间\n--------- 用户地址空间 栈 . . . 堆 --------- 数据段 --------- 代码段 --------- ... ----------- 操作系统地址空间 内核栈 ----------- 内核代码 ------------ 上下文切换：将cpu硬件状态从一个进程换到另一个进程\n直接开销：保护和恢复寄存器、切换地址空间 间接开销：高速缓存失效、缓冲区缓存失效、TLB失效 进程通信\n信号 信号量 （锁） 消息队列 （传递数据 + 阻塞） 管道 （传递数据 + 阻塞） 共享内存 （传递数据 + 阻塞） 套接字 （传递数据 + 阻塞） 线程\n进程问题\n创建进程开销大：数据段、代码段、堆、栈段 进程隔离性强：IPC开销大 进程内部无法支持并行 线程优点\n构成：执行所需最小状态：寄存器和栈（每个线程有自己的栈，共享数据、代码、堆） 线程id，线程状态，线程上下文，线程栈和栈指针 开销小：创建和销毁，切换，通信 性能高：多处理器并发执行 线程模型（用户线程 与 内核线程）\n多对一 一对一：内核线程数量大 多对多 线程调度\n调度场景\n[t1] [CPU1] [t2] -\u003e [调度器] -\u003e [t3] [CPU2] 调度算法\n衡量标准\n吞吐量\n周转时间：请求 -\u003e 运行\n响应时间：请求 -\u003e 第一次回应\nCPU利用率\n等待时间：就绪 -\u003e 运行\n算法分类\n算法类型\n算法 实现 优点 缺点 批处理系统 先来先服务 FCFS - 公平、简单 长任务不友好 最短作业优先 SJF - 最短平均周转 长任务不友好 最短剩余时间优先 SRTN 最高响应比优先 HRRN 响应时间 = （处理时间 + 等待时间） / 处理时间 交互式系统 时间片轮转 RR - 公平、响应快 进程切换开销高、IO进程不友好 （IO进程进入优先级高、独立就绪队列） 最高优先级 HPF 优先级动态或静态 - 低优先级饥饿、优先级反转（低优先级进程持有锁，高优先级进程抢占，低优先级无法执行） 多级反馈队列 MFQ 多个就绪队列，优先级依次降低，时间片依次增加，时间片轮转调度，高优先级优先调度 最短进程优先 操作系统\nOS 策略 unix 动态优先 BSD 多级反馈 Linux 抢占 Windows 32优先级抢占（优先级进入就绪队列） Solaris 综合调度 调度问题\n优先级反转\n使用临界区资源时： 优先级上限：优先级临时设为最高 优先级继承：临时继承最高优先级 禁止中断：禁止被抢占 线程通信\n临界区 要求 互斥访问 有限等待 空闲让进 算法 皮特森算法 (?)\n// 进程 0 while (1) { flag[0] = true; turn = 1; while (flag[1] == true \u0026\u0026 turn == 1) { /* 临界区 */ flag[0] = false; } } // 进程 1 while (1) { flag[1] = true; turn = 0; while (flag[0] == true \u0026\u0026 turn == 0) { /* 临界区 */ flag[1] = false; } } 硬件原子\n概念 不可被打断的操作集合 其他核心不会看到中间状态 实现 intel 锁总线 arm LL/SC 线程锁 自旋锁 读写锁 线程死锁 预防 避免互斥访问 不允许持有并等待 不允许资源抢占 打破循环等待（按特定顺序获取资源） 解决 银行家算法 获取资源需管理者同意 管理者预演不会造成死锁 多核缓存\n[ cpu 0 ] [ cpu 1 ] [ cpu 2 ] [ cpu 3 ] [l1 cache] [l1 cache] [l1 cache] [l1 cache] [ l2 cache ] [ l2 cache ] [ l3 cache ] [ 内存 ] 缓存一致性 原则\n独占修改 cpu核独占缓存行：本地可读可写 其他核读需迁移到共享 其他核写需迁移到失效 共享 多核拷贝缓存行 本地可读 本地写迁移到独占修改，使其他核缓存行失效 其他核写需迁移到失效 失效 本地缓存行失效 本地不能读/写缓存行 本地读需迁移到共享，其他核需迁移到共享 本地写需迁移到独占修改，其他核该行失效 通知其他核\n全局缓存：记录缓存行拥有者信息 | dirty cpu1 cpu2 cpu3 | |0 1 1 1 | | 状态 内容 | | 状态 内容 | | 状态 内容 | cpu1 cpu2 cpu3 pthread_yield：让出cpu\n进程优先级：动态优先级，静态优先级\n2 进程通信 2.1 分类 2.1 代码 一 信号 // 发送 kill(pid_t pid, int signum) // 接收 signal(int signum, sig_handle_func()) /* 不阻塞，先恢复信号，再处理 */ sigaction(int signum, ...) /* 阻塞，先处理，再恢复信号 */ 二 信号量 （Posix） #include // 初始化 int sem_init(sem_t *sem, int pshared, unsigned int value); /* 0：进程内线程同步 */ int sem_destroy(sem_t *sem); // 上锁 int sem_wait(sem_t *sem); // 解锁 int sem_post(sem_t *sem); // 创建 （有名信号量） sem_t *sem_open(const char *name, int flag); int sem_close(sem_t *sem); int sem_unlink(const char *name); // 其他 int sem_trywait(sem_t *sem); int sem_timewait(sem_t *sem); 三 消息队列 // 创建 int msgget(key_t key, int msgflg); /* flag: 访问权限 */ key_t ftok(const char *pathname int projid); // 发送 int msgsnd(int msqid, const void *data, size_t datasz, int msgflag); // 接收 ssize_t msgrcv(int msqid, void *data, size_t datasz, long msgtype, int msgflag); /* msgtype: 接收指定类型消息 */ // 删除、赋值、查询 msgctl(int msqid, int cmd, struct msqid_ds *buf); 四 管道 // 创建（匿名管道） int pipe(inf fd[2]); /* 0读1写 */ // 关闭 void close(int fd); // 发送 int write(int fd, void *data, size_t datasz); // 接收 int read(int fd, void *data, size_t datasz); /* 阻塞 */ // 创建 （命名管道: 对应真实文件） + open() int mkfifo(const char *file, mode_t mode); int mknode(const char *path, mode_t mode, dev_t device_type); /* 较老 */ 五 共享内存 六 套接字 2.3 命令 # 信号: 查看 kill -l # 命名管道 mkfifo FILE mkfifo FILE p 4 文件系统 文件系统 ext2\n架构\n磁盘 | 引导 | | 块组1 | 块组 (数据存储在block中) | 块组2 | \u003c | 超级块 | | 快组. | | 组描述符 * n | | 块组n | | 块位图 | | inode位图 | inode （大小：128 / 256bytes，block数据可能会超过记录至） | inode * n | \u003c | 文件类型 | | block * n | | 文件大小 | | 链接数 | 有多少文件名指向此inode | 文件权限 | | 时间 | (创建、修改、访问) | 1级指针 * 12 | -\u003e block （block 为 4k时，最大单一文件为2T，文件系统容量为16T） | 2级指针 * 1 | | 3级指针 * 1 | | 4级指针 * 1 | 文件系统崩溃一致性\n一致性属性 持久化 原子性 有序性 一致性实现 日志 缺点：日志多次读写占用IO 改进：批量写日志 + 检查点 设备管理 分类 字符设备：LED、键盘、串口 顺序访问：内次读取一个字符 通过驱动与设备交互 块设备：内存、磁盘、u盘 随机访问：以块粒度进行读写 系统层增加缓冲区，避免与慢设备频繁交互 网络设备：网卡 面向格式化报文的收发 驱动以上维护多种协议 设备管理 字符抽象：文件系统：open/read/write/close 块抽象：文件系统、mmap 网络抽象：socket、文件系统：sockent/send/recv/close CPU与设备交互 可编程IO：cpu的in/out load/store指令 特点 消耗CPU时钟周期 与 数据量成正比 适合于小型设备 分类 PIO (port IO) IO设备具备独立的地址空间 使用特殊指令 in/out MMIO (Memory-mapped IO) 将设备映射到连续物理内存中 使用内存访问指令 行为与内存不完全一样，读写有副作用 直接内存访问 DMA：外设可直接访问总线 特点\nDMA与内存交互传输数据，无需CPU参与 适合与高吞吐量IO 结构\n[CPU] | [高速缓存] | ----+---------------+--------------+--------- 系统总线 | | [DMA控制器] [内存] | ----+---------------------------------------- PCI总线 | [外设] 读取步骤\n1.CPU中驱动发出请求，将设备数据读取至内存地址x 2.外设初始化DMA传递，将数据传送到数据DMA控制器 3.DMA将数据传送至内存地址x 4.DMA传输完成后，向CPU发出中断 5.PU执行每条指令后，检查中断是否到来 ",
+  "wordCount" : "1758",
+  "inLanguage": "en",
+  "datePublished": "2025-01-21T13:55:00+08:00",
+  "dateModified": "2026-08-14T17:47:31+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/os/os-2-principles/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      操作系统 2 原理
+    </h1>
+    <div class="post-meta">
+      <span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>9 min</span>&nbsp;·&nbsp;<span>1758 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#%e7%9b%ae%e5%bd%95" aria-label="目录">目录</a></li>
+                <li>
+                    <a href="#0-%e6%9e%b6%e6%9e%84" aria-label="0 架构">0 架构</a><ul>
+                        
+                <li>
+                    <a href="#01-os%e5%8a%9f%e8%83%bd" aria-label="0.1 OS功能">0.1 OS功能</a></li>
+                <li>
+                    <a href="#02-os%e7%89%b9%e5%be%81" aria-label="0.2 OS特征">0.2 OS特征</a></li>
+                <li>
+                    <a href="#03-os%e7%bb%93%e6%9e%84" aria-label="0.3 OS结构">0.3 OS结构</a></li>
+                <li>
+                    <a href="#04-os%e5%88%86%e7%b1%bb" aria-label="0.4 OS分类">0.4 OS分类</a></li></ul>
+                </li>
+                <li>
+                    <a href="#1-cpu" aria-label="1 CPU">1 CPU</a><ul>
+                        
+                <li>
+                    <a href="#11-cpu-%e7%bb%93%e6%9e%84" aria-label="1.1 CPU 结构">1.1 CPU 结构</a></li>
+                <li>
+                    <a href="#12-%e5%af%84%e5%ad%98%e5%99%a8" aria-label="1.2 寄存器">1.2 寄存器</a></li>
+                <li>
+                    <a href="#13-%e6%b1%87%e7%bc%96%e6%8c%87%e4%bb%a4" aria-label="1.3 汇编指令">1.3 汇编指令</a></li>
+                <li>
+                    <a href="#14-%e7%a8%8b%e5%ba%8f" aria-label="1.4 程序">1.4 程序</a></li>
+                <li>
+                    <a href="#15-%e6%93%8d%e4%bd%9c%e7%b3%bb%e7%bb%9f" aria-label="1.5 操作系统">1.5 操作系统</a></li></ul>
+                </li>
+                <li>
+                    <a href="#2-%e5%86%85%e5%ad%98%e7%ae%a1%e7%90%86" aria-label="2 内存管理">2 内存管理</a><ul>
+                        <ul>
+                        
+                <li>
+                    <a href="#%e7%bb%93%e6%9e%84" aria-label="结构">结构</a></li></ul>
+                    </ul>
+                </li>
+                <li>
+                    <a href="#3-%e8%bf%9b%e7%a8%8b%e7%ba%bf%e7%a8%8b" aria-label="3 进程线程">3 进程线程</a><ul>
+                        
+                <li>
+                    <a href="#11-%e6%a6%82%e8%bf%b0" aria-label="1.1 概述">1.1 概述</a></li></ul>
+                </li>
+                <li>
+                    <a href="#2-%e8%bf%9b%e7%a8%8b%e9%80%9a%e4%bf%a1" aria-label="2 进程通信">2 进程通信</a><ul>
+                        
+                <li>
+                    <a href="#21-%e5%88%86%e7%b1%bb" aria-label="2.1 分类">2.1 分类</a></li>
+                <li>
+                    <a href="#21-%e4%bb%a3%e7%a0%81" aria-label="2.1 代码">2.1 代码</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80-%e4%bf%a1%e5%8f%b7" aria-label="一 信号">一 信号</a></li>
+                <li>
+                    <a href="#%e4%ba%8c-%e4%bf%a1%e5%8f%b7%e9%87%8f-posix" aria-label="二 信号量 （Posix）">二 信号量 （Posix）</a></li>
+                <li>
+                    <a href="#%e4%b8%89-%e6%b6%88%e6%81%af%e9%98%9f%e5%88%97" aria-label="三 消息队列">三 消息队列</a></li>
+                <li>
+                    <a href="#%e5%9b%9b-%e7%ae%a1%e9%81%93" aria-label="四 管道">四 管道</a></li>
+                <li>
+                    <a href="#%e4%ba%94-%e5%85%b1%e4%ba%ab%e5%86%85%e5%ad%98" aria-label="五 共享内存">五 共享内存</a></li>
+                <li>
+                    <a href="#%e5%85%ad-%e5%a5%97%e6%8e%a5%e5%ad%97" aria-label="六 套接字">六 套接字</a></li></ul>
+                </li>
+                <li>
+                    <a href="#23-%e5%91%bd%e4%bb%a4" aria-label="2.3 命令">2.3 命令</a></li></ul>
+                </li>
+                <li>
+                    <a href="#4-%e6%96%87%e4%bb%b6%e7%b3%bb%e7%bb%9f" aria-label="4 文件系统">4 文件系统</a>
+                </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h1 id="目录">目录<a hidden class="anchor" aria-hidden="true" href="#目录">#</a></h1>
+<ol start="0">
+<li>
+<p>架构</p>
+</li>
+<li>
+<p>CPU</p>
+</li>
+<li>
+<p>内存管理</p>
+</li>
+<li>
+<p>进程线程</p>
+</li>
+<li>
+<p>文件系统</p>
+</li>
+<li>
+<p><a href="#%E7%9B%AE%E5%BD%95">目录</a></p>
+</li>
+<li>
+<p><a href="#0-%E6%9E%B6%E6%9E%84">0 架构</a></p>
+<ol>
+<li><a href="#0-1-OS%E5%8A%9F%E8%83%BD">0.1 OS功能</a></li>
+<li><a href="#0-2-OS%E7%89%B9%E5%BE%81">0.2 OS特征</a></li>
+<li><a href="#0-3-OS%E7%BB%93%E6%9E%84">0.3 OS结构</a></li>
+<li><a href="#0-4-OS%E5%88%86%E7%B1%BB">0.4 OS分类</a></li>
+</ol>
+</li>
+<li>
+<p><a href="#1-CPU">1 CPU</a></p>
+<ol>
+<li><a href="#1-1-CPU-%E7%BB%93%E6%9E%84">1.1 CPU 结构</a></li>
+<li><a href="#1-2-%E5%AF%84%E5%AD%98%E5%99%A8">1.2 寄存器</a></li>
+<li><a href="#1-3-%E6%B1%87%E7%BC%96%E6%8C%87%E4%BB%A4">1.3 汇编指令</a></li>
+<li><a href="#1-4-%E7%A8%8B%E5%BA%8F">1.4 程序</a></li>
+<li><a href="#1-5-%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F">1.5 操作系统</a></li>
+</ol>
+</li>
+<li>
+<p><a href="#2-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86">2 内存管理</a></p>
+<ol>
+<li><a href="#%E7%BB%93%E6%9E%84">结构</a></li>
+</ol>
+</li>
+</ol>
+<ul>
+<li><a href="#3-%E8%BF%9B%E7%A8%8B%E7%BA%BF%E7%A8%8B">3 进程线程</a>
+<ol>
+<li><a href="#1-1-%E6%A6%82%E8%BF%B0">1.1 概述</a></li>
+</ol>
+</li>
+<li><a href="#2-%E8%BF%9B%E7%A8%8B%E9%80%9A%E4%BF%A1">2 进程通信</a>
+<ol>
+<li><a href="#2-1-%E5%88%86%E7%B1%BB">2.1 分类</a></li>
+<li><a href="#2-1-%E4%BB%A3%E7%A0%81">2.1 代码</a>
+<ol>
+<li><a href="#%E4%B8%80-%E4%BF%A1%E5%8F%B7">一 信号</a></li>
+<li><a href="#%E4%BA%8C-%E4%BF%A1%E5%8F%B7%E9%87%8F-%EF%BC%88Posix%EF%BC%89">二 信号量 （Posix）</a></li>
+<li><a href="#%E4%B8%89-%E6%B6%88%E6%81%AF%E9%98%9F%E5%88%97">三 消息队列</a></li>
+<li><a href="#%E5%9B%9B-%E7%AE%A1%E9%81%93">四 管道</a></li>
+<li><a href="#%E4%BA%94-%E5%85%B1%E4%BA%AB%E5%86%85%E5%AD%98">五 共享内存</a></li>
+<li><a href="#%E5%85%AD-%E5%A5%97%E6%8E%A5%E5%AD%97">六 套接字</a></li>
+</ol>
+</li>
+<li><a href="#2-3-%E5%91%BD%E4%BB%A4">2.3 命令</a></li>
+</ol>
+</li>
+<li><a href="#4-%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F">4 文件系统</a></li>
+</ul>
+<h1 id="0-架构">0 架构<a hidden class="anchor" aria-hidden="true" href="#0-架构">#</a></h1>
+<h2 id="01-os功能">0.1 OS功能<a hidden class="anchor" aria-hidden="true" href="#01-os功能">#</a></h2>
+<p>从资源管理角度划分：</p>
+<ul>
+<li>进程/线程管理</li>
+<li>内存管理</li>
+<li>文件管理</li>
+<li>设备管理</li>
+<li>用户接口</li>
+</ul>
+<h2 id="02-os特征">0.2 OS特征<a hidden class="anchor" aria-hidden="true" href="#02-os特征">#</a></h2>
+<ul>
+<li>并发</li>
+<li>共享</li>
+<li>虚拟</li>
+<li>随机：不可预测的事件，状态随机</li>
+</ul>
+<h2 id="03-os结构">0.3 OS结构<a hidden class="anchor" aria-hidden="true" href="#03-os结构">#</a></h2>
+<p>整体架构：</p>
+<ul>
+<li>应用程序</li>
+<li>系统调用</li>
+<li>OS内核</li>
+<li>硬件</li>
+</ul>
+<h2 id="04-os分类">0.4 OS分类<a hidden class="anchor" aria-hidden="true" href="#04-os分类">#</a></h2>
+<ul>
+<li>批处理OS：任务串行</li>
+<li>分时OS：任务时间片</li>
+<li>实时OS：外部请求及时响应</li>
+<li>个人计算机OS：任务通信、资源共享</li>
+<li>网络操作OS：</li>
+<li>分布式OS：</li>
+<li>嵌入式OS：</li>
+</ul>
+<h1 id="1-cpu">1 CPU<a hidden class="anchor" aria-hidden="true" href="#1-cpu">#</a></h1>
+<h2 id="11-cpu-结构">1.1 CPU 结构<a hidden class="anchor" aria-hidden="true" href="#11-cpu-结构">#</a></h2>
+<ul>
+<li>CPU
+<ul>
+<li>构成
+<ul>
+<li>运算器</li>
+<li>控制器</li>
+<li>寄存器：控制寄存器、状态寄存器</li>
+<li>高速缓存</li>
+</ul>
+</li>
+<li>寄存器（8086 14个寄存器）
+<ul>
+<li>段寄存器（4）：CS, DS, SS, ES
+<ul>
+<li>CS: 代码段寄存器
+<ul>
+<li>IP：指令寄存器 （CS + IP -&gt; 代码地址）</li>
+</ul>
+</li>
+<li>DS: 数据段寄存器 （DS + 地址 -&gt; 数据地址）</li>
+<li>SS：栈寄存器
+<ul>
+<li>SP：栈顶寄存器 （SS + SP -&gt; 栈顶寄存器）</li>
+</ul>
+</li>
+<li>ES:</li>
+</ul>
+</li>
+<li>指针寄存器：IP, SP</li>
+</ul>
+</li>
+<li>CPU寻址方式
+<ul>
+<li>直接寻址 : [1]</li>
+<li>寄存器间接寻址 [bx]</li>
+<li>寄存器相对寻址 [bx + 1]</li>
+<li>基址变址寻址 [bx + si]</li>
+<li>相对基址变址寻址 [bx + si + 1]</li>
+</ul>
+</li>
+<li>CPU特权级别（x86架构支持4个cpu特权级别，不同级别支持的指令集不同）
+<ul>
+<li>R0：内核态</li>
+<li>R1:</li>
+<li>R2:</li>
+<li>R3: 用户态</li>
+</ul>
+</li>
+<li>CPU执行状态
+<ul>
+<li>状态分类
+<ul>
+<li>内核态：操作系统程序</li>
+<li>用户态：用户程序</li>
+</ul>
+</li>
+<li>状态转换
+<ul>
+<li>转换类型
+<ul>
+<li>用户态 -&gt; 内核态：中断，异常，陷入（操作系统提供给用户的接口）</li>
+<li>内核态 -&gt; 用户态：设置程序状态字PSW</li>
+</ul>
+</li>
+<li>中断：来自IO设备、其他硬件设备（硬件异步）
+<ul>
+<li>分类
+<ul>
+<li>IO中断</li>
+<li>时钟中断</li>
+<li>硬件故障</li>
+</ul>
+</li>
+<li>中断行为：保存当前进度，处理中断，返回下一条指令
+<ol>
+<li>cpu 取下一条指令</li>
+<li>cpu 执行指令</li>
+<li>cpu 执行一条指令后，扫描中断寄存器，查看是否有中断信号</li>
+<li>如果有中断，中断硬件保存现场</li>
+<li>中断硬件将触发器的内容送入PSW对应位置，查找中断向量表，调用中断处理程序</li>
+</ol>
+</li>
+<li>中断向量表
+<ul>
+<li>0-19：不可屏蔽中断和异常
+<ul>
+<li>0 除0</li>
+<li>1 单步调试</li>
+<li>4 算数溢出</li>
+<li>6 非法操作数</li>
+<li>12 栈异常</li>
+<li>13 保护性错误</li>
+<li>14 缺页异常</li>
+</ul>
+</li>
+<li>20-31：保留</li>
+<li>32-127：外部中断</li>
+<li>128：系统调用异常 &lt;– （重要）</li>
+<li>129-238：外部中断</li>
+<li>239：本地APIC时钟中断</li>
+<li>…</li>
+<li>255 本地APIC伪中断</li>
+</ul>
+</li>
+<li>多核CPU处理中断
+<ul>
+<li>中断控制器 GIC Generic Interrupt Controller：全局中断的分发与管理，判断中断交给哪个CPU</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>异常（软件同步）
+<ul>
+<li>分类
+<ul>
+<li>陷入：有意识安排，返回下一条指令：系统调用</li>
+<li>故障：可恢复错误，返回当前指令：缺页异常、段错误</li>
+<li>终止：不可恢复错误、算术溢出、除0、…</li>
+</ul>
+</li>
+<li>异常处理
+<ul>
+<li>1.进入异常时：
+<ul>
+<li>保存处理器状态</li>
+<li>准备高特权级执行环境</li>
+<li>选择并执行合适的异常处理代码</li>
+</ul>
+</li>
+<li>2.处理异常时：
+<ul>
+<li>获取异常信息（调用参数、原因等）</li>
+</ul>
+</li>
+<li>3.结束异常时：
+<ul>
+<li>恢复处理器状态</li>
+<li>返回低优先级</li>
+<li>继续执行流</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>CPU指令类型
+<ul>
+<li>特权指令：启动IO、内存清0、修改程序状态字、设置时钟、允许/禁止中断</li>
+<li>非特权指令：控制转移、算数运算、取数指令</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h2 id="12-寄存器">1.2 寄存器<a hidden class="anchor" aria-hidden="true" href="#12-寄存器">#</a></h2>
+<blockquote>
+<p><a href="https://www.bilibili.com/video/BV1zW411n79C?p=7&amp;spm_id_from=pageDriver&amp;vd_source=027eab78efac77b882eeae0ff84cb89e">https://www.bilibili.com/video/BV1zW411n79C?p=7&amp;spm_id_from=pageDriver&amp;vd_source=027eab78efac77b882eeae0ff84cb89e</a></p>
+</blockquote>
+<p>单位：</p>
+<ul>
+<li>1 word 字 = 16位 = 2b</li>
+</ul>
+<p>8086有14个寄存器，每个CPU 1 word</p>
+<ul>
+<li>通用寄存器（4）：AX,BC,CX,DX</li>
+</ul>
+<p>寄存器功能：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-C" data-lang="C"><span class="line"><span class="cl"><span class="cm">/* 1. 16位CPU 8086 */</span>
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="kt">int</span> <span class="n">WORD</span><span class="p">;</span> <span class="cm">/* WORD = 16 */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 2. CPU */</span>                              <span class="n">WORD</span> <span class="n">_memory_</span><span class="p">[</span><span class="mi">110240</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="mi">0</span><span class="p">};</span>
+</span></span><span class="line"><span class="cl">                                   <span class="cm">/*--------------------------------------*/</span>
+</span></span><span class="line"><span class="cl"><span class="cm">/* ---------------------*           */</span>
+</span></span><span class="line"><span class="cl"><span class="n">WORD</span> <span class="n">AX</span><span class="p">;</span>               <span class="cm">/*           */</span>
+</span></span><span class="line"><span class="cl"><span class="n">WORD</span> <span class="n">BX</span><span class="p">;</span>               <span class="cm">/*           */</span>
+</span></span><span class="line"><span class="cl"><span class="n">WORD</span> <span class="n">CX</span><span class="p">;</span>               <span class="cm">/*           */</span>
+</span></span><span class="line"><span class="cl"><span class="n">WORD</span> <span class="n">DX</span><span class="p">;</span>               <span class="cm">/*           */</span>
+</span></span><span class="line"><span class="cl">                       <span class="cm">/*           */</span>
+</span></span><span class="line"><span class="cl"><span class="n">WORD</span> <span class="n">SI</span><span class="p">;</span> <span class="c1">//字符串复制   /*           */
+</span></span></span><span class="line"><span class="cl"><span class="n">WORD</span> <span class="n">DI</span><span class="p">;</span>               <span class="cm">/*           */</span>
+</span></span><span class="line"><span class="cl">                       <span class="cm">/*           */</span>
+</span></span><span class="line"><span class="cl"><span class="n">WORD</span> <span class="n">SS</span><span class="p">;</span>  <span class="n">WORD</span> <span class="n">BP</span><span class="p">;</span> <span class="n">WORD</span> <span class="n">SP</span><span class="p">;</span>     <span class="cm">/* ========= */</span>     <span class="n">WORD</span> <span class="n">stack_segment</span><span class="p">[</span><span class="mi">1024</span><span class="p">]</span>
+</span></span><span class="line"><span class="cl"><span class="n">WORD</span> <span class="n">CS</span><span class="p">;</span>  <span class="n">WORD</span> <span class="n">IP</span><span class="p">;</span>     <span class="cm">/* ========= */</span>     <span class="n">WORD</span> <span class="n">code_segment</span><span class="p">[</span><span class="mi">4096</span><span class="p">];</span>
+</span></span><span class="line"><span class="cl"><span class="n">WORD</span> <span class="n">DS</span><span class="p">;</span>  <span class="cm">/* [] */</span>     <span class="cm">/*           */</span>     <span class="n">WORD</span> <span class="n">data_segment</span><span class="p">[</span><span class="mi">4096</span><span class="p">];</span>
+</span></span><span class="line"><span class="cl"><span class="n">WORD</span> <span class="n">ES</span><span class="p">;</span>               <span class="cm">/*           */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/**************************/</span>
+</span></span><span class="line"><span class="cl"><span class="n">BP是SS栈偏移</span>
+</span></span><span class="line"><span class="cl"><span class="n">mv</span> <span class="p">[</span><span class="n">bp</span><span class="p">]</span> <span class="o">-&gt;</span> <span class="n">mv</span> <span class="p">[</span><span class="n">ss</span> <span class="o">+</span> <span class="n">bp</span><span class="p">]</span>
+</span></span><span class="line"><span class="cl"><span class="cm">/* ---------------------*           */</span>
+</span></span><span class="line"><span class="cl">                                   <span class="cm">/*-------------------------------------*/</span>
+</span></span></code></pre></div><h2 id="13-汇编指令">1.3 汇编指令<a hidden class="anchor" aria-hidden="true" href="#13-汇编指令">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="cp">#define SP__        (stack_segment[SP])
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define IP__        (code_segment[IP])
+</span></span></span><span class="line"><span class="cl"><span class="cm">/* 取地址 mov ax [0x0f] */</span>
+</span></span><span class="line"><span class="cl"><span class="cp">#define l_l(a)      (data_segment[DS + a]) </span><span class="cm">/* [a], [a + 1]处理数组 */</span><span class="cp">
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* decleare */</span>
+</span></span><span class="line"><span class="cl"><span class="cp">#define dw(a, ...)   (code_segment[0] = a; code_segment[1] = b) </span><span class="cm">/* decleare word */</span><span class="cp">
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define db(str)      (code_segment[0] = str[0]; code_segment[1] = str[1]) </span><span class="cm">/* decleare bytes */</span><span class="cp">
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cm">/* 汇编指令 */</span>
+</span></span><span class="line"><span class="cl"><span class="cp">#define mov(a, b)   (a = b)
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define add(a, b)   (a += b)
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define sub(a, b)   (a -= b)
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cp">#define push(a)     {SP -= 2;    SP__ = a;}
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define pop(a)      {a = SP__;   SP += 2;} </span><span class="c1">// a 用于接收出栈的数据
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cp">#define inc(a)      (a++)
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cp">#define loop(pos)    (CX--;  if CX != 0  goto pos) </span><span class="cm">/* see func doloop() */</span><span class="cp">
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cp">#define and(a, b)
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define or(a, b)
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="cp">#define _int(a)
+</span></span></span></code></pre></div><h2 id="14-程序">1.4 程序<a hidden class="anchor" aria-hidden="true" href="#14-程序">#</a></h2>
+<p>从代码到执行的流程</p>
+<ul>
+<li>编写</li>
+<li>编译</li>
+<li>链接（可执行文件）</li>
+<li>执行</li>
+</ul>
+<p>编译过程</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">main</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">b</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">*</span> <span class="mi">2</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div><p>编译结果</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-asm" data-lang="asm"><span class="line"><span class="cl"><span class="nf">assume</span> <span class="no">cs</span><span class="p">:</span><span class="no">abc</span> <span class="c1">; 声明代码段
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">abc</span> <span class="no">segment</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">mov</span> <span class="no">ax</span><span class="p">,</span> <span class="mi">2</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">add</span> <span class="no">ax</span><span class="p">,</span> <span class="no">ax</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">add</span> <span class="no">ax</span><span class="p">,</span> <span class="no">ax</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">mov</span> <span class="no">ax</span><span class="p">,</span> <span class="mi">4</span><span class="no">c00h</span> <span class="c1">; 程序返回值
+</span></span></span><span class="line"><span class="cl">    <span class="nf">int</span> <span class="mi">21</span><span class="no">H</span> <span class="c1">; 中断
+</span></span></span><span class="line"><span class="cl"><span class="nf">abc</span> <span class="no">ends</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">end</span>
+</span></span></code></pre></div><p>循环</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-asm" data-lang="asm"><span class="line"><span class="cl"><span class="nf">assume</span> <span class="no">cs</span><span class="p">:</span><span class="no">abc</span> <span class="c1">; 声明代码段
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">abc</span> <span class="no">segment</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">mov</span> <span class="no">ax</span><span class="p">,</span> <span class="mi">2</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">mov</span> <span class="no">cx</span><span class="p">,</span> <span class="mi">11</span> <span class="c1">; cx 用于计算循环
+</span></span></span><span class="line"><span class="cl"><span class="nl">s:</span>  <span class="nf">add</span> <span class="no">ax</span><span class="p">,</span> <span class="no">ax</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">loop</span> <span class="no">s</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="nf">mov</span> <span class="no">ax</span><span class="p">,</span> <span class="mi">4</span><span class="no">c00h</span> <span class="c1">; 程序返回值
+</span></span></span><span class="line"><span class="cl">    <span class="nf">int</span> <span class="mi">21</span><span class="no">H</span> <span class="c1">; 中断
+</span></span></span><span class="line"><span class="cl"><span class="nf">abc</span> <span class="no">ends</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">end</span>
+</span></span></code></pre></div><p>代码段中存放数据</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-asm" data-lang="asm"><span class="line"><span class="cl"><span class="nf">assume</span> <span class="no">cs</span><span class="p">:</span><span class="no">codesg</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">codesg</span> <span class="no">segment</span>
+</span></span><span class="line"><span class="cl">        <span class="nf">dw</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span> <span class="cm">/* 这四个数存放在代码段中，位置在代码段起始位置 */</span>
+</span></span><span class="line"><span class="cl"><span class="nf">start</span>   <span class="no">mov</span> <span class="no">ax</span><span class="p">,</span><span class="mi">0</span> <span class="cm">/* 使用start关键字，设置代码段指令起始位置，防止CPU将上述数据读为code */</span>
+</span></span><span class="line"><span class="cl"><span class="nf">codesg</span> <span class="no">ends</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">end</span> <span class="no">start</span> <span class="cm">/* end可声明代码从哪开始执行 */</span>
+</span></span></code></pre></div><p>代码段，数据段，栈段</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-asm" data-lang="asm"><span class="line"><span class="cl"><span class="nf">assume</span> <span class="no">cs</span><span class="p">:</span><span class="no">code1</span><span class="p">,</span> <span class="no">ds</span><span class="p">:</span><span class="no">data1</span><span class="p">,</span> <span class="no">ss</span><span class="p">:</span><span class="no">stack1</span> <span class="c1">; 声明
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="na">data1</span> <span class="nf">segment</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">dw</span> <span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">,</span><span class="mi">3</span><span class="p">,</span><span class="mi">4</span>
+</span></span><span class="line"><span class="cl"><span class="na">data1</span> <span class="nf">ends</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">stack1</span> <span class="no">segment</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">dw</span> <span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span>
+</span></span><span class="line"><span class="cl"><span class="nf">stack1</span> <span class="no">ends</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">code1</span> <span class="no">segment</span>
+</span></span><span class="line"><span class="cl"><span class="nf">start</span> <span class="no">mov</span> <span class="no">ax</span><span class="p">,</span> <span class="no">stack1</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">mov</span> <span class="no">ss</span><span class="p">,</span> <span class="no">ax</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">mov</span> <span class="no">ax</span><span class="p">,</span> <span class="no">data1</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">mov</span> <span class="no">ds</span><span class="p">,</span> <span class="no">ax</span>
+</span></span><span class="line"><span class="cl"><span class="nf">code1</span> <span class="no">ends</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">end</span> <span class="no">start</span>
+</span></span></code></pre></div><p>寻址：<br>
+reg : 通用寄存器<br>
+sreg : 段寄存器<br>
+ip是特殊寄存器</p>
+<p>reg：ax bx cx sp bp si di<br>
+sreg: ds ss cs es</p>
+<p>可用于内存单元寻址：bx bp si di<br>
+单独或4种组合出现：bx,si bx,di bp,si bp,di</p>
+<p>mov [bp] = mov ss:[bp]</p>
+<p>cpu寻址方式：</p>
+<ul>
+<li>直接寻址 : [1]</li>
+<li>寄存器间接寻址 [bx]</li>
+<li>寄存器相对寻址 [bx + 1]</li>
+<li>基址变址寻址 [bx + si]</li>
+<li>相对基址变址寻址 [bx + si + 1]</li>
+</ul>
+<p>强制类型转换：<br>
+mv word ptr ax 1</p>
+<p>div [除数]<br>
+参数长度（位）<br>
+除数 被除数<br>
+8 16 (存放在ax中)<br>
+16 32 (存放在dx和ax中)<br>
+ax放商，dx放余数</p>
+<p>8086转移指令：</p>
+<ul>
+<li>无条件转移 jmp</li>
+<li>条件转移</li>
+<li>循环指令 loop</li>
+<li>过程 即函数</li>
+<li>中断</li>
+</ul>
+<p>编译器指令offset<br>
+以一段代码段为例：<br>
+start: mov ax,offset start ; 等价于 mov ax 0<br>
+s: mov ax,offset s ; 等价于mov ax,3</p>
+<p>jmp 无条件转移</p>
+<ul>
+<li>实现：修改ip，或修改 cp 和 ip</li>
+</ul>
+<p>jmp short 标号<br>
+段内段转移，IP修改范围为[-128, 127]<br>
+示例：<br>
+start: mov ax,0<br>
+jmp short s ; 无条件转移到s （内部实现：从当前位置开始算，按偏移地址转移）<br>
+add ax,1<br>
+s: inc ax<br>
+(内部实现：ip += offset s - offset MYSELF)</p>
+<h2 id="15-操作系统">1.5 操作系统<a hidden class="anchor" aria-hidden="true" href="#15-操作系统">#</a></h2>
+<blockquote>
+<p><a href="https://www.bilibili.com/video/BV1D441117ib?p=8&amp;spm_id_from=pageDriver&amp;vd_source=027eab78efac77b882eeae0ff84cb89e">https://www.bilibili.com/video/BV1D441117ib?p=8&amp;spm_id_from=pageDriver&amp;vd_source=027eab78efac77b882eeae0ff84cb89e</a></p>
+</blockquote>
+<ul>
+<li>CPU状态：
+<ul>
+<li>内核态：操作系统程序</li>
+<li>用户态：用户程序</li>
+</ul>
+</li>
+<li>CPU指令类型：
+<ul>
+<li>特权指令：启动IO、内存清0、修改程序状态字、设置时钟、允许/禁止中断</li>
+<li>非特权指令：控制转移、算数运算、取数指令</li>
+</ul>
+</li>
+<li>CPU特权级别：x86架构支持4个cpu特权级别，不同级别支持的指令集不同
+<ul>
+<li>R0：内核态</li>
+<li>R1:</li>
+<li>R2:</li>
+<li>R3: 用户态</li>
+</ul>
+</li>
+<li>CPU状态转换：
+<ul>
+<li>用户态 -&gt; 内核态：中断，异常，陷入（操作系统提供给用户的接口）</li>
+<li>内核态 -&gt; 用户态：设置程序状态字PSW</li>
+</ul>
+</li>
+<li>中断类型：来自IO设备、其他硬件设别（）
+<ul>
+<li>IO中断</li>
+<li>时钟中断</li>
+<li>硬件故障</li>
+</ul>
+</li>
+<li>中断行为：保存当前进度，处理中断，返回下一条指令
+<ol>
+<li>cpu 取下一条指令</li>
+<li>cpu 执行指令</li>
+<li>cpu 执行一条指令后，扫描中断寄存器，查看是否有中断信号</li>
+<li>如果有中断，中断硬件保存现场</li>
+<li>中断硬件将触发器的内容送入PSW对应位置，查找中断向量表，调用中断处理程序</li>
+</ol>
+</li>
+<li>中断向量表：
+<ul>
+<li>0-19：不可屏蔽中断和异常
+<ul>
+<li>0 除0</li>
+<li>1 单步调试</li>
+<li>4 算数溢出</li>
+<li>6 非法操作数</li>
+<li>12 栈异常</li>
+<li>13 保护性错误</li>
+<li>14 缺页异常</li>
+</ul>
+</li>
+<li>20-31：保留</li>
+<li>32-127：外部中断</li>
+<li>128：系统调用异常 &lt;– （重要）</li>
+<li>129-238：外部中断</li>
+<li>239：本地APIC时钟中断</li>
+<li>…</li>
+<li>255 本地APIC伪中断</li>
+</ul>
+</li>
+<li>异常分类：
+<ul>
+<li>陷入：有意识安排，返回下一条指令</li>
+<li>故障：可恢复错误，返回当前指令</li>
+<li>终止：不可恢复错误</li>
+</ul>
+</li>
+<li>异常举例：
+<ul>
+<li>系统调用</li>
+<li>页故障/页错误</li>
+<li>断点指令</li>
+<li>程序性异常：算术溢出、除0、…</li>
+</ul>
+</li>
+<li>系统调用功能：用户调用操作系统功能，包括进程管理、文件管理、设备管理等</li>
+<li>系统调用方式：c函数库封装系统调用，用户调用c函数库。每个系统调用都有系统调用号。</li>
+<li>系统调用执行流程：
+<ol>
+<li>中断/异常机制：硬件保护现场，查找中断向量表，调用系统调用入口程序</li>
+<li>系统调用入口程序：保存现场，参数压栈，查找系统调用表，调用系统调用例程或内核函数</li>
+<li>执行系统调用例程</li>
+<li>恢复线程，返回用户程序</li>
+</ol>
+</li>
+</ul>
+<h1 id="2-内存管理">2 内存管理<a hidden class="anchor" aria-hidden="true" href="#2-内存管理">#</a></h1>
+<h3 id="结构">结构<a hidden class="anchor" aria-hidden="true" href="#结构">#</a></h3>
+<ul>
+<li>分段
+<ul>
+<li>
+<p>设计</p>
+<ul>
+<li>虚拟地址分为若干大小的段</li>
+<li>段表存储分段信息</li>
+<li>每个进程1个段表，操作系统1个全局段表</li>
+</ul>
+</li>
+<li>
+<p>实现</p>
+<ul>
+<li>虚拟地址为：[段号 + 段内偏移]（段号-&gt;段基址 + 段内偏移）</li>
+<li>物理地址：以段为单位分配</li>
+</ul>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">- 段表
+</span></span><span class="line"><span class="cl">--------+--------+--------
+</span></span><span class="line"><span class="cl">段号    <span class="p">|</span> 段基址  <span class="p">|</span> 段长度
+</span></span><span class="line"><span class="cl">--------+--------+--------
+</span></span><span class="line"><span class="cl"><span class="m">0</span>       <span class="p">|</span> 0x...  <span class="p">|</span> 2k  
+</span></span><span class="line"><span class="cl"><span class="m">1</span>       <span class="p">|</span> 0x...  <span class="p">|</span> 5k
+</span></span><span class="line"><span class="cl">--------+--------+---------
+</span></span></code></pre></div></li>
+<li>
+<p>优点</p>
+<ul>
+<li>逻辑连续</li>
+</ul>
+</li>
+<li>
+<p>缺点</p>
+<ul>
+<li>分段粒度粗，容易产生外部碎片</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>分页
+<ul>
+<li>
+<p>设计</p>
+<ul>
+<li>物理内存划分为连续、等长的物理页</li>
+<li>虚拟页与物理页大小相等</li>
+<li>虚拟页可映射至任意物理页</li>
+<li>每个进程1个页表（或1级页表）</li>
+</ul>
+</li>
+<li>
+<p>实现</p>
+<ul>
+<li>[虚拟页号 + 页内偏移]</li>
+</ul>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">- 页表
+</span></span><span class="line"><span class="cl">--------+----------
+</span></span><span class="line"><span class="cl">虚拟页号 <span class="p">|</span> 物理页号
+</span></span><span class="line"><span class="cl">--------+----------
+</span></span><span class="line"><span class="cl"><span class="m">0</span>       <span class="p">|</span>    <span class="m">10</span>
+</span></span><span class="line"><span class="cl"><span class="m">1</span>       <span class="p">|</span>    <span class="m">13</span>
+</span></span><span class="line"><span class="cl">--------+----------
+</span></span></code></pre></div></li>
+<li>
+<p>优点</p>
+<ul>
+<li>解决外部碎片</li>
+<li>应用程序时空局限性：执行时，使用的数据或代码是连续的</li>
+</ul>
+</li>
+<li>
+<p>缺点</p>
+<ul>
+<li>页表过大（解决：多级页表 -&gt; 剪枝）
+<ul>
+<li>多级页表：[虚拟页号_0:虚拟页号_1:虚拟页号_2:虚拟页号_3 + 页内偏移]</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>优化</p>
+<ul>
+<li>
+<p>TLB （性能）</p>
+<ul>
+<li>位置：位于CPU内部</li>
+<li>功能：缓存虚拟页号到物理页号的映射关系</li>
+<li>作用：先查TLB，如果TLB未命中，再查缓存</li>
+<li>刷新：切换页表时，刷新全部TLB（优化：TLB缓存项记录页表标签，切换页表时无需全部刷新）</li>
+</ul>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="o">[</span>CPU<span class="o">]</span> --&gt; <span class="o">[</span>TLB<span class="o">]</span> --&gt; <span class="o">[</span>页表<span class="o">]</span>
+</span></span><span class="line"><span class="cl">        <span class="o">[</span>p3<span class="o">]</span>
+</span></span><span class="line"><span class="cl">        <span class="o">[</span>p9<span class="o">]</span>
+</span></span><span class="line"><span class="cl">        <span class="o">[</span>p5<span class="o">]</span>
+</span></span></code></pre></div><ul>
+<li>结构：根据CPU缓存 L1 L2 L3 分级结构 -&gt; TLB 也是分级结构</li>
+</ul>
+</li>
+<li>
+<p>swapping （大小）</p>
+<ul>
+<li>功能：虚拟内存 &gt; 物理内存时，将内存页存放到磁盘</li>
+<li>算法：FIFO、LRU/MRU、Clock</li>
+</ul>
+</li>
+<li>
+<p>缺页异常 （稳定）</p>
+<ul>
+<li>原因：物理内存需求过大</li>
+<li>处理：等待磁盘IO，将物理页读取至内存</li>
+</ul>
+</li>
+<li>
+<p>伙伴系统（利用率）</p>
+<ul>
+<li>问题：外部碎片：空闲但不连续；内部碎片：分配空间过大</li>
+<li>实现：分裂与合并</li>
+</ul>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">- 伙伴系统
+</span></span><span class="line"><span class="cl">时间1：    <span class="o">[</span>                    <span class="o">]</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">时间2：    <span class="o">[</span>         <span class="o">]</span> <span class="o">[</span>        <span class="o">]</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">时间3：    <span class="o">[</span>   <span class="o">]</span> <span class="o">[</span>   <span class="o">]</span>
+</span></span></code></pre></div><ul>
+<li>
+<p>空闲链表：较大空间分裂时，将多余的部分移入上一空间数组链表</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">- 空闲数组链表
+</span></span><span class="line"><span class="cl"><span class="o">[</span> 2^0 <span class="o">]</span>
+</span></span><span class="line"><span class="cl"><span class="o">[</span> 2^1 <span class="o">]</span> -&gt; <span class="o">[]</span> -&gt; <span class="o">[]</span>
+</span></span><span class="line"><span class="cl"><span class="o">[</span> 2^2 <span class="o">]</span> -&gt; <span class="o">[]</span>
+</span></span></code></pre></div></li>
+</ul>
+</li>
+<li>
+<p>写时复制（共享）</p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h1 id="3-进程线程">3 进程线程<a hidden class="anchor" aria-hidden="true" href="#3-进程线程">#</a></h1>
+<h2 id="11-概述">1.1 概述<a hidden class="anchor" aria-hidden="true" href="#11-概述">#</a></h2>
+<ul>
+<li>进程
+<ul>
+<li>
+<p>定义：Process/Task/Job 定义：某个数据集合上一次运行活动。资源分配单位。</p>
+</li>
+<li>
+<p>实现：进程控制块 Process Control Block PCB：进程描述符，进程属性</p>
+<ul>
+<li>基本信息：pid, 进程名，userid</li>
+<li>CPU现场：寄存器，程序计数器，状态字PSW，栈指针，页表指针</li>
+<li>控制信息：状态，优先级，代码执行入口，程序磁盘地址，运行统计信息（执行时间，页面调度），进程同步与通信，进程队列指针，进程消息队列指针</li>
+<li>资源信息：虚拟地址空间，打开的文件</li>
+</ul>
+</li>
+<li>
+<p>状态：</p>
+<ul>
+<li>
+<p>分类：</p>
+<ul>
+<li>就绪态：CPU不空闲
+<ul>
+<li>-&gt; 运行：被调度程序选中</li>
+</ul>
+</li>
+<li>运行态：
+<ul>
+<li>-&gt; 就绪：时间片用完，高优先级抢占</li>
+<li>-&gt; 等待：系统调用、IO、进程通信、…</li>
+</ul>
+</li>
+<li>等待态：阻塞
+<ul>
+<li>-&gt; 就绪：等待事件发生</li>
+</ul>
+</li>
+<li>创建态：</li>
+<li>终止态：进程结束，统计运行信息，资源回收</li>
+<li>挂起态：调节负载）（进程映像交换到磁盘）</li>
+</ul>
+</li>
+<li>
+<p>linux 进程状态：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="nf">fork</span><span class="p">()</span>  <span class="o">-&gt;</span>  <span class="err">就绪态</span>  <span class="o">-&gt;</span>  <span class="err">运行态</span>  <span class="o">+--&gt;</span>  <span class="err">浅度睡眠</span> <span class="o">--+</span>
+</span></span><span class="line"><span class="cl">                              <span class="o">|</span>               <span class="o">|</span>
+</span></span><span class="line"><span class="cl">                              <span class="o">+--&gt;</span>  <span class="err">深度睡眠</span> <span class="o">--+</span>
+</span></span><span class="line"><span class="cl">                              <span class="o">|</span>               <span class="o">|--&gt;</span> <span class="err">就绪态</span> <span class="err">（</span><span class="n">wake_up</span> <span class="o">/</span> <span class="err">信号）</span>
+</span></span><span class="line"><span class="cl">                              <span class="o">+--&gt;</span> <span class="err">暂停</span>     <span class="o">--+</span>
+</span></span><span class="line"><span class="cl">                              <span class="o">|</span>              <span class="o">|</span>
+</span></span><span class="line"><span class="cl">                              <span class="o">+--&gt;</span> <span class="err">僵尸</span>     <span class="o">--+</span>
+</span></span><span class="line"><span class="cl"><span class="err">就绪</span><span class="o">-&gt;</span><span class="err">运行：</span><span class="nf">schedule</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl"><span class="err">运行</span><span class="o">-&gt;</span><span class="err">就绪：时间片结束</span>
+</span></span><span class="line"><span class="cl"><span class="err">运行</span><span class="o">-&gt;</span><span class="err">浅度睡眠：等待资源，</span><span class="nf">interruptible_sleep_on</span><span class="p">()</span><span class="err">，</span><span class="nf">schedule</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl"><span class="err">运行</span><span class="o">-&gt;</span><span class="err">深度睡眠：等待资源，</span><span class="nf">sleep_on</span><span class="p">()</span><span class="err">，</span><span class="nf">schedule</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl"><span class="err">运行</span><span class="o">-&gt;</span><span class="err">暂停：</span><span class="n">ptrace调试</span><span class="err">，</span><span class="nf">schedule</span><span class="p">()</span>
+</span></span></code></pre></div></li>
+</ul>
+</li>
+<li>
+<p>进程队列<br>
+进程状态改变：从一个队列出队，进入另一个队列<br>
+等待队列：等待事件不同，有多个等待队列</p>
+</li>
+<li>
+<p>进程生命周期</p>
+<ul>
+<li>创建 fork/exec：分配pid，分配pcb，复制父进程地址空间（linux优化：当子进程要写父进程地址时，才复制地址空间），继承父进程共享资源(打开的文件，工作目录)，设置队列指针</li>
+<li>阻塞 wait 等待子进程：自己执行阻塞原语</li>
+<li>唤醒</li>
+<li>挂起</li>
+<li>激活</li>
+<li>撤销 exit：关闭文件，回收内存，撤销pcb</li>
+</ul>
+</li>
+<li>
+<p>进程切换</p>
+<ul>
+<li>
+<p>进程地址空间</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="o">---------</span> <span class="err">用户地址空间</span>
+</span></span><span class="line"><span class="cl"><span class="err">栈</span>
+</span></span><span class="line"><span class="cl"><span class="p">.</span>
+</span></span><span class="line"><span class="cl"><span class="p">.</span>
+</span></span><span class="line"><span class="cl"><span class="p">.</span>
+</span></span><span class="line"><span class="cl"><span class="err">堆</span>
+</span></span><span class="line"><span class="cl"><span class="o">---------</span>
+</span></span><span class="line"><span class="cl"><span class="err">数据段</span>
+</span></span><span class="line"><span class="cl"><span class="o">---------</span>
+</span></span><span class="line"><span class="cl"><span class="err">代码段</span>
+</span></span><span class="line"><span class="cl"><span class="o">---------</span>
+</span></span><span class="line"><span class="cl"><span class="p">...</span>
+</span></span><span class="line"><span class="cl"><span class="o">-----------</span> <span class="err">操作系统地址空间</span>
+</span></span><span class="line"><span class="cl"><span class="err">内核栈</span>
+</span></span><span class="line"><span class="cl"><span class="o">-----------</span>
+</span></span><span class="line"><span class="cl"><span class="err">内核代码</span>
+</span></span><span class="line"><span class="cl"><span class="o">------------</span>
+</span></span></code></pre></div></li>
+<li>
+<p>上下文切换：将cpu硬件状态从一个进程换到另一个进程</p>
+<ul>
+<li>直接开销：保护和恢复寄存器、切换地址空间</li>
+<li>间接开销：高速缓存失效、缓冲区缓存失效、TLB失效</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>进程通信</p>
+<ul>
+<li>信号</li>
+<li>信号量 （锁）</li>
+<li>消息队列 （传递数据 + 阻塞）</li>
+<li>管道 （传递数据 + 阻塞）</li>
+<li>共享内存 （传递数据 + 阻塞）</li>
+<li>套接字 （传递数据 + 阻塞）</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p>线程</p>
+<ul>
+<li>
+<p>进程问题</p>
+<ul>
+<li>创建进程开销大：数据段、代码段、堆、栈段</li>
+<li>进程隔离性强：IPC开销大</li>
+<li>进程内部无法支持并行</li>
+</ul>
+</li>
+<li>
+<p>线程优点</p>
+<ul>
+<li>构成：执行所需最小状态：寄存器和栈（每个线程有自己的栈，共享数据、代码、堆）
+<ul>
+<li>线程id，线程状态，线程上下文，线程栈和栈指针</li>
+</ul>
+</li>
+<li>开销小：创建和销毁，切换，通信</li>
+<li>性能高：多处理器并发执行</li>
+</ul>
+</li>
+<li>
+<p>线程模型（用户线程 与 内核线程）</p>
+<ul>
+<li>多对一</li>
+<li>一对一：内核线程数量大</li>
+<li>多对多</li>
+</ul>
+</li>
+<li>
+<p>线程调度</p>
+<ul>
+<li>
+<p>调度场景</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="o">[</span>t1<span class="o">]</span>                <span class="o">[</span>CPU1<span class="o">]</span>
+</span></span><span class="line"><span class="cl"><span class="o">[</span>t2<span class="o">]</span> -&gt; <span class="o">[</span>调度器<span class="o">]</span> -&gt;  
+</span></span><span class="line"><span class="cl"><span class="o">[</span>t3<span class="o">]</span>                <span class="o">[</span>CPU2<span class="o">]</span>
+</span></span></code></pre></div></li>
+<li>
+<p>调度算法</p>
+<ul>
+<li>
+<p>衡量标准</p>
+<ul>
+<li>
+<p>吞吐量</p>
+</li>
+<li>
+<p>周转时间：请求 -&gt; 运行</p>
+</li>
+<li>
+<p>响应时间：请求 -&gt; 第一次回应</p>
+</li>
+<li>
+<p>CPU利用率</p>
+</li>
+<li>
+<p>等待时间：就绪 -&gt; 运行</p>
+</li>
+</ul>
+</li>
+<li>
+<p>算法分类</p>
+<ul>
+<li>
+<p>算法类型</p>
+<table>
+  <thead>
+      <tr>
+          <th>算法</th>
+          <th>实现</th>
+          <th>优点</th>
+          <th>缺点</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>批处理系统</td>
+          <td></td>
+          <td></td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>先来先服务 FCFS</td>
+          <td>-</td>
+          <td>公平、简单</td>
+          <td>长任务不友好</td>
+      </tr>
+      <tr>
+          <td>最短作业优先 SJF</td>
+          <td>-</td>
+          <td>最短平均周转</td>
+          <td>长任务不友好</td>
+      </tr>
+      <tr>
+          <td>最短剩余时间优先 SRTN</td>
+          <td></td>
+          <td></td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>最高响应比优先 HRRN</td>
+          <td>响应时间 = （处理时间 + 等待时间） / 处理时间</td>
+          <td></td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>交互式系统</td>
+          <td></td>
+          <td></td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>时间片轮转 RR</td>
+          <td>-</td>
+          <td>公平、响应快</td>
+          <td>进程切换开销高、IO进程不友好 （IO进程进入优先级高、独立就绪队列）</td>
+      </tr>
+      <tr>
+          <td>最高优先级 HPF</td>
+          <td>优先级动态或静态</td>
+          <td>-</td>
+          <td>低优先级饥饿、优先级反转（低优先级进程持有锁，高优先级进程抢占，低优先级无法执行）</td>
+      </tr>
+      <tr>
+          <td>多级反馈队列 MFQ</td>
+          <td>多个就绪队列，优先级依次降低，时间片依次增加，时间片轮转调度，高优先级优先调度</td>
+          <td></td>
+          <td></td>
+      </tr>
+      <tr>
+          <td>最短进程优先</td>
+          <td></td>
+          <td></td>
+          <td></td>
+      </tr>
+  </tbody>
+</table>
+</li>
+<li>
+<p>操作系统</p>
+<table>
+  <thead>
+      <tr>
+          <th>OS</th>
+          <th>策略</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>unix</td>
+          <td>动态优先</td>
+      </tr>
+      <tr>
+          <td>BSD</td>
+          <td>多级反馈</td>
+      </tr>
+      <tr>
+          <td>Linux</td>
+          <td>抢占</td>
+      </tr>
+      <tr>
+          <td>Windows</td>
+          <td>32优先级抢占（优先级进入就绪队列）</td>
+      </tr>
+      <tr>
+          <td>Solaris</td>
+          <td>综合调度</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>调度问题</p>
+<ul>
+<li>优先级反转<br>
+使用临界区资源时：
+<ul>
+<li>优先级上限：优先级临时设为最高</li>
+<li>优先级继承：临时继承最高优先级</li>
+<li>禁止中断：禁止被抢占</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>线程通信</p>
+<ul>
+<li>临界区
+<ul>
+<li>要求
+<ul>
+<li>互斥访问</li>
+<li>有限等待</li>
+<li>空闲让进</li>
+</ul>
+</li>
+<li>算法
+<ul>
+<li>
+<p>皮特森算法 (?)</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="c1">// 进程 0
+</span></span></span><span class="line"><span class="cl"><span class="k">while</span> <span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">  <span class="n">flag</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">  <span class="n">turn</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">  <span class="k">while</span> <span class="p">(</span><span class="n">flag</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="nb">true</span> <span class="o">&amp;&amp;</span> <span class="n">turn</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 临界区 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">flag</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">  <span class="p">}</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1">// 进程 1
+</span></span></span><span class="line"><span class="cl"><span class="k">while</span> <span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">  <span class="n">flag</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">  <span class="n">turn</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">  <span class="k">while</span> <span class="p">(</span><span class="n">flag</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="nb">true</span> <span class="o">&amp;&amp;</span> <span class="n">turn</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="cm">/* 临界区 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">flag</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">  <span class="p">}</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div></li>
+<li>
+<p>硬件原子</p>
+<ul>
+<li>概念
+<ul>
+<li>不可被打断的操作集合</li>
+<li>其他核心不会看到中间状态</li>
+</ul>
+</li>
+<li>实现
+<ul>
+<li>intel 锁总线</li>
+<li>arm LL/SC</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>线程锁
+<ul>
+<li>自旋锁</li>
+<li>读写锁</li>
+</ul>
+</li>
+<li>线程死锁
+<ul>
+<li>预防
+<ul>
+<li>避免互斥访问</li>
+<li>不允许持有并等待</li>
+<li>不允许资源抢占</li>
+<li>打破循环等待（按特定顺序获取资源）</li>
+</ul>
+</li>
+<li>解决
+<ul>
+<li>银行家算法
+<ul>
+<li>获取资源需管理者同意</li>
+<li>管理者预演不会造成死锁</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>多核缓存</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="o">[</span>  cpu <span class="m">0</span> <span class="o">]</span> <span class="o">[</span>  cpu <span class="m">1</span> <span class="o">]</span>      <span class="o">[</span>  cpu <span class="m">2</span> <span class="o">]</span> <span class="o">[</span>  cpu <span class="m">3</span> <span class="o">]</span>
+</span></span><span class="line"><span class="cl"><span class="o">[</span>l1 cache<span class="o">]</span> <span class="o">[</span>l1 cache<span class="o">]</span>      <span class="o">[</span>l1 cache<span class="o">]</span> <span class="o">[</span>l1 cache<span class="o">]</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="o">[</span>     l2 cache      <span class="o">]</span>      <span class="o">[</span>      l2 cache     <span class="o">]</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="o">[</span>                  l3 cache                    <span class="o">]</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="o">[</span>                     内存                     <span class="o">]</span>
+</span></span></code></pre></div><ul>
+<li>缓存一致性
+<ul>
+<li>
+<p>原则</p>
+<ul>
+<li>独占修改
+<ul>
+<li>cpu核独占缓存行：本地可读可写</li>
+<li>其他核读需迁移到共享</li>
+<li>其他核写需迁移到失效</li>
+</ul>
+</li>
+<li>共享
+<ul>
+<li>多核拷贝缓存行</li>
+<li>本地可读</li>
+<li>本地写迁移到独占修改，使其他核缓存行失效</li>
+<li>其他核写需迁移到失效</li>
+</ul>
+</li>
+<li>失效
+<ul>
+<li>本地缓存行失效</li>
+<li>本地不能读/写缓存行</li>
+<li>本地读需迁移到共享，其他核需迁移到共享</li>
+<li>本地写需迁移到独占修改，其他核该行失效</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>通知其他核</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">            全局缓存：记录缓存行拥有者信息
+</span></span><span class="line"><span class="cl">              <span class="p">|</span> dirty cpu1 cpu2 cpu3 <span class="p">|</span>
+</span></span><span class="line"><span class="cl">              <span class="p">|</span><span class="m">0</span>     <span class="m">1</span>    <span class="m">1</span>    <span class="m">1</span>     <span class="p">|</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 状态 内容 <span class="p">|</span>     <span class="p">|</span> 状态 内容 <span class="p">|</span>     <span class="p">|</span> 状态 内容 <span class="p">|</span>
+</span></span><span class="line"><span class="cl">    cpu1              cpu2             cpu3
+</span></span></code></pre></div></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p>pthread_yield：让出cpu<br>
+进程优先级：动态优先级，静态优先级</p>
+<h1 id="2-进程通信">2 进程通信<a hidden class="anchor" aria-hidden="true" href="#2-进程通信">#</a></h1>
+<h2 id="21-分类">2.1 分类<a hidden class="anchor" aria-hidden="true" href="#21-分类">#</a></h2>
+<h2 id="21-代码">2.1 代码<a hidden class="anchor" aria-hidden="true" href="#21-代码">#</a></h2>
+<h3 id="一-信号">一 信号<a hidden class="anchor" aria-hidden="true" href="#一-信号">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="c1">// 发送
+</span></span></span><span class="line"><span class="cl"><span class="nf">kill</span><span class="p">(</span><span class="kt">pid_t</span> <span class="n">pid</span><span class="p">,</span> <span class="kt">int</span> <span class="n">signum</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// 接收
+</span></span></span><span class="line"><span class="cl"><span class="nf">signal</span><span class="p">(</span><span class="kt">int</span> <span class="n">signum</span><span class="p">,</span> <span class="nf">sig_handle_func</span><span class="p">())</span> <span class="cm">/* 不阻塞，先恢复信号，再处理 */</span>
+</span></span><span class="line"><span class="cl"><span class="nf">sigaction</span><span class="p">(</span><span class="kt">int</span> <span class="n">signum</span><span class="p">,</span> <span class="p">...)</span> <span class="cm">/* 阻塞，先处理，再恢复信号 */</span>
+</span></span></code></pre></div><h3 id="二-信号量-posix">二 信号量 （Posix）<a hidden class="anchor" aria-hidden="true" href="#二-信号量-posix">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="cp">#include</span> <span class="cpf">&lt;semaphore.h&gt;</span><span class="cp">
+</span></span></span><span class="line"><span class="cl"><span class="c1">// 初始化
+</span></span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">sem_init</span><span class="p">(</span><span class="kt">sem_t</span> <span class="o">*</span><span class="n">sem</span><span class="p">,</span> <span class="kt">int</span> <span class="n">pshared</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">value</span><span class="p">);</span> <span class="cm">/* 0：进程内线程同步 */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">sem_destroy</span><span class="p">(</span><span class="kt">sem_t</span> <span class="o">*</span><span class="n">sem</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// 上锁
+</span></span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">sem_wait</span><span class="p">(</span><span class="kt">sem_t</span> <span class="o">*</span><span class="n">sem</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// 解锁
+</span></span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">sem_post</span><span class="p">(</span><span class="kt">sem_t</span> <span class="o">*</span><span class="n">sem</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// 创建 （有名信号量）
+</span></span></span><span class="line"><span class="cl"><span class="kt">sem_t</span> <span class="o">*</span><span class="nf">sem_open</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">name</span><span class="p">,</span> <span class="kt">int</span> <span class="n">flag</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">sem_close</span><span class="p">(</span><span class="kt">sem_t</span> <span class="o">*</span><span class="n">sem</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">sem_unlink</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">name</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// 其他
+</span></span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">sem_trywait</span><span class="p">(</span><span class="kt">sem_t</span> <span class="o">*</span><span class="n">sem</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">sem_timewait</span><span class="p">(</span><span class="kt">sem_t</span> <span class="o">*</span><span class="n">sem</span><span class="p">);</span>
+</span></span></code></pre></div><h3 id="三-消息队列">三 消息队列<a hidden class="anchor" aria-hidden="true" href="#三-消息队列">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="c1">// 创建
+</span></span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">msgget</span><span class="p">(</span><span class="kt">key_t</span> <span class="n">key</span><span class="p">,</span> <span class="kt">int</span> <span class="n">msgflg</span><span class="p">);</span> <span class="cm">/* flag: 访问权限 */</span>
+</span></span><span class="line"><span class="cl"><span class="kt">key_t</span> <span class="nf">ftok</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">pathname</span> <span class="kt">int</span> <span class="n">projid</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// 发送
+</span></span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">msgsnd</span><span class="p">(</span><span class="kt">int</span> <span class="n">msqid</span><span class="p">,</span> <span class="k">const</span> <span class="kt">void</span> <span class="o">*</span><span class="n">data</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">datasz</span><span class="p">,</span> <span class="kt">int</span> <span class="n">msgflag</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// 接收
+</span></span></span><span class="line"><span class="cl"><span class="kt">ssize_t</span> <span class="nf">msgrcv</span><span class="p">(</span><span class="kt">int</span> <span class="n">msqid</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">data</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">datasz</span><span class="p">,</span> <span class="kt">long</span> <span class="n">msgtype</span><span class="p">,</span> <span class="kt">int</span> <span class="n">msgflag</span><span class="p">);</span> <span class="cm">/* msgtype: 接收指定类型消息 */</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// 删除、赋值、查询
+</span></span></span><span class="line"><span class="cl"><span class="nf">msgctl</span><span class="p">(</span><span class="kt">int</span> <span class="n">msqid</span><span class="p">,</span> <span class="kt">int</span> <span class="n">cmd</span><span class="p">,</span> <span class="k">struct</span> <span class="n">msqid_ds</span> <span class="o">*</span><span class="n">buf</span><span class="p">);</span>
+</span></span></code></pre></div><h3 id="四-管道">四 管道<a hidden class="anchor" aria-hidden="true" href="#四-管道">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="c1">// 创建（匿名管道）
+</span></span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">pipe</span><span class="p">(</span><span class="n">inf</span> <span class="n">fd</span><span class="p">[</span><span class="mi">2</span><span class="p">]);</span> <span class="cm">/* 0读1写 */</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// 关闭
+</span></span></span><span class="line"><span class="cl"><span class="kt">void</span> <span class="nf">close</span><span class="p">(</span><span class="kt">int</span> <span class="n">fd</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// 发送
+</span></span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">write</span><span class="p">(</span><span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">data</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">datasz</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// 接收
+</span></span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">read</span><span class="p">(</span><span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">data</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">datasz</span><span class="p">);</span> <span class="cm">/* 阻塞 */</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// 创建 （命名管道: 对应真实文件） + open()
+</span></span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">mkfifo</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">file</span><span class="p">,</span> <span class="kt">mode_t</span> <span class="n">mode</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">mknode</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">path</span><span class="p">,</span> <span class="kt">mode_t</span> <span class="n">mode</span><span class="p">,</span> <span class="kt">dev_t</span> <span class="n">device_type</span><span class="p">);</span> <span class="cm">/* 较老 */</span>
+</span></span></code></pre></div><h3 id="五-共享内存">五 共享内存<a hidden class="anchor" aria-hidden="true" href="#五-共享内存">#</a></h3>
+<h3 id="六-套接字">六 套接字<a hidden class="anchor" aria-hidden="true" href="#六-套接字">#</a></h3>
+<h2 id="23-命令">2.3 命令<a hidden class="anchor" aria-hidden="true" href="#23-命令">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="c1"># 信号: 查看</span>
+</span></span><span class="line"><span class="cl"><span class="nb">kill</span> -l
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 命名管道</span>
+</span></span><span class="line"><span class="cl">mkfifo FILE
+</span></span><span class="line"><span class="cl">mkfifo FILE p
+</span></span></code></pre></div><h1 id="4-文件系统">4 文件系统<a hidden class="anchor" aria-hidden="true" href="#4-文件系统">#</a></h1>
+<ul>
+<li>文件系统
+<ul>
+<li>
+<p>ext2</p>
+<ul>
+<li>
+<p>架构</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">磁盘
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 引导  <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 块组1 <span class="p">|</span>         块组 <span class="o">(</span>数据存储在block中<span class="o">)</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 块组2 <span class="p">|</span> &lt; <span class="p">|</span> 超级块       <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 快组. <span class="p">|</span>   <span class="p">|</span> 组描述符 * n <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> 块组n <span class="p">|</span>   <span class="p">|</span> 块位图       <span class="p">|</span>
+</span></span><span class="line"><span class="cl">            <span class="p">|</span> inode位图    <span class="p">|</span>       inode （大小：128 / 256bytes，block数据可能会超过记录至）
+</span></span><span class="line"><span class="cl">            <span class="p">|</span> inode * n    <span class="p">|</span> &lt;  <span class="p">|</span> 文件类型     <span class="p">|</span>
+</span></span><span class="line"><span class="cl">            <span class="p">|</span> block * n    <span class="p">|</span>    <span class="p">|</span> 文件大小     <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                <span class="p">|</span> 链接数       <span class="p">|</span> 有多少文件名指向此inode
+</span></span><span class="line"><span class="cl">                                <span class="p">|</span> 文件权限     <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                <span class="p">|</span> 时间         <span class="p">|</span> <span class="o">(</span>创建、修改、访问<span class="o">)</span>
+</span></span><span class="line"><span class="cl">                                <span class="p">|</span> 1级指针 * <span class="m">12</span> <span class="p">|</span> -&gt; block （block 为 4k时，最大单一文件为2T，文件系统容量为16T）
+</span></span><span class="line"><span class="cl">                                <span class="p">|</span> 2级指针 * <span class="m">1</span>  <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                <span class="p">|</span> 3级指针 * <span class="m">1</span>  <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                <span class="p">|</span> 4级指针 * <span class="m">1</span>  <span class="p">|</span>
+</span></span></code></pre></div></li>
+</ul>
+</li>
+<li>
+<p>文件系统崩溃一致性</p>
+<ul>
+<li>一致性属性
+<ul>
+<li>持久化</li>
+<li>原子性</li>
+<li>有序性</li>
+</ul>
+</li>
+<li>一致性实现
+<ul>
+<li>日志
+<ul>
+<li>缺点：日志多次读写占用IO</li>
+<li>改进：批量写日志 + 检查点</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>设备管理
+<ul>
+<li>分类
+<ul>
+<li>字符设备：LED、键盘、串口
+<ul>
+<li>顺序访问：内次读取一个字符</li>
+<li>通过驱动与设备交互</li>
+</ul>
+</li>
+<li>块设备：内存、磁盘、u盘
+<ul>
+<li>随机访问：以块粒度进行读写</li>
+<li>系统层增加缓冲区，避免与慢设备频繁交互</li>
+</ul>
+</li>
+<li>网络设备：网卡
+<ul>
+<li>面向格式化报文的收发</li>
+<li>驱动以上维护多种协议</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>设备管理
+<ul>
+<li>字符抽象：文件系统：open/read/write/close</li>
+<li>块抽象：文件系统、mmap</li>
+<li>网络抽象：socket、文件系统：sockent/send/recv/close</li>
+</ul>
+</li>
+<li>CPU与设备交互
+<ul>
+<li>可编程IO：cpu的in/out load/store指令
+<ul>
+<li>特点
+<ul>
+<li>消耗CPU时钟周期 与 数据量成正比</li>
+<li>适合于小型设备</li>
+</ul>
+</li>
+<li>分类
+<ul>
+<li>PIO (port IO)
+<ul>
+<li>IO设备具备独立的地址空间</li>
+<li>使用特殊指令 in/out</li>
+</ul>
+</li>
+<li>MMIO (Memory-mapped IO)
+<ul>
+<li>将设备映射到连续物理内存中</li>
+<li>使用内存访问指令
+<ul>
+<li>行为与内存不完全一样，读写有副作用</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>直接内存访问 DMA：外设可直接访问总线
+<ul>
+<li>
+<p>特点</p>
+<ul>
+<li>DMA与内存交互传输数据，无需CPU参与</li>
+<li>适合与高吞吐量IO</li>
+</ul>
+</li>
+<li>
+<p>结构</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">                  <span class="o">[</span>CPU<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                    <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                <span class="o">[</span>高速缓存<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                    <span class="p">|</span>
+</span></span><span class="line"><span class="cl">----+---------------+--------------+--------- 系统总线
+</span></span><span class="line"><span class="cl">    <span class="p">|</span>                              <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="o">[</span>DMA控制器<span class="o">]</span>                      <span class="o">[</span>内存<span class="o">]</span>
+</span></span><span class="line"><span class="cl">    <span class="p">|</span>
+</span></span><span class="line"><span class="cl">----+---------------------------------------- PCI总线
+</span></span><span class="line"><span class="cl">    <span class="p">|</span>
+</span></span><span class="line"><span class="cl">  <span class="o">[</span>外设<span class="o">]</span>
+</span></span></code></pre></div></li>
+<li>
+<p>读取步骤</p>
+<ul>
+<li>1.CPU中驱动发出请求，将设备数据读取至内存地址x</li>
+<li>2.外设初始化DMA传递，将数据传送到数据DMA控制器</li>
+<li>3.DMA将数据传送至内存地址x</li>
+<li>4.DMA传输完成后，向CPU发出中断</li>
+<li>5.PU执行每条指令后，检查中断是否到来</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/">操作系统</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/os/os-3-process-and-thread/">操作系统 3 多进程与多线程</a></li><li><a href="/posts/os/os-1-summary/">操作系统 1 总结</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./操作系统</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

@@ -1,0 +1,2005 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>PostgreSQL 3-13 逻辑复制原理与性能优化 | Kernel Notes</title>
+<meta name="keywords" content="PostgreSQL, 逻辑复制, 性能优化">
+<meta name="description" content="目录
+
+目录
+1 基本概念
+
+1.1 业务场景
+1.2 逻辑复制
+1.3 实现思路
+1.4 基本概念
+
+
+2 使用方法
+
+2.1 发布端：配置参数
+2.2 发布端：创建发布
+2.3 订阅端：创建订阅
+
+
+3 核心设计
+
+3.1 整体架构
+3.2 工作流程
+3.3 数据格式
+
+
+4 实现源码
+
+4.1 订阅端：apply-launch
+4.2 订阅端：apply-worker
+4.3 发布端：postmaster
+4.4 发布端：wal-sender
+
+
+5 性能优化
+
+5.1 现状
+5.2 优化方案
+
+优化点一：发布端-流复制协议（逻辑数据）
+优化点二：订阅段-并行回放机制（逻辑数据）
+优化点三：发布端-并行解码机制
+
+
+5.3 未来方案
+
+一、计划优化点一：发布端-事务提交等待
+
+
+5.4 方案分析
+
+一、事务正确性
+
+
+
+
+6 性能测试
+参考资料
+
+1 基本概念
+1.1 业务场景
+
+
+场景一：数据共享（异构数据库）
+1个公司，有2个部门：商品库存部门、商品成本部门。2个部门有不同技术栈，使用不同数据库产品:postgresql、mysql。2个部门需共享相同的表：商品信息表。
+
+
+场景二：数据容灾
+应用存储数据时，同时将数据存储至postgresql于mysql中，避免某款数据库出现无法恢复的数据损坏问题。
+
+
+场景三：版本升级
+从postgresql 13版本，升级到postgresql 16版本。
+
+
+场景四：数据迁移（异构数据库）
+从postgresql，将数据库迁移到mysql中。">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/postgresql/3-13-logical-replication-tuning/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/postgresql/3-13-logical-replication-tuning/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/postgresql/3-13-logical-replication-tuning/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="PostgreSQL 3-13 逻辑复制原理与性能优化">
+  <meta property="og:description" content="目录 目录 1 基本概念 1.1 业务场景 1.2 逻辑复制 1.3 实现思路 1.4 基本概念 2 使用方法 2.1 发布端：配置参数 2.2 发布端：创建发布 2.3 订阅端：创建订阅 3 核心设计 3.1 整体架构 3.2 工作流程 3.3 数据格式 4 实现源码 4.1 订阅端：apply-launch 4.2 订阅端：apply-worker 4.3 发布端：postmaster 4.4 发布端：wal-sender 5 性能优化 5.1 现状 5.2 优化方案 优化点一：发布端-流复制协议（逻辑数据） 优化点二：订阅段-并行回放机制（逻辑数据） 优化点三：发布端-并行解码机制 5.3 未来方案 一、计划优化点一：发布端-事务提交等待 5.4 方案分析 一、事务正确性 6 性能测试 参考资料 1 基本概念 1.1 业务场景 场景一：数据共享（异构数据库）
+1个公司，有2个部门：商品库存部门、商品成本部门。2个部门有不同技术栈，使用不同数据库产品:postgresql、mysql。2个部门需共享相同的表：商品信息表。
+场景二：数据容灾
+应用存储数据时，同时将数据存储至postgresql于mysql中，避免某款数据库出现无法恢复的数据损坏问题。
+场景三：版本升级
+从postgresql 13版本，升级到postgresql 16版本。
+场景四：数据迁移（异构数据库）
+从postgresql，将数据库迁移到mysql中。">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-12-29T20:38:00+08:00">
+    <meta property="article:modified_time" content="2026-08-14T17:47:31+08:00">
+    <meta property="article:tag" content="PostgreSQL">
+    <meta property="article:tag" content="逻辑复制">
+    <meta property="article:tag" content="性能优化">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="PostgreSQL 3-13 逻辑复制原理与性能优化">
+<meta name="twitter:description" content="目录
+
+目录
+1 基本概念
+
+1.1 业务场景
+1.2 逻辑复制
+1.3 实现思路
+1.4 基本概念
+
+
+2 使用方法
+
+2.1 发布端：配置参数
+2.2 发布端：创建发布
+2.3 订阅端：创建订阅
+
+
+3 核心设计
+
+3.1 整体架构
+3.2 工作流程
+3.3 数据格式
+
+
+4 实现源码
+
+4.1 订阅端：apply-launch
+4.2 订阅端：apply-worker
+4.3 发布端：postmaster
+4.4 发布端：wal-sender
+
+
+5 性能优化
+
+5.1 现状
+5.2 优化方案
+
+优化点一：发布端-流复制协议（逻辑数据）
+优化点二：订阅段-并行回放机制（逻辑数据）
+优化点三：发布端-并行解码机制
+
+
+5.3 未来方案
+
+一、计划优化点一：发布端-事务提交等待
+
+
+5.4 方案分析
+
+一、事务正确性
+
+
+
+
+6 性能测试
+参考资料
+
+1 基本概念
+1.1 业务场景
+
+
+场景一：数据共享（异构数据库）
+1个公司，有2个部门：商品库存部门、商品成本部门。2个部门有不同技术栈，使用不同数据库产品:postgresql、mysql。2个部门需共享相同的表：商品信息表。
+
+
+场景二：数据容灾
+应用存储数据时，同时将数据存储至postgresql于mysql中，避免某款数据库出现无法恢复的数据损坏问题。
+
+
+场景三：版本升级
+从postgresql 13版本，升级到postgresql 16版本。
+
+
+场景四：数据迁移（异构数据库）
+从postgresql，将数据库迁移到mysql中。">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "PostgreSQL 3-13 逻辑复制原理与性能优化",
+      "item": "http://localhost:1313/posts/postgresql/3-13-logical-replication-tuning/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "PostgreSQL 3-13 逻辑复制原理与性能优化",
+  "name": "PostgreSQL 3-13 逻辑复制原理与性能优化",
+  "description": "目录 目录 1 基本概念 1.1 业务场景 1.2 逻辑复制 1.3 实现思路 1.4 基本概念 2 使用方法 2.1 发布端：配置参数 2.2 发布端：创建发布 2.3 订阅端：创建订阅 3 核心设计 3.1 整体架构 3.2 工作流程 3.3 数据格式 4 实现源码 4.1 订阅端：apply-launch 4.2 订阅端：apply-worker 4.3 发布端：postmaster 4.4 发布端：wal-sender 5 性能优化 5.1 现状 5.2 优化方案 优化点一：发布端-流复制协议（逻辑数据） 优化点二：订阅段-并行回放机制（逻辑数据） 优化点三：发布端-并行解码机制 5.3 未来方案 一、计划优化点一：发布端-事务提交等待 5.4 方案分析 一、事务正确性 6 性能测试 参考资料 1 基本概念 1.1 业务场景 场景一：数据共享（异构数据库）\n1个公司，有2个部门：商品库存部门、商品成本部门。2个部门有不同技术栈，使用不同数据库产品:postgresql、mysql。2个部门需共享相同的表：商品信息表。\n场景二：数据容灾\n应用存储数据时，同时将数据存储至postgresql于mysql中，避免某款数据库出现无法恢复的数据损坏问题。\n场景三：版本升级\n从postgresql 13版本，升级到postgresql 16版本。\n场景四：数据迁移（异构数据库）\n从postgresql，将数据库迁移到mysql中。\n",
+  "keywords": [
+    "PostgreSQL", "逻辑复制", "性能优化"
+  ],
+  "articleBody": "目录 目录 1 基本概念 1.1 业务场景 1.2 逻辑复制 1.3 实现思路 1.4 基本概念 2 使用方法 2.1 发布端：配置参数 2.2 发布端：创建发布 2.3 订阅端：创建订阅 3 核心设计 3.1 整体架构 3.2 工作流程 3.3 数据格式 4 实现源码 4.1 订阅端：apply-launch 4.2 订阅端：apply-worker 4.3 发布端：postmaster 4.4 发布端：wal-sender 5 性能优化 5.1 现状 5.2 优化方案 优化点一：发布端-流复制协议（逻辑数据） 优化点二：订阅段-并行回放机制（逻辑数据） 优化点三：发布端-并行解码机制 5.3 未来方案 一、计划优化点一：发布端-事务提交等待 5.4 方案分析 一、事务正确性 6 性能测试 参考资料 1 基本概念 1.1 业务场景 场景一：数据共享（异构数据库）\n1个公司，有2个部门：商品库存部门、商品成本部门。2个部门有不同技术栈，使用不同数据库产品:postgresql、mysql。2个部门需共享相同的表：商品信息表。\n场景二：数据容灾\n应用存储数据时，同时将数据存储至postgresql于mysql中，避免某款数据库出现无法恢复的数据损坏问题。\n场景三：版本升级\n从postgresql 13版本，升级到postgresql 16版本。\n场景四：数据迁移（异构数据库）\n从postgresql，将数据库迁移到mysql中。\n1.2 逻辑复制 从一个数据库中，将针对指定表的insert、delete、update等写操作，复制到其他另一个数据库、工具等。\n复制该场景中，有2种角色：\n发布端：发送端 订阅端：接收端 1.3 实现思路 此处，以postgresql为例，逻辑复制实现思路如下：\n上图中，关键流程如下：\n执行sql：应用执行insert、delete、update等语句 生成wal：postgres进程执行sql，生成wal，将wal写入文件 发送wal：如果启用逻辑复制，发布端会启动一个用于逻辑复制的wal-sender进程，读取wal，将wal解码为logical-wal，并将logical-wal发送给订阅端 重放logical-wal：订阅端将logical-wal当做单条insert、delete、update语句执行 1.4 基本概念 逻辑复制大致流程，与物理复制类似。不过，在复制流程中，差异也很多，以上图为例，关键差异如下：\n物理复制 复制粒度：实例产生的所有wal 发送数据：wal 发送粒度：流 回放数据：回放wal 逻辑复制： 复制粒度：指定的一个或多个用户表，或者表中符合指定过滤条件的数据 发送数据：logical-wal。针对一个写操作，会发送一条对应的logical-wal，即一条message。message中的关键内容包括：操作、数据。 示例1： 执行sql：INSERT INTO t1 VALEUS (1, 'data1') 生成wal：[1] [1800 1810 0 1 ..] [1, 'data1'] ...。格式为：操作类型、filenode、数据等 格式： 发送logical-wal: [I] [1, 'data1'] 示例2： 执行sql：DELETE FROM t1 WHERE c2 = 'data1' 生成wal：[3] [1800 1810 0 1 ..]。格式为：操作类型、filenode等 发送logical-wal: [D] ['data1'] 发送粒度：默认情况下，是一个完整事务包含的多条message 回放数据：apply logical-wal。提取logical-wal中的操作与数据，调用heapam层接口。示例： 示例1： 接收logical-wal: [I] [1, 'data1'] 回放logical-wal：heap_insert 示例2： 接收logical-wal: [D] ['data1'] 回放logical-wal：heap_beginscan、heap_delete 2 使用方法 2.1 发布端：配置参数 修改wal级别，多存储一些信息\necho \"wal_level=logical\" \u003e\u003e $PGDATA/postgresql.conf 配置身份认证非核心参数\necho \"max_replication_slots=4\" \u003e\u003e $PGDATA/postgresql.conf echo \"max_wal_senders=4\" \u003e\u003e $$PGDATA/postgresql.conf echo \"max_logical_replication_workers=32\" \u003e\u003e $PGDATA/postgresql.conf echo \"listen_addresses='*'\" \u003e\u003e $PGDATA/postgresql.conf sed -i '1i host all all 0.0.0.0/0 md5\\n' $PGDATA/pg_hba.conf echo \"host replication all 0.0.0.0/0 md5\" \u003e\u003e $PGDATA/pg_hba.conf 发布端：重启参数生效\n2.2 发布端：创建发布 创建表\nCREATE TABLE pt1(c1 INT,c2 TEXT); CREATE TABLE pt2(c1 INT, c2 TEXT); 创建发布信息\n指定哪些表需要复制。\nCREATE PUBLICATION pub1 FOR TABLE pt1,pt2; 创建复制槽\n存储复制状态：wal的位置。\n存储数据格式\nSELECT pg_create_logical_replication_slot('pslot1', 'pgoutput'); 创建用户：订阅端通过该用户连接发布端，以进行数据传输\nCREATE USER pu1 REPLICATION SYSADMIN LOGIN ENCRYPTED PASSWORD 'pu1.12345'; GRANT ALL ON pt1,pt2 TO pu1; 2.3 订阅端：创建订阅 创建表\n与发布端保持一致\nCREATE TABLE pt1(c1 INT,c2 TEXT); CREATE TABLE pt2(c1 INT, c2 TEXT); 创建订阅信息\nCREATE SUBSCRIPTION sub1 CONNECTION 'host=127.0.0.1 port=5432 dbname=pubdb user=pu1 password=pu1.12345' PUBLICATION pub1 WITH (create_slot = false, slot_name = 'pslot1', copy_data = true); 订阅端自动启动apply-worker进程，与发布端建立连接，接收发布端的logical-wal，并回放logical-wal。\n3 核心设计 3.1 整体架构 逻辑复制架构中，有3类角色：\n应用：发送sql 发布端：执行sql，生成wal，解码wal生成logical-wal，发送logical-wal 订阅端：接收logical-wal，回放logical-wal 以2个事务并发执行sql为例，在发布端，关键进程为wal-sender。在订阅端，关键进程为apply-worker。\n3.2 工作流程 以下是一个典型场景的大致流程：\n步骤1-9：发布端接收客户端连接，接收与执行sql 步骤10-28：订阅端启动实例，检查订阅信息，与发布端建立连接并进行逻辑复制 [发布端] [订阅端] postmaster postgres wal-writer wal-sender wal-file postmaster apply-launch apply-worker +-------------------+------------------------------+------------+---------------------------+---+---------------------------+---------------------------+----------------------+ | 1 receive connect | | | | | | | | 2 fork postgres -\u003e| | | | | | | | | 3 receive sql | | | | | | | | delete .. t1 .. c1=10 | | | | | | | | 4 scan tuple from t1 | | | | | | | | 5 get tuple pointer | | | | | | | | 6 mark tuple deleted | | | | | | | | 7 generate wal | | | | | | | | type=delete,xid=11 | | | | | | | | filenode=1700,offset=8-3 | | | | | | | | data='10',column=1 | | | | | | | | 8 copy wal to wal-buffer ---\u003e| | | | | | | | 9 write wal---------------------------\u003e| | | | | | | | 10 startp | | | | | | 11 startup apply-launch -\u003e| | | | | | | 12 read suscription | | | | | | 13 calucate worker num | | | | | \u003c-------------------------| 14 register worker info | | | | | 15 read bgworker info | | | | | 16 startup apply-worker -----------------------------\u003e| | \u003c-------------------------------------------------------------+---------------------------+-----------------------------------------------------------| 17 ask publication | 18 receive connect | | | | 19 fork postgres as wal-sender ------------------------------\u003e| | | | 20 read wal \u003c-------------| | | 21 decod to decode-wal | | 22 send decoded-wal -----------------------------------------------------------------\u003e| | 23 receive decoded-wal | 24 apply decoded-wal | (if is postgresql) | 25 scan tuple from t1 | 26 get tuple pointer | 27 mark tuple deleted | 28 generate wal 3.3 数据格式 4 实现源码 上述流程中可以看到，逻辑复制由订阅端触发。此处，从订阅端开始，介绍复制流程：\n4.1 订阅端：apply-launch 4.2 订阅端：apply-worker 4.3 发布端：postmaster 4.4 发布端：wal-sender 5 性能优化 5.1 现状 首先，以一个简单示例，介绍vastbase当前版本逻辑复制的工作流程，假设：有3个事务并行执行update, insert, delete等操作，复制流程如下：\n各关键步骤的解释如下：\n发布端 生成wal: 执行事务，生成wal。产生wal的操作包括：begin, insert, update, delete, commit等 读取wal-reacord: wal-sender线程，按序读取wal-record 解码wal-record：wal-sender线程，提取wal-record中的关键信息，包括操作类型、tuple中的数据等逻辑信息，不包括filenode等物理信息，生成logical-msg。1条wal-record生成1条logic-msg 缓存logic-msg：生成logic-msg后，一般不直接发送，而是先缓存，达到特定条件才发送。属于同一事务的logical-msg缓存在一起 发送txn-package：当解码到commit transaction的wal-record时，发送一次txn-package，包含该事务所有的logic-msg 订阅端 接收txn-package：apply-worker线程，持续接收txn-package 回放logic-msg：从txn-package按序读取logic-msg中，解析操作类型、数据等，调用heapam层接口重放logical-msg 当前版本，几个关键设计如下：\n发布端 生成wal 读取wal-record 解码wal-record 发送txn-package： 发送内容：发送3个txn-package，1个txn-packag包含1个事务的所有logical-msg 发送时机：解码到commit transaction的wal-record后 订阅端 接收txn-package：串行接收3个txn-package 回放logic-msg：串行回放txn-package中的所有logical-msg 5.2 优化方案 优化点一：发布端-流复制协议（逻辑数据） 从订阅段角度看，一次接收与处理一个事务的package，复制过程是串行的。\n流复制协议，主要优化上述流程中的：发送txn-package、接收txn-package步骤，让发布端并行发送多个事务的logical-msg。即同一时刻，订阅端可能存在多个未提交的事务。\n复制流程中，改动如下：\n发布端 生成wal 读取wal-record 解码wal-record 发送stm-package： 发送内容：发送3个或更多的stm-package，1个stm-packag包含1个事务的部分logical-msg 发送时机：已缓存的logical-msg总大小达到阈值，以及解码到commit transaction的wal-record后 订阅端 接收stm-package：接收3个或更多的stm-package 回放logic-msg 流程图如下：\n优化点二：订阅段-并行回放机制（逻辑数据） 并行回放机制，主要优化上述流程中的：回放logical-msg步骤，让订阅端并行回放多个事务的logical-msg。流复制协议，让发布端并行发送事务数据，并行回放机制，依赖流复制协议。\n复制流程中，改动如下：\n发布端 生成wal 读取wal-record 解码wal-record 发送stm-package： 订阅端 接收stm-package：leader线程，持续接收stm-package，提取、记录事务信息，分发stm-package给worker，由worker完成apply。从package中提取xid，判断事务状态： 事务开始：（即本事务的第1个stm-package） 尝试申请1个空闲的worker，发送stm-package。之后，worker被该事务独占，只接收、回放本事务的stm-package，直到回放完事务commit或abort的logical-msg，才释放worer 如果没有空闲worker，stm-package会暂时缓存，等待空闲worker 事务进程中（即本事务的第2+个stm-package） 查找已占用的worer，发送stm-package 事务结束（package中commit/abort对应的logical-msg） 查找对应的worer，发送stm-package，等待对commit/abort的apply，才继续接收下一个package 回放logic-msg：worker线程，接收stm-package，提取logical-msg中的信息，调用heapam接口回放。 流程图如下：\n另外，事务并行后，需确保数据一致性。示例：在发布单，有事务1和2，更新同1个tuple，事务1先更新，事务wal日志如下：\nB: 1 B: 2 U: 1 -- 先更新 C: 1 U: 2 -- 事务1提交后，才更新成功 C: 2 在并行回放场景，订阅端，必须确保：C:1限制，U:2后执行。当前方案中，解决该问题的设计如下：\n发布端：解码到C后，直接发送 订阅端：接收到C后，等待C回放完成，再继续接收后续的logical-msg 另外，还有一些特殊场景，与核心设计无关，此处不展开讨论，比如：\n混合机制：发布端同时发送stm-packpage和txn-package（订阅端启用1个txn-worker和多个stm-worker，txn-worker只处理txn-package） 抢占机制：收到stm-package，内含commit的logical-msg，但是，没有空闲的stm-worker，无法处理commit。（此时txn-worker是空闲的，抢占txn-worker） 优化点三：发布端-并行解码机制 高并发场景，在发布端，有数百个线程执行事务并生成wal，而仅有1个线程解码wal。实现流复制协议、并行回放机制后，解码存在瓶颈，因此，需使用并行解码机制。\n当前版本的vastbase中，已具备并行解码功能，只是无法用于逻辑复制场景，需额外改动适配。\n复制流程中，改动如下：\n发布端 生成wal 读取wal-record 以前，读取、解码、发送步骤，由1个wal-sender线程完成。现在，将读取、解码、发送等步骤，拆分为多个线程。该机制非本次新增，此处不再详细介绍。 解码wal-record 发送stm-package 订阅端 接收stm-package 回放logic-msg 最终，集成3个优化方案后，流程图如下：\n目前，测试数据如下：\n测试场景：tpcc\n部署：单机 warhouse：100 并发：400 tpmc：约40w 测试结果\n基线： 发布端wal生成速度：约100m/s 端到端逻辑复制：约10m/s 目标： 端到端逻辑复制：70-100m/s 优化后： 端到端逻辑复制：解码、发送、接收、多线程分发、并行回放(60-100个线程)：约50m/s 订阅端只接收：解码、发送、接收：80+m/s 订阅端只多线程分发：解码、发送、接收、多线程分发：70+m/s 性能瓶颈\nworker饥饿：通过火焰图分析，订阅端的worker线程，大部分时候出于饥饿状态，需继续优化，充分利用worker线程。 负载均衡：tpcc中，1个事务中执行的写操作，从5个到20+个不等，订阅端回放结果如下： 5.3 未来方案 一、计划优化点一：发布端-事务提交等待 发布端解码事务commit日志后，判断订阅端进行中的事务量，如果事务较少，则先发送一批其他事务的stm-packpage，再发送commit的logical-msg\n5.4 方案分析 一、事务正确性 6 性能测试 参考资料 pg 邮件列表：https://www.postgresql.org/list/pgsql-hackers/ ",
+  "wordCount" : "727",
+  "inLanguage": "en",
+  "datePublished": "2025-12-29T20:38:00+08:00",
+  "dateModified": "2026-08-14T17:47:31+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/postgresql/3-13-logical-replication-tuning/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      PostgreSQL 3-13 逻辑复制原理与性能优化
+    </h1>
+    <div class="post-meta">
+      <span title='2025-12-29 20:38:00 +0800 CST'>December 29, 2025</span>&nbsp;·&nbsp;<span>4 min</span>&nbsp;·&nbsp;<span>727 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#%e7%9b%ae%e5%bd%95" aria-label="目录">目录</a></li>
+                <li>
+                    <a href="#1-%e5%9f%ba%e6%9c%ac%e6%a6%82%e5%bf%b5" aria-label="1 基本概念">1 基本概念</a><ul>
+                        
+                <li>
+                    <a href="#11-%e4%b8%9a%e5%8a%a1%e5%9c%ba%e6%99%af" aria-label="1.1 业务场景">1.1 业务场景</a></li>
+                <li>
+                    <a href="#12-%e9%80%bb%e8%be%91%e5%a4%8d%e5%88%b6" aria-label="1.2 逻辑复制">1.2 逻辑复制</a></li>
+                <li>
+                    <a href="#13-%e5%ae%9e%e7%8e%b0%e6%80%9d%e8%b7%af" aria-label="1.3 实现思路">1.3 实现思路</a></li>
+                <li>
+                    <a href="#14-%e5%9f%ba%e6%9c%ac%e6%a6%82%e5%bf%b5" aria-label="1.4 基本概念">1.4 基本概念</a></li></ul>
+                </li>
+                <li>
+                    <a href="#2-%e4%bd%bf%e7%94%a8%e6%96%b9%e6%b3%95" aria-label="2 使用方法">2 使用方法</a><ul>
+                        
+                <li>
+                    <a href="#21-%e5%8f%91%e5%b8%83%e7%ab%af%e9%85%8d%e7%bd%ae%e5%8f%82%e6%95%b0" aria-label="2.1 发布端：配置参数">2.1 发布端：配置参数</a></li>
+                <li>
+                    <a href="#22-%e5%8f%91%e5%b8%83%e7%ab%af%e5%88%9b%e5%bb%ba%e5%8f%91%e5%b8%83" aria-label="2.2 发布端：创建发布">2.2 发布端：创建发布</a></li>
+                <li>
+                    <a href="#23-%e8%ae%a2%e9%98%85%e7%ab%af%e5%88%9b%e5%bb%ba%e8%ae%a2%e9%98%85" aria-label="2.3 订阅端：创建订阅">2.3 订阅端：创建订阅</a></li></ul>
+                </li>
+                <li>
+                    <a href="#3-%e6%a0%b8%e5%bf%83%e8%ae%be%e8%ae%a1" aria-label="3 核心设计">3 核心设计</a><ul>
+                        
+                <li>
+                    <a href="#31-%e6%95%b4%e4%bd%93%e6%9e%b6%e6%9e%84" aria-label="3.1 整体架构">3.1 整体架构</a></li>
+                <li>
+                    <a href="#32-%e5%b7%a5%e4%bd%9c%e6%b5%81%e7%a8%8b" aria-label="3.2 工作流程">3.2 工作流程</a></li>
+                <li>
+                    <a href="#33-%e6%95%b0%e6%8d%ae%e6%a0%bc%e5%bc%8f" aria-label="3.3 数据格式">3.3 数据格式</a></li></ul>
+                </li>
+                <li>
+                    <a href="#4-%e5%ae%9e%e7%8e%b0%e6%ba%90%e7%a0%81" aria-label="4 实现源码">4 实现源码</a><ul>
+                        
+                <li>
+                    <a href="#41-%e8%ae%a2%e9%98%85%e7%ab%afapply-launch" aria-label="4.1 订阅端：apply-launch">4.1 订阅端：apply-launch</a></li>
+                <li>
+                    <a href="#42-%e8%ae%a2%e9%98%85%e7%ab%afapply-worker" aria-label="4.2 订阅端：apply-worker">4.2 订阅端：apply-worker</a></li>
+                <li>
+                    <a href="#43-%e5%8f%91%e5%b8%83%e7%ab%afpostmaster" aria-label="4.3 发布端：postmaster">4.3 发布端：postmaster</a></li>
+                <li>
+                    <a href="#44-%e5%8f%91%e5%b8%83%e7%ab%afwal-sender" aria-label="4.4 发布端：wal-sender">4.4 发布端：wal-sender</a></li></ul>
+                </li>
+                <li>
+                    <a href="#5-%e6%80%a7%e8%83%bd%e4%bc%98%e5%8c%96" aria-label="5 性能优化">5 性能优化</a><ul>
+                        
+                <li>
+                    <a href="#51-%e7%8e%b0%e7%8a%b6" aria-label="5.1 现状">5.1 现状</a></li>
+                <li>
+                    <a href="#52-%e4%bc%98%e5%8c%96%e6%96%b9%e6%a1%88" aria-label="5.2 优化方案">5.2 优化方案</a><ul>
+                        
+                <li>
+                    <a href="#%e4%bc%98%e5%8c%96%e7%82%b9%e4%b8%80%e5%8f%91%e5%b8%83%e7%ab%af-%e6%b5%81%e5%a4%8d%e5%88%b6%e5%8d%8f%e8%ae%ae%e9%80%bb%e8%be%91%e6%95%b0%e6%8d%ae" aria-label="优化点一：发布端-流复制协议（逻辑数据）">优化点一：发布端-流复制协议（逻辑数据）</a></li>
+                <li>
+                    <a href="#%e4%bc%98%e5%8c%96%e7%82%b9%e4%ba%8c%e8%ae%a2%e9%98%85%e6%ae%b5-%e5%b9%b6%e8%a1%8c%e5%9b%9e%e6%94%be%e6%9c%ba%e5%88%b6%e9%80%bb%e8%be%91%e6%95%b0%e6%8d%ae" aria-label="优化点二：订阅段-并行回放机制（逻辑数据）">优化点二：订阅段-并行回放机制（逻辑数据）</a></li>
+                <li>
+                    <a href="#%e4%bc%98%e5%8c%96%e7%82%b9%e4%b8%89%e5%8f%91%e5%b8%83%e7%ab%af-%e5%b9%b6%e8%a1%8c%e8%a7%a3%e7%a0%81%e6%9c%ba%e5%88%b6" aria-label="优化点三：发布端-并行解码机制">优化点三：发布端-并行解码机制</a></li></ul>
+                </li>
+                <li>
+                    <a href="#53-%e6%9c%aa%e6%9d%a5%e6%96%b9%e6%a1%88" aria-label="5.3 未来方案">5.3 未来方案</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e8%ae%a1%e5%88%92%e4%bc%98%e5%8c%96%e7%82%b9%e4%b8%80%e5%8f%91%e5%b8%83%e7%ab%af-%e4%ba%8b%e5%8a%a1%e6%8f%90%e4%ba%a4%e7%ad%89%e5%be%85" aria-label="一、计划优化点一：发布端-事务提交等待">一、计划优化点一：发布端-事务提交等待</a></li></ul>
+                </li>
+                <li>
+                    <a href="#54-%e6%96%b9%e6%a1%88%e5%88%86%e6%9e%90" aria-label="5.4 方案分析">5.4 方案分析</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e4%ba%8b%e5%8a%a1%e6%ad%a3%e7%a1%ae%e6%80%a7" aria-label="一、事务正确性">一、事务正确性</a></li></ul>
+                </li></ul>
+                </li>
+                <li>
+                    <a href="#6-%e6%80%a7%e8%83%bd%e6%b5%8b%e8%af%95" aria-label="6 性能测试">6 性能测试</a></li>
+                <li>
+                    <a href="#%e5%8f%82%e8%80%83%e8%b5%84%e6%96%99" aria-label="参考资料">参考资料</a>
+                </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h1 id="目录">目录<a hidden class="anchor" aria-hidden="true" href="#目录">#</a></h1>
+<ol>
+<li><a href="#%E7%9B%AE%E5%BD%95">目录</a></li>
+<li><a href="#1-%E5%9F%BA%E6%9C%AC%E6%A6%82%E5%BF%B5">1 基本概念</a>
+<ol>
+<li><a href="#1-1-%E4%B8%9A%E5%8A%A1%E5%9C%BA%E6%99%AF">1.1 业务场景</a></li>
+<li><a href="#1-2-%E9%80%BB%E8%BE%91%E5%A4%8D%E5%88%B6">1.2 逻辑复制</a></li>
+<li><a href="#1-3-%E5%AE%9E%E7%8E%B0%E6%80%9D%E8%B7%AF">1.3 实现思路</a></li>
+<li><a href="#1-4-%E5%9F%BA%E6%9C%AC%E6%A6%82%E5%BF%B5">1.4 基本概念</a></li>
+</ol>
+</li>
+<li><a href="#2-%E4%BD%BF%E7%94%A8%E6%96%B9%E6%B3%95">2 使用方法</a>
+<ol>
+<li><a href="#2-1-%E5%8F%91%E5%B8%83%E7%AB%AF%EF%BC%9A%E9%85%8D%E7%BD%AE%E5%8F%82%E6%95%B0">2.1 发布端：配置参数</a></li>
+<li><a href="#2-2-%E5%8F%91%E5%B8%83%E7%AB%AF%EF%BC%9A%E5%88%9B%E5%BB%BA%E5%8F%91%E5%B8%83">2.2 发布端：创建发布</a></li>
+<li><a href="#2-3-%E8%AE%A2%E9%98%85%E7%AB%AF%EF%BC%9A%E5%88%9B%E5%BB%BA%E8%AE%A2%E9%98%85">2.3 订阅端：创建订阅</a></li>
+</ol>
+</li>
+<li><a href="#3-%E6%A0%B8%E5%BF%83%E8%AE%BE%E8%AE%A1">3 核心设计</a>
+<ol>
+<li><a href="#3-1-%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84">3.1 整体架构</a></li>
+<li><a href="#3-2-%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B">3.2 工作流程</a></li>
+<li><a href="#3-3-%E6%95%B0%E6%8D%AE%E6%A0%BC%E5%BC%8F">3.3 数据格式</a></li>
+</ol>
+</li>
+<li><a href="#4-%E5%AE%9E%E7%8E%B0%E6%BA%90%E7%A0%81">4 实现源码</a>
+<ol>
+<li><a href="#4-1-%E8%AE%A2%E9%98%85%E7%AB%AF%EF%BC%9Aapply-launch">4.1 订阅端：apply-launch</a></li>
+<li><a href="#4-2-%E8%AE%A2%E9%98%85%E7%AB%AF%EF%BC%9Aapply-worker">4.2 订阅端：apply-worker</a></li>
+<li><a href="#4-3-%E5%8F%91%E5%B8%83%E7%AB%AF%EF%BC%9Apostmaster">4.3 发布端：postmaster</a></li>
+<li><a href="#4-4-%E5%8F%91%E5%B8%83%E7%AB%AF%EF%BC%9Awal-sender">4.4 发布端：wal-sender</a></li>
+</ol>
+</li>
+<li><a href="#5-%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96">5 性能优化</a>
+<ol>
+<li><a href="#5-1-%E7%8E%B0%E7%8A%B6">5.1 现状</a></li>
+<li><a href="#5-2-%E4%BC%98%E5%8C%96%E6%96%B9%E6%A1%88">5.2 优化方案</a>
+<ol>
+<li><a href="#%E4%BC%98%E5%8C%96%E7%82%B9%E4%B8%80%EF%BC%9A%E5%8F%91%E5%B8%83%E7%AB%AF-%E6%B5%81%E5%A4%8D%E5%88%B6%E5%8D%8F%E8%AE%AE%EF%BC%88%E9%80%BB%E8%BE%91%E6%95%B0%E6%8D%AE%EF%BC%89">优化点一：发布端-流复制协议（逻辑数据）</a></li>
+<li><a href="#%E4%BC%98%E5%8C%96%E7%82%B9%E4%BA%8C%EF%BC%9A%E8%AE%A2%E9%98%85%E6%AE%B5-%E5%B9%B6%E8%A1%8C%E5%9B%9E%E6%94%BE%E6%9C%BA%E5%88%B6%EF%BC%88%E9%80%BB%E8%BE%91%E6%95%B0%E6%8D%AE%EF%BC%89">优化点二：订阅段-并行回放机制（逻辑数据）</a></li>
+<li><a href="#%E4%BC%98%E5%8C%96%E7%82%B9%E4%B8%89%EF%BC%9A%E5%8F%91%E5%B8%83%E7%AB%AF-%E5%B9%B6%E8%A1%8C%E8%A7%A3%E7%A0%81%E6%9C%BA%E5%88%B6">优化点三：发布端-并行解码机制</a></li>
+</ol>
+</li>
+<li><a href="#5-3-%E6%9C%AA%E6%9D%A5%E6%96%B9%E6%A1%88">5.3 未来方案</a>
+<ol>
+<li><a href="#%E4%B8%80%E3%80%81%E8%AE%A1%E5%88%92%E4%BC%98%E5%8C%96%E7%82%B9%E4%B8%80%EF%BC%9A%E5%8F%91%E5%B8%83%E7%AB%AF-%E4%BA%8B%E5%8A%A1%E6%8F%90%E4%BA%A4%E7%AD%89%E5%BE%85">一、计划优化点一：发布端-事务提交等待</a></li>
+</ol>
+</li>
+<li><a href="#5-4-%E6%96%B9%E6%A1%88%E5%88%86%E6%9E%90">5.4 方案分析</a>
+<ol>
+<li><a href="#%E4%B8%80%E3%80%81%E4%BA%8B%E5%8A%A1%E6%AD%A3%E7%A1%AE%E6%80%A7">一、事务正确性</a></li>
+</ol>
+</li>
+</ol>
+</li>
+<li><a href="#6-%E6%80%A7%E8%83%BD%E6%B5%8B%E8%AF%95">6 性能测试</a></li>
+<li><a href="#%E5%8F%82%E8%80%83%E8%B5%84%E6%96%99">参考资料</a></li>
+</ol>
+<h1 id="1-基本概念">1 基本概念<a hidden class="anchor" aria-hidden="true" href="#1-基本概念">#</a></h1>
+<h2 id="11-业务场景">1.1 业务场景<a hidden class="anchor" aria-hidden="true" href="#11-业务场景">#</a></h2>
+<ul>
+<li>
+<p><strong>场景一：数据共享（异构数据库）</strong><br>
+1个公司，有2个部门：商品库存部门、商品成本部门。2个部门有不同技术栈，使用不同数据库产品:postgresql、mysql。2个部门需共享相同的表：商品信息表。</p>
+</li>
+<li>
+<p><strong>场景二：数据容灾</strong><br>
+应用存储数据时，同时将数据存储至postgresql于mysql中，避免某款数据库出现无法恢复的数据损坏问题。</p>
+</li>
+<li>
+<p><strong>场景三：版本升级</strong><br>
+从postgresql 13版本，升级到postgresql 16版本。</p>
+</li>
+<li>
+<p><strong>场景四：数据迁移（异构数据库）</strong><br>
+从postgresql，将数据库迁移到mysql中。</p>
+</li>
+</ul>
+<h2 id="12-逻辑复制">1.2 逻辑复制<a hidden class="anchor" aria-hidden="true" href="#12-逻辑复制">#</a></h2>
+<p>从一个数据库中，将针对指定表的insert、delete、update等写操作，复制到其他另一个数据库、工具等。<br>
+复制该场景中，有2种角色：</p>
+<ul>
+<li><strong>发布端</strong>：发送端</li>
+<li><strong>订阅端</strong>：接收端</li>
+</ul>
+<h2 id="13-实现思路">1.3 实现思路<a hidden class="anchor" aria-hidden="true" href="#13-实现思路">#</a></h2>
+<p>此处，以postgresql为例，逻辑复制实现思路如下：</p>
+<p>上图中，关键流程如下：</p>
+<ol>
+<li>执行sql：应用执行insert、delete、update等语句</li>
+<li>生成wal：postgres进程执行sql，生成wal，将wal写入文件</li>
+<li>发送wal：如果启用逻辑复制，发布端会启动一个用于逻辑复制的wal-sender进程，读取wal，将wal解码为logical-wal，并将logical-wal发送给订阅端</li>
+<li>重放logical-wal：订阅端将logical-wal当做单条insert、delete、update语句执行</li>
+</ol>
+<h2 id="14-基本概念">1.4 基本概念<a hidden class="anchor" aria-hidden="true" href="#14-基本概念">#</a></h2>
+<p>逻辑复制大致流程，与物理复制类似。不过，在复制流程中，差异也很多，以上图为例，关键差异如下：</p>
+<ul>
+<li>物理复制
+<ol>
+<li>复制粒度：实例产生的所有wal</li>
+<li>发送数据：wal</li>
+<li>发送粒度：流</li>
+<li>回放数据：回放wal</li>
+</ol>
+</li>
+<li>逻辑复制：
+<ol>
+<li>复制粒度：指定的一个或多个用户表，或者表中符合指定过滤条件的数据</li>
+<li>发送数据：logical-wal。针对一个写操作，会发送一条对应的logical-wal，即一条message。message中的关键内容包括：操作、数据。
+<ul>
+<li><strong>示例1：</strong>
+<ul>
+<li>执行sql：<code>INSERT INTO t1 VALEUS (1, 'data1')</code></li>
+<li>生成wal：<code>[1] [1800 1810 0 1 ..] [1, 'data1'] ...</code>。格式为：操作类型、filenode、数据等
+<ul>
+<li>格式：</li>
+</ul>
+</li>
+<li>发送logical-wal: <code>[I] [1, 'data1']</code></li>
+</ul>
+</li>
+<li><strong>示例2：</strong>
+<ul>
+<li>执行sql：<code>DELETE FROM t1 WHERE c2 = 'data1'</code></li>
+<li>生成wal：<code>[3] [1800 1810 0 1 ..]</code>。格式为：操作类型、filenode等</li>
+<li>发送logical-wal: <code>[D] ['data1']</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li>发送粒度：默认情况下，是一个完整事务包含的多条message</li>
+<li>回放数据：apply logical-wal。提取logical-wal中的操作与数据，调用heapam层接口。示例：
+<ul>
+<li><strong>示例1：</strong>
+<ul>
+<li>接收logical-wal: <code>[I] [1, 'data1']</code></li>
+<li>回放logical-wal：heap_insert</li>
+</ul>
+</li>
+<li><strong>示例2：</strong>
+<ul>
+<li>接收logical-wal: <code>[D] ['data1']</code></li>
+<li>回放logical-wal：heap_beginscan、heap_delete</li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<h1 id="2-使用方法">2 使用方法<a hidden class="anchor" aria-hidden="true" href="#2-使用方法">#</a></h1>
+<h2 id="21-发布端配置参数">2.1 发布端：配置参数<a hidden class="anchor" aria-hidden="true" href="#21-发布端配置参数">#</a></h2>
+<ol>
+<li>
+<p>修改wal级别，多存储一些信息</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;wal_level=logical&#34;</span> &gt;&gt; <span class="nv">$PGDATA</span>/postgresql.conf
+</span></span></code></pre></div></li>
+<li>
+<p>配置身份认证非核心参数</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;max_replication_slots=4&#34;</span> &gt;&gt; <span class="nv">$PGDATA</span>/postgresql.conf
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;max_wal_senders=4&#34;</span> &gt;&gt; <span class="nv">$$</span>PGDATA/postgresql.conf
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;max_logical_replication_workers=32&#34;</span> &gt;&gt; <span class="nv">$PGDATA</span>/postgresql.conf
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;listen_addresses=&#39;*&#39;&#34;</span> &gt;&gt; <span class="nv">$PGDATA</span>/postgresql.conf
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">sed -i <span class="s1">&#39;1i host all all 0.0.0.0/0 md5\n&#39;</span> <span class="nv">$PGDATA</span>/pg_hba.conf
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="s2">&#34;host replication all 0.0.0.0/0 md5&#34;</span> &gt;&gt; <span class="nv">$PGDATA</span>/pg_hba.conf
+</span></span></code></pre></div></li>
+<li>
+<p>发布端：重启参数生效</p>
+</li>
+</ol>
+<h2 id="22-发布端创建发布">2.2 发布端：创建发布<a hidden class="anchor" aria-hidden="true" href="#22-发布端创建发布">#</a></h2>
+<ol>
+<li>
+<p>创建表</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">pt1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">pt2</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>创建发布信息<br>
+指定哪些表需要复制。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">PUBLICATION</span><span class="w"> </span><span class="n">pub1</span><span class="w"> </span><span class="k">FOR</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">pt1</span><span class="p">,</span><span class="n">pt2</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>创建复制槽</p>
+<ul>
+<li>
+<p>存储复制状态：wal的位置。</p>
+</li>
+<li>
+<p>存储数据格式</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">pg_create_logical_replication_slot</span><span class="p">(</span><span class="s1">&#39;pslot1&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;pgoutput&#39;</span><span class="p">);</span><span class="w">
+</span></span></span></code></pre></div></li>
+</ul>
+</li>
+<li>
+<p>创建用户：订阅端通过该用户连接发布端，以进行数据传输</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">pu1</span><span class="w"> </span><span class="n">REPLICATION</span><span class="w"> </span><span class="n">SYSADMIN</span><span class="w"> </span><span class="n">LOGIN</span><span class="w"> </span><span class="k">ENCRYPTED</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">&#39;pu1.12345&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">GRANT</span><span class="w"> </span><span class="k">ALL</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">pt1</span><span class="p">,</span><span class="n">pt2</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">pu1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+</ol>
+<h2 id="23-订阅端创建订阅">2.3 订阅端：创建订阅<a hidden class="anchor" aria-hidden="true" href="#23-订阅端创建订阅">#</a></h2>
+<ol>
+<li>
+<p>创建表<br>
+与发布端保持一致</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">pt1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">pt2</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>创建订阅信息</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="n">SUBSCRIPTION</span><span class="w"> </span><span class="n">sub1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">CONNECTION</span><span class="w"> </span><span class="s1">&#39;host=127.0.0.1 port=5432 dbname=pubdb user=pu1 password=pu1.12345&#39;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">PUBLICATION</span><span class="w"> </span><span class="n">pub1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">WITH</span><span class="w"> </span><span class="p">(</span><span class="n">create_slot</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">false</span><span class="p">,</span><span class="w"> </span><span class="n">slot_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;pslot1&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">copy_data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">);</span><span class="w">
+</span></span></span></code></pre></div><p>订阅端自动启动apply-worker进程，与发布端建立连接，接收发布端的logical-wal，并回放logical-wal。</p>
+</li>
+</ol>
+<h1 id="3-核心设计">3 核心设计<a hidden class="anchor" aria-hidden="true" href="#3-核心设计">#</a></h1>
+<h2 id="31-整体架构">3.1 整体架构<a hidden class="anchor" aria-hidden="true" href="#31-整体架构">#</a></h2>
+<p>逻辑复制架构中，有3类角色：</p>
+<ul>
+<li><strong>应用</strong>：发送sql</li>
+<li><strong>发布端</strong>：执行sql，生成wal，解码wal生成logical-wal，发送logical-wal</li>
+<li><strong>订阅端</strong>：接收logical-wal，回放logical-wal</li>
+</ul>
+<p>以2个事务并发执行sql为例，在发布端，关键进程为wal-sender。在订阅端，关键进程为apply-worker。</p>
+<h2 id="32-工作流程">3.2 工作流程<a hidden class="anchor" aria-hidden="true" href="#32-工作流程">#</a></h2>
+<p>以下是一个典型场景的大致流程：</p>
+<ul>
+<li>步骤1-9：发布端接收客户端连接，接收与执行sql</li>
+<li>步骤10-28：订阅端启动实例，检查订阅信息，与发布端建立连接并进行逻辑复制</li>
+</ul>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="o">[</span>发布端<span class="o">]</span>                                                                                        <span class="o">[</span>订阅端<span class="o">]</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">postmaster        postgres                     wal-writer    wal-sender              wal-file   postmaster             apply-launch                apply-worker
+</span></span><span class="line"><span class="cl">+-------------------+------------------------------+------------+---------------------------+---+---------------------------+---------------------------+----------------------+
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">1</span> receive connect <span class="p">|</span>                              <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">2</span> fork postgres -&gt;<span class="p">|</span>                              <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span> <span class="m">3</span> receive sql                <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span>   delete .. t1 .. <span class="nv">c1</span><span class="o">=</span><span class="m">10</span>      <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span> <span class="m">4</span> scan tuple from t1         <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span> <span class="m">5</span> get tuple pointer          <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span> <span class="m">6</span> mark tuple deleted         <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span> <span class="m">7</span> generate wal               <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span>   <span class="nv">type</span><span class="o">=</span>delete,xid<span class="o">=</span><span class="m">11</span>         <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span>   <span class="nv">filenode</span><span class="o">=</span>1700,offset<span class="o">=</span>8-3   <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span>   <span class="nv">data</span><span class="o">=</span><span class="s1">&#39;10&#39;</span>,column<span class="o">=</span><span class="m">1</span>         <span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                   <span class="p">|</span> <span class="m">8</span> copy wal to wal-buffer ---&gt;<span class="p">|</span>            <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                  <span class="p">|</span> <span class="m">9</span> write wal---------------------------&gt;<span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span> <span class="m">10</span> startp                 <span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span> <span class="m">11</span> startup apply-launch -&gt;<span class="p">|</span>                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span> <span class="m">12</span> <span class="nb">read</span> suscription       <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span>                           <span class="p">|</span> <span class="m">13</span> calucate worker num    <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span> &lt;-------------------------<span class="p">|</span> <span class="m">14</span> register worker info   <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span> <span class="m">15</span> <span class="nb">read</span> bgworker info                                 <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span>                                                               <span class="p">|</span>                           <span class="p">|</span>   <span class="p">|</span> <span class="m">16</span> startup apply-worker -----------------------------&gt;<span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> &lt;-------------------------------------------------------------+---------------------------+-----------------------------------------------------------<span class="p">|</span> <span class="m">17</span> ask publication
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">18</span> receive connect                                            <span class="p">|</span>                           <span class="p">|</span>                                                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">19</span> fork postgres as wal-sender ------------------------------&gt;<span class="p">|</span>                           <span class="p">|</span>                                                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="p">|</span> <span class="m">20</span> <span class="nb">read</span> wal &lt;-------------<span class="p">|</span>                                                           <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="p">|</span> <span class="m">21</span> decod to decode-wal                                                                <span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="p">|</span> <span class="m">22</span> send decoded-wal -----------------------------------------------------------------&gt;<span class="p">|</span>
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="m">23</span> receive decoded-wal
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="m">24</span> apply decoded-wal
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="o">(</span><span class="k">if</span> is postgresql<span class="o">)</span>
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="m">25</span> scan tuple from t1
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="m">26</span> get tuple pointer
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="m">27</span> mark tuple deleted
+</span></span><span class="line"><span class="cl">                                                                                                                                                        <span class="p">|</span> <span class="m">28</span> generate wal
+</span></span></code></pre></div><h2 id="33-数据格式">3.3 数据格式<a hidden class="anchor" aria-hidden="true" href="#33-数据格式">#</a></h2>
+<h1 id="4-实现源码">4 实现源码<a hidden class="anchor" aria-hidden="true" href="#4-实现源码">#</a></h1>
+<p>上述流程中可以看到，逻辑复制由订阅端触发。此处，从订阅端开始，介绍复制流程：</p>
+<h2 id="41-订阅端apply-launch">4.1 订阅端：apply-launch<a hidden class="anchor" aria-hidden="true" href="#41-订阅端apply-launch">#</a></h2>
+<h2 id="42-订阅端apply-worker">4.2 订阅端：apply-worker<a hidden class="anchor" aria-hidden="true" href="#42-订阅端apply-worker">#</a></h2>
+<h2 id="43-发布端postmaster">4.3 发布端：postmaster<a hidden class="anchor" aria-hidden="true" href="#43-发布端postmaster">#</a></h2>
+<h2 id="44-发布端wal-sender">4.4 发布端：wal-sender<a hidden class="anchor" aria-hidden="true" href="#44-发布端wal-sender">#</a></h2>
+<h1 id="5-性能优化">5 性能优化<a hidden class="anchor" aria-hidden="true" href="#5-性能优化">#</a></h1>
+<h2 id="51-现状">5.1 现状<a hidden class="anchor" aria-hidden="true" href="#51-现状">#</a></h2>
+<p>首先，以一个简单示例，介绍vastbase当前版本逻辑复制的工作流程，假设：有3个事务并行执行update, insert, delete等操作，复制流程如下：</p>
+<p><img alt="base" loading="lazy" src="/images/PostgreSQL/3-13-logical-replication-tuning/base.png"></p>
+<p>各关键步骤的解释如下：</p>
+<ul>
+<li><strong>发布端</strong>
+<ol>
+<li><strong>生成wal</strong>: 执行事务，生成wal。产生wal的操作包括：begin, insert, update, delete, commit等</li>
+<li><strong>读取wal-reacord</strong>: wal-sender线程，按序读取wal-record</li>
+<li><strong>解码wal-record</strong>：wal-sender线程，提取wal-record中的关键信息，包括操作类型、tuple中的数据等逻辑信息，不包括filenode等物理信息，生成logical-msg。<strong>1条wal-record生成1条logic-msg</strong></li>
+<li><strong>缓存logic-msg</strong>：生成logic-msg后，一般不直接发送，而是先缓存，达到特定条件才发送。属于同一事务的logical-msg缓存在一起</li>
+<li><strong>发送txn-package</strong>：当解码到commit transaction的wal-record时，发送一次txn-package，包含该事务所有的logic-msg</li>
+</ol>
+</li>
+<li><strong>订阅端</strong>
+<ol>
+<li><strong>接收txn-package</strong>：apply-worker线程，持续接收txn-package</li>
+<li><strong>回放logic-msg</strong>：从txn-package按序读取logic-msg中，解析操作类型、数据等，调用heapam层接口重放logical-msg</li>
+</ol>
+</li>
+</ul>
+<p>当前版本，几个关键设计如下：</p>
+<ul>
+<li><strong>发布端</strong>
+<ol>
+<li><strong>生成wal</strong></li>
+<li><strong>读取wal-record</strong></li>
+<li><strong>解码wal-record</strong></li>
+<li><strong>发送txn-package</strong>：
+<ul>
+<li>发送内容：发送3个txn-package，1个txn-packag包含1个事务的所有logical-msg</li>
+<li>发送时机：解码到commit transaction的wal-record后</li>
+</ul>
+</li>
+</ol>
+</li>
+<li><strong>订阅端</strong>
+<ol>
+<li><strong>接收txn-package</strong>：串行接收3个txn-package</li>
+<li><strong>回放logic-msg</strong>：串行回放txn-package中的所有logical-msg</li>
+</ol>
+</li>
+</ul>
+<h2 id="52-优化方案">5.2 优化方案<a hidden class="anchor" aria-hidden="true" href="#52-优化方案">#</a></h2>
+<h3 id="优化点一发布端-流复制协议逻辑数据">优化点一：发布端-流复制协议（逻辑数据）<a hidden class="anchor" aria-hidden="true" href="#优化点一发布端-流复制协议逻辑数据">#</a></h3>
+<p>从订阅段角度看，一次接收与处理一个事务的package，复制过程是串行的。</p>
+<p><strong>流复制协议</strong>，主要优化上述流程中的：发送txn-package、接收txn-package步骤，让发布端并行发送多个事务的logical-msg。即同一时刻，订阅端可能存在多个未提交的事务。</p>
+<p>复制流程中，改动如下：</p>
+<ul>
+<li><strong>发布端</strong>
+<ol>
+<li><strong>生成wal</strong></li>
+<li><strong>读取wal-record</strong></li>
+<li><strong>解码wal-record</strong></li>
+<li><strong>发送stm-package</strong>：
+<ul>
+<li>发送内容：发送3个或更多的stm-package，1个stm-packag包含1个事务的部分logical-msg</li>
+<li>发送时机：已缓存的logical-msg总大小达到阈值，以及解码到commit transaction的wal-record后</li>
+</ul>
+</li>
+</ol>
+</li>
+<li><strong>订阅端</strong>
+<ol>
+<li><strong>接收stm-package</strong>：接收3个或更多的stm-package</li>
+<li><strong>回放logic-msg</strong></li>
+</ol>
+</li>
+</ul>
+<p>流程图如下：</p>
+<p><img alt="opt1" loading="lazy" src="/images/PostgreSQL/3-13-logical-replication-tuning/opt1.png"></p>
+<h3 id="优化点二订阅段-并行回放机制逻辑数据">优化点二：订阅段-并行回放机制（逻辑数据）<a hidden class="anchor" aria-hidden="true" href="#优化点二订阅段-并行回放机制逻辑数据">#</a></h3>
+<p><strong>并行回放机制</strong>，主要优化上述流程中的：回放logical-msg步骤，让订阅端并行回放多个事务的logical-msg。流复制协议，让发布端并行发送事务数据，并行回放机制，依赖流复制协议。</p>
+<p>复制流程中，改动如下：</p>
+<ul>
+<li><strong>发布端</strong>
+<ol>
+<li><strong>生成wal</strong></li>
+<li><strong>读取wal-record</strong></li>
+<li><strong>解码wal-record</strong></li>
+<li><strong>发送stm-package</strong>：</li>
+</ol>
+</li>
+<li><strong>订阅端</strong>
+<ol>
+<li><strong>接收stm-package</strong>：leader线程，持续接收stm-package，提取、记录事务信息，分发stm-package给worker，由worker完成apply。从package中提取xid，判断事务状态：
+<ul>
+<li>事务开始：（即本事务的第1个stm-package）
+<ul>
+<li>尝试申请1个空闲的worker，发送stm-package。之后，worker被该事务独占，只接收、回放本事务的stm-package，直到回放完事务commit或abort的logical-msg，才释放worer</li>
+<li>如果没有空闲worker，stm-package会暂时缓存，等待空闲worker</li>
+</ul>
+</li>
+<li>事务进程中（即本事务的第2+个stm-package）
+<ul>
+<li>查找已占用的worer，发送stm-package</li>
+</ul>
+</li>
+<li>事务结束（package中commit/abort对应的logical-msg）
+<ul>
+<li>查找对应的worer，发送stm-package，等待对commit/abort的apply，才继续接收下一个package</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>回放logic-msg</strong>：worker线程，接收stm-package，提取logical-msg中的信息，调用heapam接口回放。</li>
+</ol>
+</li>
+</ul>
+<p>流程图如下：</p>
+<p><img alt="opt2" loading="lazy" src="/images/PostgreSQL/3-13-logical-replication-tuning/opt2.png"></p>
+<p>另外，事务并行后，需确保<strong>数据一致性</strong>。示例：在发布单，有事务1和2，更新同1个tuple，事务1先更新，事务wal日志如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">B: <span class="m">1</span>
+</span></span><span class="line"><span class="cl">B: <span class="m">2</span>
+</span></span><span class="line"><span class="cl">U: <span class="m">1</span> -- 先更新
+</span></span><span class="line"><span class="cl">C: <span class="m">1</span>
+</span></span><span class="line"><span class="cl">U: <span class="m">2</span> -- 事务1提交后，才更新成功
+</span></span><span class="line"><span class="cl">C: <span class="m">2</span>
+</span></span></code></pre></div><p>在并行回放场景，订阅端，必须确保：C:1限制，U:2后执行。当前方案中，解决该问题的设计如下：</p>
+<ol>
+<li>发布端：解码到C后，直接发送</li>
+<li>订阅端：接收到C后，等待C回放完成，再继续接收后续的logical-msg</li>
+</ol>
+<p>另外，还有一些特殊场景，与核心设计无关，此处不展开讨论，比如：</p>
+<ol>
+<li>混合机制：发布端同时发送stm-packpage和txn-package（订阅端启用1个txn-worker和多个stm-worker，txn-worker只处理txn-package）</li>
+<li>抢占机制：收到stm-package，内含commit的logical-msg，但是，没有空闲的stm-worker，无法处理commit。（此时txn-worker是空闲的，抢占txn-worker）</li>
+</ol>
+<h3 id="优化点三发布端-并行解码机制">优化点三：发布端-并行解码机制<a hidden class="anchor" aria-hidden="true" href="#优化点三发布端-并行解码机制">#</a></h3>
+<p>高并发场景，在发布端，有数百个线程执行事务并生成wal，而仅有1个线程解码wal。实现流复制协议、并行回放机制后，解码存在瓶颈，因此，需使用<strong>并行解码机制</strong>。</p>
+<p>当前版本的vastbase中，已具备并行解码功能，只是无法用于逻辑复制场景，需额外改动适配。</p>
+<p>复制流程中，改动如下：</p>
+<ul>
+<li><strong>发布端</strong>
+<ol>
+<li><strong>生成wal</strong></li>
+<li><strong>读取wal-record</strong>
+<ul>
+<li>以前，读取、解码、发送步骤，由1个wal-sender线程完成。现在，将读取、解码、发送等步骤，拆分为多个线程。该机制非本次新增，此处不再详细介绍。</li>
+</ul>
+</li>
+<li><strong>解码wal-record</strong></li>
+<li><strong>发送stm-package</strong></li>
+</ol>
+</li>
+<li><strong>订阅端</strong>
+<ol>
+<li><strong>接收stm-package</strong></li>
+<li><strong>回放logic-msg</strong></li>
+</ol>
+</li>
+</ul>
+<p>最终，集成3个优化方案后，流程图如下：</p>
+<p><img alt="opt3" loading="lazy" src="/images/PostgreSQL/3-13-logical-replication-tuning/opt3.png"></p>
+<p>目前，测试数据如下：</p>
+<ul>
+<li>
+<p>测试场景：tpcc</p>
+<ul>
+<li>部署：单机</li>
+<li>warhouse：100</li>
+<li>并发：400</li>
+<li>tpmc：约40w</li>
+</ul>
+</li>
+<li>
+<p>测试结果</p>
+<ul>
+<li>基线：
+<ul>
+<li>发布端wal生成速度：约100m/s</li>
+<li>端到端逻辑复制：约10m/s</li>
+</ul>
+</li>
+<li>目标：
+<ul>
+<li>端到端逻辑复制：70-100m/s</li>
+</ul>
+</li>
+<li>优化后：
+<ul>
+<li>端到端逻辑复制：解码、发送、接收、多线程分发、并行回放(60-100个线程)：约50m/s</li>
+<li>订阅端只接收：解码、发送、接收：80+m/s</li>
+<li>订阅端只多线程分发：解码、发送、接收、多线程分发：70+m/s</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>性能瓶颈</p>
+<ul>
+<li>worker饥饿：通过火焰图分析，订阅端的worker线程，大部分时候出于饥饿状态，需继续优化，充分利用worker线程。 <img alt="sub-perf" loading="lazy" src="/images/PostgreSQL/3-13-logical-replication-tuning/sub-perf.png"></li>
+<li>负载均衡：tpcc中，1个事务中执行的写操作，从5个到20+个不等，订阅端回放结果如下： <img alt="sub-res" loading="lazy" src="/images/PostgreSQL/3-13-logical-replication-tuning/sub-res.png"></li>
+</ul>
+</li>
+</ul>
+<h2 id="53-未来方案">5.3 未来方案<a hidden class="anchor" aria-hidden="true" href="#53-未来方案">#</a></h2>
+<h3 id="一计划优化点一发布端-事务提交等待">一、计划优化点一：发布端-事务提交等待<a hidden class="anchor" aria-hidden="true" href="#一计划优化点一发布端-事务提交等待">#</a></h3>
+<p>发布端解码事务commit日志后，判断订阅端进行中的事务量，如果事务较少，则先发送一批其他事务的stm-packpage，再发送commit的logical-msg</p>
+<h2 id="54-方案分析">5.4 方案分析<a hidden class="anchor" aria-hidden="true" href="#54-方案分析">#</a></h2>
+<h3 id="一事务正确性">一、事务正确性<a hidden class="anchor" aria-hidden="true" href="#一事务正确性">#</a></h3>
+<h1 id="6-性能测试">6 性能测试<a hidden class="anchor" aria-hidden="true" href="#6-性能测试">#</a></h1>
+<h1 id="参考资料">参考资料<a hidden class="anchor" aria-hidden="true" href="#参考资料">#</a></h1>
+<ul>
+<li>pg 邮件列表：<a href="https://www.postgresql.org/list/pgsql-hackers/">https://www.postgresql.org/list/pgsql-hackers/</a></li>
+</ul>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/postgresql/">PostgreSQL</a></li><li><a href="http://localhost:1313/tags/%E9%80%BB%E8%BE%91%E5%A4%8D%E5%88%B6/">逻辑复制</a></li><li><a href="http://localhost:1313/tags/%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96/">性能优化</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/postgresql/3-13-replication/">PostgreSQL 3-13 逻辑复制性能优化</a></li><li><a href="/posts/postgresql/3-13-vb-rep/">PostgreSQL 3-13 Vastbase 逻辑复制</a></li><li><a href="/posts/postgresql/3-13-publication/">PostgreSQL 3-13 Publication</a></li><li><a href="/posts/projectdocs/15-design-logical-replication/">海量 15 设计 逻辑复制性能优化</a></li><li><a href="/posts/projectdocs/15-requirement-logical-replication/">海量 15 需求 逻辑复制性能优化</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./PostgreSQL</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

@@ -1,0 +1,2444 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>PostgreSQL 3-2 Transation | Kernel Notes</title>
+<meta name="keywords" content="PostgreSQL, 事务">
+<meta name="description" content="1 事务的概念
+1.1 事务的基本特性
+事务的4个特性：
+
+原子性 Automicity
+一致性 Consistency
+隔离性 Isolation
+持久性 Durability
+
+1.2 事务的隔离性
+不同隔离级别下，可能出现的异常如下：（T 表示可能）
+
+  
+      
+          异常
+          读未提交
+          读已提交
+          可重复读
+          可串行化
+          解释
+      
+  
+  
+      
+          脏读
+          T
+          .
+          .
+          .
+          读其他事务未提交数据
+      
+      
+          不可重复读
+          T
+          T
+          .
+          .
+          2次读取数据不一致
+      
+      
+          幻读
+          T
+          T
+          T
+          .
+          2次读取数据条数不一致
+      
+  
+
+postgresql默认的隔离级别是读已提交
+-- 查看默认事务隔离级别
+show default_transaction_isolation;
+ default_transaction_isolation
+-------------------------------
+ read committed
+
+-- 查询当前的事务快照 pg 10
+SELECT txid_current_snapshot();
+ txid_current_snapshot
+-----------------------
+ 1081:1081:
+
+-- 查询所有正在活跃的进程
+SELECT  * FROM pg_stat_activity;
+
+--
+1.3 事务的实现
+为实现事务，有3种并发控制机制：">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/postgresql/3-6-transaction/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/postgresql/3-6-transaction/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/postgresql/3-6-transaction/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="PostgreSQL 3-2 Transation">
+  <meta property="og:description" content="1 事务的概念 1.1 事务的基本特性 事务的4个特性：
+原子性 Automicity 一致性 Consistency 隔离性 Isolation 持久性 Durability 1.2 事务的隔离性 不同隔离级别下，可能出现的异常如下：（T 表示可能）
+异常 读未提交 读已提交 可重复读 可串行化 解释 脏读 T . . . 读其他事务未提交数据 不可重复读 T T . . 2次读取数据不一致 幻读 T T T . 2次读取数据条数不一致 postgresql默认的隔离级别是读已提交
+-- 查看默认事务隔离级别 show default_transaction_isolation; default_transaction_isolation ------------------------------- read committed -- 查询当前的事务快照 pg 10 SELECT txid_current_snapshot(); txid_current_snapshot ----------------------- 1081:1081: -- 查询所有正在活跃的进程 SELECT * FROM pg_stat_activity; -- 1.3 事务的实现 为实现事务，有3种并发控制机制：">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2025-01-21T13:55:00+08:00">
+    <meta property="article:modified_time" content="2026-08-14T17:47:31+08:00">
+    <meta property="article:tag" content="PostgreSQL">
+    <meta property="article:tag" content="事务">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="PostgreSQL 3-2 Transation">
+<meta name="twitter:description" content="1 事务的概念
+1.1 事务的基本特性
+事务的4个特性：
+
+原子性 Automicity
+一致性 Consistency
+隔离性 Isolation
+持久性 Durability
+
+1.2 事务的隔离性
+不同隔离级别下，可能出现的异常如下：（T 表示可能）
+
+  
+      
+          异常
+          读未提交
+          读已提交
+          可重复读
+          可串行化
+          解释
+      
+  
+  
+      
+          脏读
+          T
+          .
+          .
+          .
+          读其他事务未提交数据
+      
+      
+          不可重复读
+          T
+          T
+          .
+          .
+          2次读取数据不一致
+      
+      
+          幻读
+          T
+          T
+          T
+          .
+          2次读取数据条数不一致
+      
+  
+
+postgresql默认的隔离级别是读已提交
+-- 查看默认事务隔离级别
+show default_transaction_isolation;
+ default_transaction_isolation
+-------------------------------
+ read committed
+
+-- 查询当前的事务快照 pg 10
+SELECT txid_current_snapshot();
+ txid_current_snapshot
+-----------------------
+ 1081:1081:
+
+-- 查询所有正在活跃的进程
+SELECT  * FROM pg_stat_activity;
+
+--
+1.3 事务的实现
+为实现事务，有3种并发控制机制：">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "PostgreSQL 3-2 Transation",
+      "item": "http://localhost:1313/posts/postgresql/3-6-transaction/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "PostgreSQL 3-2 Transation",
+  "name": "PostgreSQL 3-2 Transation",
+  "description": "1 事务的概念 1.1 事务的基本特性 事务的4个特性：\n原子性 Automicity 一致性 Consistency 隔离性 Isolation 持久性 Durability 1.2 事务的隔离性 不同隔离级别下，可能出现的异常如下：（T 表示可能）\n异常 读未提交 读已提交 可重复读 可串行化 解释 脏读 T . . . 读其他事务未提交数据 不可重复读 T T . . 2次读取数据不一致 幻读 T T T . 2次读取数据条数不一致 postgresql默认的隔离级别是读已提交\n-- 查看默认事务隔离级别 show default_transaction_isolation; default_transaction_isolation ------------------------------- read committed -- 查询当前的事务快照 pg 10 SELECT txid_current_snapshot(); txid_current_snapshot ----------------------- 1081:1081: -- 查询所有正在活跃的进程 SELECT * FROM pg_stat_activity; -- 1.3 事务的实现 为实现事务，有3种并发控制机制：\n",
+  "keywords": [
+    "PostgreSQL", "事务"
+  ],
+  "articleBody": "1 事务的概念 1.1 事务的基本特性 事务的4个特性：\n原子性 Automicity 一致性 Consistency 隔离性 Isolation 持久性 Durability 1.2 事务的隔离性 不同隔离级别下，可能出现的异常如下：（T 表示可能）\n异常 读未提交 读已提交 可重复读 可串行化 解释 脏读 T . . . 读其他事务未提交数据 不可重复读 T T . . 2次读取数据不一致 幻读 T T T . 2次读取数据条数不一致 postgresql默认的隔离级别是读已提交\n-- 查看默认事务隔离级别 show default_transaction_isolation; default_transaction_isolation ------------------------------- read committed -- 查询当前的事务快照 pg 10 SELECT txid_current_snapshot(); txid_current_snapshot ----------------------- 1081:1081: -- 查询所有正在活跃的进程 SELECT * FROM pg_stat_activity; -- 1.3 事务的实现 为实现事务，有3种并发控制机制：\nMVCC: Multi-Version Concurrency Control, 多版本并发控制 S2PL: Strict 2-Phase Lock OCC: Optimistic Concurrency Control 1.4 PostgreSQL的MVCC机制 PostgreSQL对数据的关键操作：\n新增数据：INSERT 修改数据：DELETE、UPDATE 查询数据：SELECT postgresql使用MVCC机制，主要原理如下：\n新增数据 为每个事务分配一个递增的ID 事务生成tuple时，tuple携带事务ID 删除数据 生成事务快照 根据事务快照，判断待删除数据是否可见 事务删除tuple时，tuple携带事务ID 查询数据 生成事务快照 根据tuple时携带的ID，从快照中查询对应事务的提交状态，判断tuple是否可见 | 操作 | 获取快照次数 | 使用快照次数 | 获取事务id次数 |\n|-|-|-|\n| INSERT | 2 | 0 | 1 |\n| UPDATE | 2 | 1 | 1 |\n| DELETE | 2 | 1 | 1 |\n| SELECT | 2 | 1 | 0 |\n# 1 生成事务快照 GetTransactionSnapshot heap_insert GetCurrentTransactionId # 申请事务id heap_delete GetCurrentTransactionId HeapTupleSatisfiesUpdate # 查询提交日志 heap_update GetCurrentTransactionId HeapTupleSatisfiesUpdate # 查询提交日志 heapgettup HeapTupleSatisfiesVisibility # 查询事务快照 HeapTupleSatisfiesMVCC 1.5 判断元组可见性 本博客已2个事务，并发INSERT和DELETE为例，介绍元组可见性判断。\n场景一\n| Time| Trancation 1 (xid=1) | Trancation 2 (xid=2) | tuple state +-----+---------------------------+-----------------------+-------------- | 1 | BEGIN | - | | 2 | INSERT INTO t1 VALUES (1) | - | | 3 | COMMIT | - | | 4 | - | BEGIN | | 5 | - | DELETE FROM t1 | | 6 | - | COMMIT | +-----+---------------------------+-----------------------+-------------- | 1 | BEGIN | - | | 2 | INSERT INTO t1 VALUES (1) | - | | 3 | ROLLBACK | - | | 4 | - | BEGIN | | 5 | - | DELETE FROM t1 | | 6 | - | COMMIT | +-----+---------------------------+-----------------------+-------------- | 1 | BEGIN | - | | 2 | INSERT INTO t1 VALUES (1) | - | | 3 | DELETE FROM t1 | - | | 3 | COMMIT | - | | 4 | - | BEGIN | | 5 | - | DELETE FROM t1 | | 6 | - | COMMIT | +-----+---------------------------+-----------------------+-------------- | 1 | BEGIN | - | | 2 | INSERT INTO t1 VALUES (1) | - | | 3 | DELETE FROM t1 | - | | 3 | COMMIT | - | | 4 | - | BEGIN | | 5 | - | DELETE FROM t1 | | 6 | - | COMMIT | +-----+---------------------------+-----------------------+-------------- | 1 | BEGIN | - | | 2 | INSERT INTO t1 VALUES (1) | - | | 3 | - | BEGIN | | 4 | - | DELETE FROM t1 | | 5 | COMMIT | - | | 6 | - | COMMIT | +-----+---------------------------+-----------------------+-------------- | 1 | BEGIN | - | | 2 | INSERT INTO t1 VALUES (1) | - | | 3 | - | BEGIN | | 4 | - | DELETE FROM t1 | | 5 | COMMIT | - | | 6 | - | COMMIT | 生成新tuple\ntuple xmin = xid xmax = 0 cid = cid infomask = HEAP_XMAX_INVALID 删除Tuple\ntuple cid = cid xmax = xid xmin：写入tup的事务 xmax：删除tup的事务 cid：如果xmax无效，则表示写入tup的SQL语句在事务中的编号。否则，则表示删除tup的SQL语句在事务中的编号。 检查tup可见性，主要从3个方便判断：\n检查xmin，即检查写入tup的事务的状态。xmin事务共有3种状态：已提交、未提交、已回滚或已故障 检查xmax，即检查删除tup的事务的状态。只有xmin事务已提交，才需进一步检查xmax事务。xmax事务共有3种状态：已提交、未提交、已回滚或已故障或不存在（即未有事务尝试删除过） 检查cid，即检查同一事务内修改tup的顺序。只有xmin或xmax事务是本事务，才需要检查cid 所以，检查tup可见性的大致逻辑是：\n先检查xmin事务的状态 如果xmin事务已提交，再检查xmax事务状态 其中，如果xmin事务或xmax事务是本事务，需额外检查cid 检查tup可见性的详细逻辑如下：\nxmin 本事务 已提交 cid小于本command cid大于本command [HeapTupleInvisible] 未提交 已回滚或故障 非本事务 已提交 xmax 本事务 cid小于本command cid大于本command 非本事务 已提交 未提交 已回滚或已故障或不存在 未提交 [HeapTupleInvisible] 已回滚或故障 判断事务的3种状态的方法：\n判断事务未提交： 判断事务已提交： 判断事务已回滚或已故障： 上述描述中，如果每次操作tup时，都需检查commit log来判断事务是否已提交，开销较大。如果操作tup的事务已提交，可以在tup中设置一些标记，下次再检查时，根据标记即可获取事务状态，无需频繁访问commit log。\n以下是我整理的简洁版的tup可见性判断：\n# 阶段一、获取tup状态，先检查tup是否被成功修改 # 如果tup未被成功修改，阶段二再检查本事务是否可见tup if tup.xmin = my.xid: if tup.cid \u003e= my.cid: return HeapTupleInvisible else: if tup.xmin != my.xid return HeapTupleMayBeUpdated else: if tup.cid \u003e= my.cid: # related to scan, remain, not understand return HeapTupleSelfUpdated else: return HeapTupleInvisible else: if tup.xmin.stat = uncommit: # check all process return HeapTupleInvisible elif tup.xmin.stat = commit: # check commit log if tup.xmax = my.xid: if tup.cid \u003e= my.cid: return HeapTupleSelfUpdated else: return HeapTupleInvisible else: if tup.xmax.stat = uncommit: return HeapTupleBeingUpdated else: if tup.xmax.stat = rollback: return HeapTupleMayBeUpdated # tup未被修改，无事务修改tup，或修改的事务已回滚 else: # tup.xmax.stat = commit return HeapTupleUpdated # tup被修改，修改事务已提交 else tup.xmin.stat = rollback: return HeapTupleInvisible # 阶段二，根据tup状态，如果tup未被成功修改， if tup.stat = HeapTupleInvisible: error elif tup.stat = HeapTupleBeingUpdated: if tup.xmax != my.xid: XactLockTableWait 等锁释放 if tup.infomask = HEAP_XMAX_INVALID: tup.stat = HeapTupleMayBeUpdated else: tup.stat = HeapTupleUpdated else: if tup.infomask = HEAP_XMAX_INVALID: tup.stat = HeapTupleMayBeUpdated else: tup.stat = HeapTupleUpdated if tup.stat = HeapTupleMayBeUpdated: if ! check visibility tup, snapshot: tup.stat = HeapTupleUpdated if tup.stat != HeapTupleMayBeUpdated: return tup.cmax = my.xid 检查tuple可见性的几种返回值 HTSU_Result\nHeapTupleMayBeUpdated tup可见，可被更新，没有事务修改过它 HeapTupleInvisible tup 不可见 HeapTupleSelfUpdated tup可见，当前事务已修改过tup HeapTupleUpdated tup可见，修改tup的事务已提交 HeapTupleBeingUpdated tup可见，有事务修改tup，修改它的事务没提交，需等其他事务提交 HeapTupleWouldBlock 如果对元组加锁，当前事务可能会被阻塞 以下是完整版的tup可见性判断：\nHeapTupleSatisfiesUpdate # 阶段一、检查Tuple的写入事务 if !HeapTupleHeaderXminCommitted(tuple): # （快速判断）not tuple-\u003einfomask \u0026 HEAP_XMIN_COMMITTED if HeapTupleHeaderXminInvalid: # tuple-\u003einfomask \u0026 [HEAP_XMIN_COMMITTED | HEAP_XMIN_INVALID] = HEAP_XMIN_INVALID return HeapTupleInvisible if TransactionIdIsCurrentTransactionId(tuple-\u003exmin): # Tuple-\u003exmin 的写入事务 是 本事务 if tuple-\u003ecid \u003e= curcid: # 根据cid判断可见性 return HeapTupleInvisible # 省略，看不懂 elif TransactionIdIsInProgress(tuple-\u003exmin): # Tuple的写入事务 未提交 return HeapTupleInvisible elif TransactionIdDidCommit(tuple-\u003exmin): # Tuple的写入事务 已提交（慢速判断，查询事务日志） tuple-\u003einfomask \u0026 HEAP_XMIN_COMMITTED else: tuple-\u003einfomask \u0026 HEAP_XMIN_INVALID # 未找到Tuple的写入事务的提交日志 return HeapTupleInvisible else: # Tuple的写入事务 已提交 # 阶段二、检查Tuple的删除事务 if tuple-\u003et_infomask \u0026 HEAP_XMAX_INVALID: # 初始状态，并没有事务尝试删除Tuple，INSERT时，t_infomask初始值为HEAP_XMAX_INVALID return HeapTupleMayBeUpdated else: if tuple-\u003et_infomask \u0026 HEAP_XMAX_COMMITTED： # （快速判断）Tuple的删除事务，已提交 return HeapTupleUpdated if tuple-\u003et_infomask \u0026 HEAP_XMAX_IS_MULTI # 暂时忽略 ... if TransactionIdIsCurrentTransactionId(tuple-\u003exmax): # Tuple的删除事务，是本事务 if tuple-\u003ecid \u003e= curcid: return HeapTupleSelfUpdated # 自己未来删除？ else: return HeapTupleInvisible else; if TransactionIdIsInProgress(tuple-\u003exmax): # Tuple的删除事务，未提交，（遍历所有正在运行中的线程，判断事务状态） return HeapTupleBeingUpdated else: # 删除Tuple的事务，已提交或发生异常 if not TransactionIdDidCommit(tuple-\u003exmax)：# Tuple的删除事务，未提交（遍历事务提交日志） tuple-\u003einfomask \u0026 HEAP_XMAX_INVALID # 删除Tuple的事务，发生异常了 return HeapTupleMayBeUpdated else: # Tuple的删除事务，已提交 tuple-\u003einfomask \u0026 HEAP_XMAX_COMMITTED return HeapTupleUpdated 2 PostgreSQL事务的实现 2.1 INSERT 插入数据时，获取2次快照，获取1次事务id。未用上快照\nexec_simple_query # 1. 简单的初始化 start_xact_command # 2. 对于INSERT/SELECT/UPDATE/DELETE语句，在语义分析之前，都会调用一次GetTransactionSnapshot，来生成一次快照 # 此处的快照，用于语义分析、计划初始化 if analyze_requires_snapshot GetTransactionSnapshot pg_analyze_and_rewrite pg_plan_queries PortalStart PortalRun if PORTAL_MULTI_QUERY: PortalRunMulti # 3. 对于INSERT/DELETE/UPDATE等语法，重新获取最新快照 GetTransactionSnapshot ProcessQuery ExecutorRun ExecutePlan ExecProcNode ExecModifyTable ExecInsert # 4. 调用存储统一接口 heap_insert GetCurrentTransactionId # 5. 获取当前事务的id heap_prepare_insert # 6. 将事务id写入Tuple ... # 7. 继续其他heap_insert操作 2.2 DELETE 插入数据时，获取2次快照，获取1次事务id\nexec_simple_query # 1. 简单的初始化 start_xact_command # 2. 对于INSERT/SELECT/UPDATE/DELETE语句，在语义分析之前，都会调用一次GetTransactionSnapshot，来生成一次快照 # 此处的快照，用于语义分析、计划初始化 if analyze_requires_snapshot GetTransactionSnapshot pg_analyze_and_rewrite pg_plan_queries PortalStart PortalRun if PORTAL_MULTI_QUERY: PortalRunMulti # 3. 对于INSERT/DELETE/UPDATE等语法，重新获取最新快照 GetTransactionSnapshot ProcessQuery ExecutorRun ExecutePlan ExecProcNode ExecModifyTable ExecDelete # 4. 调用存储统一接口 heap_delete GetCurrentTransactionId # 5. 获取当前事务的id # 6 根据提交日志，检查事务可见性 HeapTupleSatisfiesUpdate 2.3 UPDATE 更新数据时，获取2次快照，获取1次事务id\nexec_simple_query # 1. 简单的初始化 start_xact_command # 2. 对于INSERT/SELECT/UPDATE/DELETE语句，在语义分析之前，都会调用一次GetTransactionSnapshot，来生成一次快照 # 此处的快照，用于语义分析、计划初始化 if analyze_requires_snapshot GetTransactionSnapshot pg_analyze_and_rewrite pg_plan_queries PortalStart PortalRun if PORTAL_MULTI_QUERY: PortalRunMulti # 3. 对于INSERT/DELETE/UPDATE等语法，重新获取最新快照 GetTransactionSnapshot ProcessQuery ExecutorRun ExecutePlan ExecProcNode ExecModifyTable ExecUpdate # 4. 调用存储统一接口 heap_update GetCurrentTransactionId # 5. 获取当前事务的id 2.4 SELECT 插入数据时，获取2次快照，未获取事务id\nexec_simple_query # 1. 简单的初始化 start_xact_command # 2. 对于INSERT/SELECT/UPDATE/DELETE语句，在语义分析之前，都会调用一次GetTransactionSnapshot，来生成一次快照 # 此处的快照，用于语义分析、计划初始化 if analyze_requires_snapshot GetTransactionSnapshot pg_analyze_and_rewrite pg_plan_queries # 3. 获取快照 PortalStart GetTransactionSnapshot PortalRun if PORTAL_ONE_SELECT: PortalRunSelect ExecutorRun standard_ExecutorRun ExecutePlan ExecProcNode ExecSeqScan SeqNext # 3. 在heapam层，使用快照 heap_getnext heapgettup HeapTupleSatisfiesVisibility HeapTupleSatisfiesMVCC if !HeapTupleHeaderXminCommitted: XidInMVCCSnapshot(HeapTupleHeaderGetRawXmin(tuple), HeapScanDesc-\u003ers_snapshot) # tuple 不可见 2.1 分配事务ID 事务ID类型：postgresql使用TransactionId表示事务ID，类型为uint32，简写为xid\n事务Id分配时机：\n场景一：执行INSERT等语句，在写入数据时，才分配事务ID，分配时机如下：\nexec_simple_query PortalRun ProcessQuery ExecutorRun standard_ExecutorRun ExecutePlan ExecProcNode ExecModifyTable ExecInsert heap_insert GetCurrentTransactionId AssignTransactionId TopTransactionStateData-\u003etransactionId GetNewTransactionId /* 获取事务ID */ ExtendCLOG /* 记录事务状态 */ ExtendCommitTs ExtendSUBTRANS XLogInsert(RM_XACT_ID, XLOG_XACT_ASSIGNMENT) 场景二：执行SELECT语句，无需生成事务ID。只需在执行语句时，获取一次所有事务的状态即可（快照），将来的事务不在事务状态内。根据快照判断tuple可读性即可。\n场景三：执行BEGIN语句，并不会立刻分配事务ID，在事务中执行SELECT等也不会分配事务ID。\nexec_simple_query PortalRun PortalRunMulti PortalRunUtility ProcessUtility standard_ProcessUtility BeginTransactionBlock /* do nothing */ 事务ID持久化：在分配事务ID时，会生成xlog记录分配事务ID的操作\n2.2 保存事务状态 事务状态分为2部分：快照记录了所有进程当前处理的事务ID，提交日志记录了所有事务的状态\n2.2.1 事务ID 全局事务ID\nallProcs allPgXact # 记录xid +--------+ +--------+ | PGPROC | --- | PGXACT | +--------+ +--------+ | PGPROC | --- | PGXACT | +--------+ +--------+ | PGPROC | --- | PGXACT | +--------+ +--------+ | ... | --- | ... | +--------+ +--------+ struct PGPROC { ... int pgprocno; ... }; struct PGXACT { TransactionId xid; TransactionId xmin; /* 开始事务时，最小的xid */ ... }; 2.2.2 事务快照 查看当前的事务快照：\nSELECT txid_current_snapshot(); 一、快照的内容\n获取事务快照的函数是GetSnapshotData，该函数会获取所有进程中当前事务的xid\nGetSnapshotData snapshot-\u003exmax = ShmemVariableCache-\u003elatestCompletedXid for idx in procArray: # 遍历 allPgXact，获取所有xid pgprocno = procArray[idx] PGXACT *pgxact = \u0026allPgXact[pgprocno] xid = pgxact-\u003exid snapshot-\u003exip[count++] = xid xin = MIN(xid, xin) snapshot-\u003excnt = count snapshot-\u003exin = xin 二、获取快照的时机\n每执行一条SQL时，都会获取一次快照。获取快照的函数为：GetTransactionSnapshot。\n如果是\nexec_simple_query start_xact_command # 1. 简单的初始化 StartTransactionCommand StartTransaction if analyze_requires_snapshot # 2. 如果分析 INSERT/SELECT/UPDATE/DELETE，需要快照 PushActiveSnapshot(GetTransactionSnapshot) if IsolationUsesXactSnapshot： # XactIsoLevel \u003e= XACT_REPEATABLE_READ return CurrentSnapshot # 3. 如果是可重复读级别及以上，获取旧快照 GetSnapshotData # 4. 如果是读已提交，则获取新快照 xmax for pgprocno in procArray: xip[count++] = allPgXact[pgprocno]-\u003exid xmin pg_analyze_and_rewrite pg_plan_queries PopActiveSnapshot # 3. 生成计划后，删除分析阶段的快照 PortalStart if PORTAL_ONE_SELECT: PushActiveSnapshot(GetTransactionSnapshot) # 4. 如果是SELECT语句，执行计划初始化阶段，生成快照，并将快照保存在执行计划中 CreateQueryDesc QueryDesc-\u003esnapshot = RegisterSnapshot(GetActiveSnapshot) ExecutorStart standard_ExecutorStart RegisterSnapshot(QueryDesc-\u003esnapshot) PopActiveSnapshot PortalRun if PORTAL_ONE_SELECT: # 5. SELECT语句无需重新获取快照，Scan使用的快照，是第4步生成的 if PORTAL_MULTI_QUERY: PortalRunMulti GetTransactionSnapshot #6. 对于INSERT/DELETE/UPDATE等语法，在执行阶段才获取快照 ProcessQuery 三、使用快照的时机\nexec_simple_query start_xact_command pg_analyze_and_rewrite pg_plan_queries PortalStart if PORTAL_ONE_SELECT: PushActiveSnapshot(GetTransactionSnapshot) # 4. 如果是SELECT语句，执行计划初始化阶段，生成快照，并将快照保存在执行计划中 RegisterSnapshot(GetActiveSnapshot) PopActiveSnapshot PortalRun if PORTAL_ONE_SELECT: PortalRunSelect PushActiveSnapshot(QueryDesc-\u003esnapshot) # 5. SELECT语句无需重新获取快照，Scan使用的快照，是第4步生成的 ExecutorRun standard_ExecutorRun ExecutePlan ExecProcNode ExecSeqScan SeqNext heap_getnext heapgettup HeapTupleSatisfiesVisibility HeapTupleSatisfiesMVCC if !HeapTupleHeaderXminCommitted: XidInMVCCSnapshot(HeapTupleHeaderGetRawXmin(tuple), HeapScanDesc-\u003ers_snapshot) # tuple 不可见 PopActiveSnapshot() if PORTAL_MULTI_QUERY: PortalRunMulti GetTransactionSnapshot #6. 对于INSERT/DELETE/UPDATE等语法，在执行阶段才获取快照 RegisterSnapshot PushCopiedSnapshot ProcessQuery ExecutorStart ExecutorRun ExecutePlan ExecProcNode ExecModifyTable ExecInsert heap_insert # INSERT 好像用不到快照 ExecUpdate heap_update HeapTupleSatisfiesUpdate TransactionIdIsInProgress(HeapTupleHeaderGetRawXmin(tuple)) HeapTupleSatisfiesVisibility HeapTupleHeaderAdjustCmax ExecDelete heap_delete HeapTupleSatisfiesUpdate HeapTupleSatisfiesVisibility HeapTupleHeaderAdjustCmax PortalDrop finish_xact_command 2.2.3 提交日志 一、提交日志\n事务的提交日志中，记录了所有事务的状态：是否在运行、是否已提交等\n由于事务ID是从1开始递增，可用位图表示所有事务的状态，位图的索引即事务ID\n提交日志也需持久化，位图被划分存储在Page中，Page存储在提交日志文件中\n内存中也会缓存一些Page，使用LRU缓存Page\nClogCtlData / ClogCtl +------+------+------+------+ | Page | Page | Page | Page | +------+------+------+------+ XidStatus #define TRANSACTION_STATUS_IN_PROGRESS\t0x00 #define TRANSACTION_STATUS_COMMITTED\t0x01 #define TRANSACTION_STATUS_ABORTED\t0x02 #define TRANSACTION_STATUS_SUB_COMMITTED\t0x03 二、更新提交日志\n在分析或执行阶段，首次获取事务ID时，会扩展提交日志。在执行结束后，会根据事务状态更新提交日志。\nexec_simple_query start_xact_command # 执行解析、分析、执行等步骤 PortalRun ... heap_insert GetNewTransactionId /* 获取事务ID */ ExtendCLOG /* 记录事务状态 */ finish_xact_command CommitTransactionCommand # autovacuum / walsender等都会调用 s = CurrentTransactionState if TBLOCK_STARTED: CommitTransaction ProcArrayEndTransaction # 清理进程当前处理的xid pgxact = \u0026allPgXact[pgprocno] ProcArrayEndTransactionInternal pgxact-\u003exid = InvalidTransactionId; pgxact-\u003exmin = InvalidTransactionId RecordTransactionCommit / xact_redo_commit # 更新提交日志 XactLogCommitRecord XLogInsert(RM_XACT_ID, info) # 生成xlog，记录事务已提交 TransactionIdCommitTree TransactionIdSetTreeStatus(TRANSACTION_STATUS_COMMITTED) if TBLOCK_BEGIN: 不提交事务 s-\u003eblockState = TBLOCK_INPROGRESS if TBLOCK_INPROGRESS: CommandCounterIncrement # 其他更新事务状态的场景，不额外介绍 TransactionIdAsyncCommitTree TransactionIdSetTreeStatus(TRANSACTION_STATUS_COMMITTED) TransactionIdAbortTree TransactionIdSetTreeStatus(TRANSACTION_STATUS_ABORTED) 三、使用提交日志\n在更新或删除一条tuple前，会先检查是否有事务删除tuple，如果有则检查事务是已提交。判断是否已提交便是根据提交日志判断。下文会继续介绍判断逻辑\nheap_update HeapTupleSatisfiesUpdate TransactionIdDidCommit TransactionLogFetch UpdateXmaxHintBits XidStatus = TransactionIdDidCommit return xidstatus == TRANSACTION_STATUS_COMMITTED heap_delete UpdateXmaxHintBits TransactionIdDidCommit 2.3 Tuple携带事务ID 以下是tuple的结构：\ntypedef struct { /* ignore Union */ TransactionId t_xmin; /* 生成tuple的事务ID */ TransactionId t_xmax; /* 删除tuple的事务ID，默认为0 */ CommandId\tt_cid; ItemPointerData t_ctid; /* 更新tuple时，新数据的事务ID，默认为0 */ uint16 t_infomask2; uint16 t_infomask; uint8 t_hoff; bits8 t_bits[FLEXIBLE_ARRAY_MEMBER]; /* tuple data */ } HeapTupleHeader; 2.4 判断Tuple可见性 内容太多，学得头大，下次继续\nheap_insert(rel, tup, cid) # CommandId xid = get_cur_trans_id() heap_prepare_insert(rel, tup, xid, cid) heap_tup_set_xmin(tup, xid) heap_tup_set_cmin(tup, cid) buf = rel_get_buf_for_tup(rel, tup.len) blkno = get_page_with_free_space(rel, tlen) fsm_search(rel, tlen) fsm_search_avail(rel, tlen) read_buffer_bi(rel, blkno) read_buf(rel, blkno) read_buf_extend(rel, blkno) read_buf_comm(rel, blkno) bufhdr = buf_alloc(rel, blkno) lwlock_acquire(bufhdr, LW_EXCLUSIVE) visibilitymap_pin(rel, vmbuf) vm_readbuf() vm_extend() read_buf_extend() lock_buffer(BUFFER_LOCK_EXCLUSIVE) ... needlock = not rel_is_local(rel) if needlock: LockRelationForExtension(rel, ExclusiveLock) LockAcquire(rel, ExclusiveLock) LockAcquireExtended(rel, ExclusiveLock) LockAcquireExtended(relid, mode) locallock = hash_search(LockMethodLocalHash, relid, enter) typedef struct { LOCKTAG tag; SHM_QUEUE proLocks; /* 持有锁的进程：PROCLOCK */ PROC_QUEUE waitProcs; /* PGPROC */ int granted[MAX_LOCKMODES]; /* 锁上加锁次数，会同时持有多种锁 */ } LOCK; typedef struct { PROCLOCKTAG tag; PGPROC *groupLeader; SHM_QUEUE lockLink; /* LOCK */ SHM_QUEUE proLink; /* PGPROC */ } PROCLOCK; 每个后端进程维护正持有的锁和等待加的锁。\ntypedef struct { LOCALLOCKTAG tag; LOCK lock; PROCLOCK *proclock; int64 nLocks; /* 持有锁数量 */ } LOCALLOCK; 加锁：LockAcquire()\n查找进程持有锁，如果存在，返回锁，granted++ 通过fastpath找锁 在哈希表中加锁：先创建LOCK，PROLOCK if 加锁与等锁冲突：等待，if 加锁失败：等待 if dontwait: 返回加锁失败，否则，进入等待队列，进程休眠 放锁：\n查找进程持有锁，如果存在，if –ResourceOwner = 0: 释放锁。granted– 从fastpath找锁 从哈希表找锁 释放锁，唤醒其他等锁进程 锁 取值 操作 AccessShareLock 1 SELECT RowShareLock 2 SELECT FOR UPDATE/SHARE RowExclusiveLock 3 INSERT/UPDATE/DELETE ShareUpdateExclusiveLock 4 VACUUM/ANALYZE/CRATE INDEX CONCURRENTLY ShareLock 5 CREATE INDEX ShareRowExclusiveLock 6 row share ExclusiveLock 7 block ROW SHARE/SELECT FOR UPDATE AccessExclusiveLock 8 ALTER TABLE/DROP TABLE/VACUUM FULL - heap_open(relid lockmode) # not index - relation_open(relid, lockmode) # any rel LockRelationOid(relid, lockmode) LockAcquire(tag, lockmode) RelationIdGetRelation(relid) if RelationIdCacheLookup(relationId, rd) -\u003e hash_search(RelationIdCache) RelationIncrementReferenceCount(rel) else RelationBuildDesc(relid) RelationIncrementReferenceCount(rel) - heap_close(relid, lockmode) - relation_close(rel, lockmode) RelationClose(rel) RelationDecrementReferenceCount() UnlockRelationId(lockmode) heap_insert(rel, tup, cid) xid = GetCurrentTransactionId() tup = heap_prepare_insert() # set [ insert xid | delete xid | cmd id | ... ] buf = RelationGetBufferForTuple(rel, tup.len) LockRelationForExtension(rel, ExclusiveLock) ReadBuffer(rel, blkno) # LWLockAcquire(bufhdr, LW_EXCLUSIVE), LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE) UnlockRelationForExtension(rel, ExclusiveLock) RelationPutHeapTuple(rel, buf, tup) # PageAddItem /* xlog */ UnlockReleaseBuffer(buf) LockBuffer(buf, BUFFER_LOCK_UNLOCK) ReleaseBuffer(buf) heap_delete(rel, tid, cid, snapshot) xid = GetCurrentTransactionId() buf = ReadBuffer(rel, ItemPointerGetBlockNumber(tid)) LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE) ... 复杂 heap_acquire_tuplock(rel, tup, LockTupleExclusive, LockWaitBlock) ... UnlockTupleTuplock(rel, tup, LockTupleExclusive) heap_update(rel, okdtid, newtup, cid, snapshot, lockmode) relation锁： buffer锁： call LWLockAcquire(LW_SHARED / LW_EXCLUSIVE) #define BUFFER_LOCK_UNLOCK\t0 #define BUFFER_LOCK_SHARE\t1 #define BUFFER_LOCK_EXCLUSIVE\t2 tuple锁： typedef enum { LockTupleKeyShare, /* SELECT FOR KEY SHARE */ LockTupleShare, /* SELECT FOR SHARE */ LockTupleNoKeyExclusive, /* SELECT FOR NO KEY UPDATE, and UPDATEs that don't modify key columns */ LockTupleExclusive, /* SELECT FOR UPDATE, UPDATEs that modify key columns, and DELETE */ } LockTupleMode; 映射到reguler锁 LockMode { {AccessShareLock, MultiXactStatusForKeyShare, -1}, {RowShareLock, MultiXactStatusForShare, -1}, {ExclusiveLock, MultiXactStatusForNoKeyUpdate, MultiXactStatusNoKeyUpdate,}, {AccessExclusiveLock, MultiXactStatusForUpdate, MultiXactStatusUpdate} } LockTupleTuplock(rel, tid, lockmode) LockTuple(rel, tup, tupleLockExtraInfo[lockmode]) LockAcquire(tag, lockmode) typedef enum { MultiXactStatusForKeyShare = 0x00, MultiXactStatusForShare = 0x01, MultiXactStatusForNoKeyUpdate = 0x02, MultiXactStatusForUpdate = 0x03, /* an update that doesn't touch \"key\" columns */ MultiXactStatusNoKeyUpdate = 0x04, /* other updates, and delete */ MultiXactStatusUpdate = 0x05 } MultiXactStatus; ",
+  "wordCount" : "1944",
+  "inLanguage": "en",
+  "datePublished": "2025-01-21T13:55:00+08:00",
+  "dateModified": "2026-08-14T17:47:31+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/postgresql/3-6-transaction/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      PostgreSQL 3-2 Transation
+    </h1>
+    <div class="post-meta">
+      <span title='2025-01-21 13:55:00 +0800 CST'>January 21, 2025</span>&nbsp;·&nbsp;<span>10 min</span>&nbsp;·&nbsp;<span>1944 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#1-%e4%ba%8b%e5%8a%a1%e7%9a%84%e6%a6%82%e5%bf%b5" aria-label="1 事务的概念">1 事务的概念</a><ul>
+                        
+                <li>
+                    <a href="#11-%e4%ba%8b%e5%8a%a1%e7%9a%84%e5%9f%ba%e6%9c%ac%e7%89%b9%e6%80%a7" aria-label="1.1 事务的基本特性">1.1 事务的基本特性</a></li>
+                <li>
+                    <a href="#12-%e4%ba%8b%e5%8a%a1%e7%9a%84%e9%9a%94%e7%a6%bb%e6%80%a7" aria-label="1.2 事务的隔离性">1.2 事务的隔离性</a></li>
+                <li>
+                    <a href="#13-%e4%ba%8b%e5%8a%a1%e7%9a%84%e5%ae%9e%e7%8e%b0" aria-label="1.3 事务的实现">1.3 事务的实现</a></li>
+                <li>
+                    <a href="#14-postgresql%e7%9a%84mvcc%e6%9c%ba%e5%88%b6" aria-label="1.4 PostgreSQL的MVCC机制">1.4 PostgreSQL的MVCC机制</a></li>
+                <li>
+                    <a href="#15-%e5%88%a4%e6%96%ad%e5%85%83%e7%bb%84%e5%8f%af%e8%a7%81%e6%80%a7" aria-label="1.5 判断元组可见性">1.5 判断元组可见性</a></li></ul>
+                </li>
+                <li>
+                    <a href="#2-postgresql%e4%ba%8b%e5%8a%a1%e7%9a%84%e5%ae%9e%e7%8e%b0" aria-label="2 PostgreSQL事务的实现">2 PostgreSQL事务的实现</a><ul>
+                        
+                <li>
+                    <a href="#21-insert" aria-label="2.1 INSERT">2.1 INSERT</a></li>
+                <li>
+                    <a href="#22-delete" aria-label="2.2 DELETE">2.2 DELETE</a></li>
+                <li>
+                    <a href="#23-update" aria-label="2.3 UPDATE">2.3 UPDATE</a></li>
+                <li>
+                    <a href="#24-select" aria-label="2.4 SELECT">2.4 SELECT</a></li>
+                <li>
+                    <a href="#21-%e5%88%86%e9%85%8d%e4%ba%8b%e5%8a%a1id" aria-label="2.1 分配事务ID">2.1 分配事务ID</a></li>
+                <li>
+                    <a href="#22-%e4%bf%9d%e5%ad%98%e4%ba%8b%e5%8a%a1%e7%8a%b6%e6%80%81" aria-label="2.2 保存事务状态">2.2 保存事务状态</a><ul>
+                        
+                <li>
+                    <a href="#221-%e4%ba%8b%e5%8a%a1id" aria-label="2.2.1 事务ID">2.2.1 事务ID</a></li>
+                <li>
+                    <a href="#222-%e4%ba%8b%e5%8a%a1%e5%bf%ab%e7%85%a7" aria-label="2.2.2 事务快照">2.2.2 事务快照</a></li>
+                <li>
+                    <a href="#223-%e6%8f%90%e4%ba%a4%e6%97%a5%e5%bf%97" aria-label="2.2.3 提交日志">2.2.3 提交日志</a></li></ul>
+                </li>
+                <li>
+                    <a href="#23-tuple%e6%90%ba%e5%b8%a6%e4%ba%8b%e5%8a%a1id" aria-label="2.3 Tuple携带事务ID">2.3 Tuple携带事务ID</a></li>
+                <li>
+                    <a href="#24-%e5%88%a4%e6%96%adtuple%e5%8f%af%e8%a7%81%e6%80%a7" aria-label="2.4 判断Tuple可见性">2.4 判断Tuple可见性</a>
+                </li>
+            </ul>
+            </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><h1 id="1-事务的概念">1 事务的概念<a hidden class="anchor" aria-hidden="true" href="#1-事务的概念">#</a></h1>
+<h2 id="11-事务的基本特性">1.1 事务的基本特性<a hidden class="anchor" aria-hidden="true" href="#11-事务的基本特性">#</a></h2>
+<p>事务的4个特性：</p>
+<ul>
+<li>原子性 Automicity</li>
+<li>一致性 Consistency</li>
+<li>隔离性 Isolation</li>
+<li>持久性 Durability</li>
+</ul>
+<h2 id="12-事务的隔离性">1.2 事务的隔离性<a hidden class="anchor" aria-hidden="true" href="#12-事务的隔离性">#</a></h2>
+<p>不同隔离级别下，可能出现的异常如下：（T 表示可能）</p>
+<table>
+  <thead>
+      <tr>
+          <th>异常</th>
+          <th>读未提交</th>
+          <th>读已提交</th>
+          <th>可重复读</th>
+          <th>可串行化</th>
+          <th>解释</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>脏读</td>
+          <td>T</td>
+          <td>.</td>
+          <td>.</td>
+          <td>.</td>
+          <td>读其他事务未提交数据</td>
+      </tr>
+      <tr>
+          <td>不可重复读</td>
+          <td>T</td>
+          <td>T</td>
+          <td>.</td>
+          <td>.</td>
+          <td>2次读取数据不一致</td>
+      </tr>
+      <tr>
+          <td>幻读</td>
+          <td>T</td>
+          <td>T</td>
+          <td>T</td>
+          <td>.</td>
+          <td>2次读取数据条数不一致</td>
+      </tr>
+  </tbody>
+</table>
+<p>postgresql默认的隔离级别是读已提交</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 查看默认事务隔离级别
+</span></span></span><span class="line"><span class="cl"><span class="k">show</span><span class="w"> </span><span class="n">default_transaction_isolation</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="n">default_transaction_isolation</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-------------------------------
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="k">read</span><span class="w"> </span><span class="k">committed</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 查询当前的事务快照 pg 10
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">txid_current_snapshot</span><span class="p">();</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="n">txid_current_snapshot</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-----------------------
+</span></span></span><span class="line"><span class="cl"><span class="w"> </span><span class="mi">1081</span><span class="p">:</span><span class="mi">1081</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 查询所有正在活跃的进程
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w">  </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_stat_activity</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">--
+</span></span></span></code></pre></div><h2 id="13-事务的实现">1.3 事务的实现<a hidden class="anchor" aria-hidden="true" href="#13-事务的实现">#</a></h2>
+<p>为实现事务，有3种并发控制机制：</p>
+<ul>
+<li>MVCC: Multi-Version Concurrency Control, 多版本并发控制</li>
+<li>S2PL: Strict 2-Phase Lock</li>
+<li>OCC: Optimistic Concurrency Control</li>
+</ul>
+<h2 id="14-postgresql的mvcc机制">1.4 PostgreSQL的MVCC机制<a hidden class="anchor" aria-hidden="true" href="#14-postgresql的mvcc机制">#</a></h2>
+<p>PostgreSQL对数据的关键操作：</p>
+<ul>
+<li>新增数据：INSERT</li>
+<li>修改数据：DELETE、UPDATE</li>
+<li>查询数据：SELECT</li>
+</ul>
+<p>postgresql使用MVCC机制，主要原理如下：</p>
+<ul>
+<li>新增数据
+<ul>
+<li>为每个事务分配一个递增的ID</li>
+<li>事务生成tuple时，tuple携带事务ID</li>
+</ul>
+</li>
+<li>删除数据
+<ul>
+<li>生成事务快照</li>
+<li>根据事务快照，判断待删除数据是否可见</li>
+<li>事务删除tuple时，tuple携带事务ID</li>
+</ul>
+</li>
+<li>查询数据
+<ul>
+<li>生成事务快照</li>
+<li>根据tuple时携带的ID，从快照中查询对应事务的提交状态，判断tuple是否可见</li>
+</ul>
+</li>
+</ul>
+<p>| 操作 | 获取快照次数 | 使用快照次数 | 获取事务id次数 |<br>
+|-|-|-|<br>
+| INSERT | 2 | 0 | 1 |<br>
+| UPDATE | 2 | 1 | 1 |<br>
+| DELETE | 2 | 1 | 1 |<br>
+| SELECT | 2 | 1 | 0 |</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="c1"># 1 生成事务快照</span>
+</span></span><span class="line"><span class="cl"><span class="n">GetTransactionSnapshot</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">heap_insert</span>
+</span></span><span class="line"><span class="cl">    <span class="n">GetCurrentTransactionId</span>  <span class="c1"># 申请事务id</span>
+</span></span><span class="line"><span class="cl"><span class="n">heap_delete</span>
+</span></span><span class="line"><span class="cl">    <span class="n">GetCurrentTransactionId</span>
+</span></span><span class="line"><span class="cl">    <span class="n">HeapTupleSatisfiesUpdate</span> <span class="c1"># 查询提交日志</span>
+</span></span><span class="line"><span class="cl"><span class="n">heap_update</span>
+</span></span><span class="line"><span class="cl">    <span class="n">GetCurrentTransactionId</span>
+</span></span><span class="line"><span class="cl">    <span class="n">HeapTupleSatisfiesUpdate</span> <span class="c1"># 查询提交日志</span>
+</span></span><span class="line"><span class="cl"><span class="n">heapgettup</span>
+</span></span><span class="line"><span class="cl">    <span class="n">HeapTupleSatisfiesVisibility</span>  <span class="c1"># 查询事务快照</span>
+</span></span><span class="line"><span class="cl">        <span class="n">HeapTupleSatisfiesMVCC</span>
+</span></span></code></pre></div><h2 id="15-判断元组可见性">1.5 判断元组可见性<a hidden class="anchor" aria-hidden="true" href="#15-判断元组可见性">#</a></h2>
+<p>本博客已2个事务，并发INSERT和DELETE为例，介绍元组可见性判断。</p>
+<ul>
+<li>
+<p>场景一</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"><span class="p">|</span> Time<span class="p">|</span> Trancation <span class="m">1</span> <span class="o">(</span><span class="nv">xid</span><span class="o">=</span>1<span class="o">)</span>      <span class="p">|</span> Trancation <span class="m">2</span> <span class="o">(</span><span class="nv">xid</span><span class="o">=</span>2<span class="o">)</span>  <span class="p">|</span> tuple state
+</span></span><span class="line"><span class="cl">+-----+---------------------------+-----------------------+--------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">1</span>   <span class="p">|</span> BEGIN                     <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">2</span>   <span class="p">|</span> INSERT INTO t1 VALUES <span class="o">(</span>1<span class="o">)</span> <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">3</span>   <span class="p">|</span> COMMIT                    <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">4</span>   <span class="p">|</span> -                         <span class="p">|</span> BEGIN                 <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">5</span>   <span class="p">|</span> -                         <span class="p">|</span> DELETE FROM t1        <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">6</span>   <span class="p">|</span> -                         <span class="p">|</span> COMMIT                <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+-----+---------------------------+-----------------------+--------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">1</span>   <span class="p">|</span> BEGIN                     <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">2</span>   <span class="p">|</span> INSERT INTO t1 VALUES <span class="o">(</span>1<span class="o">)</span> <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">3</span>   <span class="p">|</span> ROLLBACK                  <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">4</span>   <span class="p">|</span> -                         <span class="p">|</span> BEGIN                 <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">5</span>   <span class="p">|</span> -                         <span class="p">|</span> DELETE FROM t1        <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">6</span>   <span class="p">|</span> -                         <span class="p">|</span> COMMIT                <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+-----+---------------------------+-----------------------+--------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">1</span>   <span class="p">|</span> BEGIN                     <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">2</span>   <span class="p">|</span> INSERT INTO t1 VALUES <span class="o">(</span>1<span class="o">)</span> <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">3</span>   <span class="p">|</span> DELETE FROM t1            <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">3</span>   <span class="p">|</span> COMMIT                    <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">4</span>   <span class="p">|</span> -                         <span class="p">|</span> BEGIN                 <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">5</span>   <span class="p">|</span> -                         <span class="p">|</span> DELETE FROM t1        <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">6</span>   <span class="p">|</span> -                         <span class="p">|</span> COMMIT                <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+-----+---------------------------+-----------------------+--------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">1</span>   <span class="p">|</span> BEGIN                     <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">2</span>   <span class="p">|</span> INSERT INTO t1 VALUES <span class="o">(</span>1<span class="o">)</span> <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">3</span>   <span class="p">|</span> DELETE FROM t1            <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">3</span>   <span class="p">|</span> COMMIT                    <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">4</span>   <span class="p">|</span> -                         <span class="p">|</span> BEGIN                 <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">5</span>   <span class="p">|</span> -                         <span class="p">|</span> DELETE FROM t1        <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">6</span>   <span class="p">|</span> -                         <span class="p">|</span> COMMIT                <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+-----+---------------------------+-----------------------+--------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">1</span>   <span class="p">|</span> BEGIN                     <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">2</span>   <span class="p">|</span> INSERT INTO t1 VALUES <span class="o">(</span>1<span class="o">)</span> <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">3</span>   <span class="p">|</span> -                         <span class="p">|</span> BEGIN                 <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">4</span>   <span class="p">|</span> -                         <span class="p">|</span> DELETE FROM t1        <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">5</span>   <span class="p">|</span> COMMIT                    <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">6</span>   <span class="p">|</span> -                         <span class="p">|</span> COMMIT                <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+-----+---------------------------+-----------------------+--------------
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">1</span>   <span class="p">|</span> BEGIN                     <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">2</span>   <span class="p">|</span> INSERT INTO t1 VALUES <span class="o">(</span>1<span class="o">)</span> <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">3</span>   <span class="p">|</span> -                         <span class="p">|</span> BEGIN                 <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">4</span>   <span class="p">|</span> -                         <span class="p">|</span> DELETE FROM t1        <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">5</span>   <span class="p">|</span> COMMIT                    <span class="p">|</span> -                     <span class="p">|</span>
+</span></span><span class="line"><span class="cl"><span class="p">|</span> <span class="m">6</span>   <span class="p">|</span> -                         <span class="p">|</span> COMMIT                <span class="p">|</span>
+</span></span></code></pre></div></li>
+</ul>
+<p>生成新tuple</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="nb">tuple</span>
+</span></span><span class="line"><span class="cl">    <span class="n">xmin</span> <span class="o">=</span> <span class="n">xid</span>
+</span></span><span class="line"><span class="cl">    <span class="n">xmax</span> <span class="o">=</span> <span class="mi">0</span>
+</span></span><span class="line"><span class="cl">    <span class="n">cid</span> <span class="o">=</span> <span class="n">cid</span>
+</span></span><span class="line"><span class="cl">    <span class="n">infomask</span> <span class="o">=</span> <span class="n">HEAP_XMAX_INVALID</span>
+</span></span></code></pre></div><p>删除Tuple</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="nb">tuple</span>
+</span></span><span class="line"><span class="cl">    <span class="n">cid</span> <span class="o">=</span> <span class="n">cid</span>
+</span></span><span class="line"><span class="cl">    <span class="n">xmax</span> <span class="o">=</span> <span class="n">xid</span>
+</span></span></code></pre></div><ul>
+<li>xmin：写入tup的事务</li>
+<li>xmax：删除tup的事务</li>
+<li>cid：如果xmax无效，则表示写入tup的SQL语句在事务中的编号。否则，则表示删除tup的SQL语句在事务中的编号。</li>
+</ul>
+<p>检查tup可见性，主要从3个方便判断：</p>
+<ul>
+<li>检查xmin，即检查写入tup的事务的状态。xmin事务共有3种状态：已提交、未提交、已回滚或已故障</li>
+<li>检查xmax，即检查删除tup的事务的状态。只有xmin事务已提交，才需进一步检查xmax事务。xmax事务共有3种状态：已提交、未提交、已回滚或已故障或不存在（即未有事务尝试删除过）</li>
+<li>检查cid，即检查同一事务内修改tup的顺序。只有xmin或xmax事务是本事务，才需要检查cid</li>
+</ul>
+<p>所以，检查tup可见性的大致逻辑是：</p>
+<ol>
+<li>先检查xmin事务的状态</li>
+<li>如果xmin事务已提交，再检查xmax事务状态</li>
+<li>其中，如果xmin事务或xmax事务是本事务，需额外检查cid</li>
+</ol>
+<p>检查tup可见性的详细逻辑如下：</p>
+<ul>
+<li>xmin
+<ul>
+<li>本事务
+<ul>
+<li>已提交
+<ul>
+<li>cid小于本command</li>
+<li>cid大于本command [HeapTupleInvisible]</li>
+</ul>
+</li>
+<li>未提交</li>
+<li>已回滚或故障</li>
+</ul>
+</li>
+<li>非本事务
+<ul>
+<li>已提交
+<ul>
+<li>xmax
+<ul>
+<li>本事务
+<ul>
+<li>cid小于本command</li>
+<li>cid大于本command</li>
+</ul>
+</li>
+<li>非本事务
+<ul>
+<li>已提交</li>
+<li>未提交</li>
+<li>已回滚或已故障或不存在</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>未提交 [HeapTupleInvisible]</li>
+<li>已回滚或故障</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p>判断事务的3种状态的方法：</p>
+<ul>
+<li>判断事务未提交：</li>
+<li>判断事务已提交：</li>
+<li>判断事务已回滚或已故障：</li>
+</ul>
+<p>上述描述中，如果每次操作tup时，都需检查commit log来判断事务是否已提交，开销较大。如果操作tup的事务已提交，可以在tup中设置一些标记，下次再检查时，根据标记即可获取事务状态，无需频繁访问commit log。</p>
+<p>以下是我整理的简洁版的tup可见性判断：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="c1"># 阶段一、获取tup状态，先检查tup是否被成功修改</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># 如果tup未被成功修改，阶段二再检查本事务是否可见tup</span>
+</span></span><span class="line"><span class="cl"><span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">xmin</span> <span class="o">=</span> <span class="n">my</span><span class="o">.</span><span class="n">xid</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">cid</span> <span class="o">&gt;=</span> <span class="n">my</span><span class="o">.</span><span class="n">cid</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="k">return</span> <span class="n">HeapTupleInvisible</span>
+</span></span><span class="line"><span class="cl">    <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">xmin</span> <span class="o">!=</span> <span class="n">my</span><span class="o">.</span><span class="n">xid</span>
+</span></span><span class="line"><span class="cl">            <span class="k">return</span> <span class="n">HeapTupleMayBeUpdated</span>
+</span></span><span class="line"><span class="cl">        <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">cid</span> <span class="o">&gt;=</span> <span class="n">my</span><span class="o">.</span><span class="n">cid</span><span class="p">:</span> <span class="c1"># related to scan, remain, not understand</span>
+</span></span><span class="line"><span class="cl">                <span class="k">return</span> <span class="n">HeapTupleSelfUpdated</span>
+</span></span><span class="line"><span class="cl">            <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="k">return</span> <span class="n">HeapTupleInvisible</span>
+</span></span><span class="line"><span class="cl"><span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">xmin</span><span class="o">.</span><span class="n">stat</span> <span class="o">=</span> <span class="n">uncommit</span><span class="p">:</span> <span class="c1"># check all process</span>
+</span></span><span class="line"><span class="cl">        <span class="k">return</span> <span class="n">HeapTupleInvisible</span>
+</span></span><span class="line"><span class="cl">    <span class="k">elif</span> <span class="n">tup</span><span class="o">.</span><span class="n">xmin</span><span class="o">.</span><span class="n">stat</span> <span class="o">=</span> <span class="n">commit</span><span class="p">:</span> <span class="c1"># check commit log</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">xmax</span> <span class="o">=</span> <span class="n">my</span><span class="o">.</span><span class="n">xid</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">cid</span> <span class="o">&gt;=</span> <span class="n">my</span><span class="o">.</span><span class="n">cid</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="k">return</span> <span class="n">HeapTupleSelfUpdated</span>
+</span></span><span class="line"><span class="cl">            <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="k">return</span> <span class="n">HeapTupleInvisible</span>
+</span></span><span class="line"><span class="cl">        <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">xmax</span><span class="o">.</span><span class="n">stat</span> <span class="o">=</span> <span class="n">uncommit</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="k">return</span> <span class="n">HeapTupleBeingUpdated</span>
+</span></span><span class="line"><span class="cl">            <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">xmax</span><span class="o">.</span><span class="n">stat</span> <span class="o">=</span> <span class="n">rollback</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">return</span> <span class="n">HeapTupleMayBeUpdated</span> <span class="c1"># tup未被修改，无事务修改tup，或修改的事务已回滚</span>
+</span></span><span class="line"><span class="cl">                <span class="k">else</span><span class="p">:</span> <span class="c1"># tup.xmax.stat = commit</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">return</span> <span class="n">HeapTupleUpdated</span> <span class="c1"># tup被修改，修改事务已提交</span>
+</span></span><span class="line"><span class="cl">    <span class="k">else</span> <span class="n">tup</span><span class="o">.</span><span class="n">xmin</span><span class="o">.</span><span class="n">stat</span> <span class="o">=</span> <span class="n">rollback</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="k">return</span> <span class="n">HeapTupleInvisible</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 阶段二，根据tup状态，如果tup未被成功修改，</span>
+</span></span><span class="line"><span class="cl"><span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">stat</span> <span class="o">=</span> <span class="n">HeapTupleInvisible</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">    <span class="n">error</span>
+</span></span><span class="line"><span class="cl"><span class="k">elif</span> <span class="n">tup</span><span class="o">.</span><span class="n">stat</span> <span class="o">=</span> <span class="n">HeapTupleBeingUpdated</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">xmax</span> <span class="o">!=</span> <span class="n">my</span><span class="o">.</span><span class="n">xid</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="n">XactLockTableWait</span> <span class="n">等锁释放</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">infomask</span> <span class="o">=</span> <span class="n">HEAP_XMAX_INVALID</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">tup</span><span class="o">.</span><span class="n">stat</span> <span class="o">=</span> <span class="n">HeapTupleMayBeUpdated</span>
+</span></span><span class="line"><span class="cl">        <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">tup</span><span class="o">.</span><span class="n">stat</span> <span class="o">=</span> <span class="n">HeapTupleUpdated</span>
+</span></span><span class="line"><span class="cl">    <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">infomask</span> <span class="o">=</span> <span class="n">HEAP_XMAX_INVALID</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">tup</span><span class="o">.</span><span class="n">stat</span> <span class="o">=</span> <span class="n">HeapTupleMayBeUpdated</span>
+</span></span><span class="line"><span class="cl">        <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">tup</span><span class="o">.</span><span class="n">stat</span> <span class="o">=</span> <span class="n">HeapTupleUpdated</span>
+</span></span><span class="line"><span class="cl"><span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">stat</span> <span class="o">=</span> <span class="n">HeapTupleMayBeUpdated</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="err">!</span> <span class="n">check</span> <span class="n">visibility</span> <span class="n">tup</span><span class="p">,</span> <span class="n">snapshot</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">        <span class="n">tup</span><span class="o">.</span><span class="n">stat</span> <span class="o">=</span> <span class="n">HeapTupleUpdated</span>
+</span></span><span class="line"><span class="cl"><span class="k">if</span> <span class="n">tup</span><span class="o">.</span><span class="n">stat</span> <span class="o">!=</span> <span class="n">HeapTupleMayBeUpdated</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span>
+</span></span><span class="line"><span class="cl"><span class="n">tup</span><span class="o">.</span><span class="n">cmax</span> <span class="o">=</span> <span class="n">my</span><span class="o">.</span><span class="n">xid</span>
+</span></span></code></pre></div><p>检查tuple可见性的几种返回值 HTSU_Result</p>
+<ul>
+<li>HeapTupleMayBeUpdated
+<ul>
+<li>tup可见，可被更新，没有事务修改过它</li>
+</ul>
+</li>
+<li>HeapTupleInvisible
+<ul>
+<li>tup 不可见</li>
+</ul>
+</li>
+<li>HeapTupleSelfUpdated
+<ul>
+<li>tup可见，当前事务已修改过tup</li>
+</ul>
+</li>
+<li>HeapTupleUpdated
+<ul>
+<li>tup可见，修改tup的事务已提交</li>
+</ul>
+</li>
+<li>HeapTupleBeingUpdated
+<ul>
+<li>tup可见，有事务修改tup，修改它的事务没提交，需等其他事务提交</li>
+</ul>
+</li>
+<li>HeapTupleWouldBlock
+<ul>
+<li>如果对元组加锁，当前事务可能会被阻塞</li>
+</ul>
+</li>
+</ul>
+<p>以下是完整版的tup可见性判断：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">HeapTupleSatisfiesUpdate</span>
+</span></span><span class="line"><span class="cl">    <span class="c1"># 阶段一、检查Tuple的写入事务</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span>  <span class="err">!</span><span class="n">HeapTupleHeaderXminCommitted</span><span class="p">(</span><span class="nb">tuple</span><span class="p">):</span> <span class="c1"># （快速判断）not tuple-&gt;infomask &amp; HEAP_XMIN_COMMITTED</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">HeapTupleHeaderXminInvalid</span><span class="p">:</span> <span class="c1"># tuple-&gt;infomask &amp; [HEAP_XMIN_COMMITTED | HEAP_XMIN_INVALID] = HEAP_XMIN_INVALID</span>
+</span></span><span class="line"><span class="cl">                <span class="k">return</span> <span class="n">HeapTupleInvisible</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">TransactionIdIsCurrentTransactionId</span><span class="p">(</span><span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">xmin</span><span class="p">):</span> <span class="c1"># Tuple-&gt;xmin 的写入事务 是 本事务</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">cid</span> <span class="o">&gt;=</span> <span class="n">curcid</span><span class="p">:</span> <span class="c1"># 根据cid判断可见性</span>
+</span></span><span class="line"><span class="cl">                <span class="k">return</span> <span class="n">HeapTupleInvisible</span>
+</span></span><span class="line"><span class="cl">            <span class="c1"># 省略，看不懂</span>
+</span></span><span class="line"><span class="cl">        <span class="k">elif</span> <span class="n">TransactionIdIsInProgress</span><span class="p">(</span><span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">xmin</span><span class="p">):</span> <span class="c1"># Tuple的写入事务 未提交</span>
+</span></span><span class="line"><span class="cl">            <span class="k">return</span> <span class="n">HeapTupleInvisible</span>
+</span></span><span class="line"><span class="cl">        <span class="k">elif</span> <span class="n">TransactionIdDidCommit</span><span class="p">(</span><span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">xmin</span><span class="p">):</span> <span class="c1">#  Tuple的写入事务 已提交（慢速判断，查询事务日志）</span>
+</span></span><span class="line"><span class="cl">            <span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">infomask</span> <span class="o">&amp;</span> <span class="n">HEAP_XMIN_COMMITTED</span>
+</span></span><span class="line"><span class="cl">        <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">infomask</span> <span class="o">&amp;</span> <span class="n">HEAP_XMIN_INVALID</span>  <span class="c1"># 未找到Tuple的写入事务的提交日志</span>
+</span></span><span class="line"><span class="cl">            <span class="k">return</span> <span class="n">HeapTupleInvisible</span>
+</span></span><span class="line"><span class="cl">    <span class="k">else</span><span class="p">:</span>   <span class="c1"># Tuple的写入事务 已提交</span>
+</span></span><span class="line"><span class="cl">        <span class="c1"># 阶段二、检查Tuple的删除事务</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">t_infomask</span> <span class="o">&amp;</span> <span class="n">HEAP_XMAX_INVALID</span><span class="p">:</span> <span class="c1"># 初始状态，并没有事务尝试删除Tuple，INSERT时，t_infomask初始值为HEAP_XMAX_INVALID</span>
+</span></span><span class="line"><span class="cl">            <span class="k">return</span> <span class="n">HeapTupleMayBeUpdated</span>
+</span></span><span class="line"><span class="cl">        <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">t_infomask</span> <span class="o">&amp;</span> <span class="n">HEAP_XMAX_COMMITTED</span><span class="err">：</span>  <span class="c1"># （快速判断）Tuple的删除事务，已提交</span>
+</span></span><span class="line"><span class="cl">                <span class="k">return</span> <span class="n">HeapTupleUpdated</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">t_infomask</span> <span class="o">&amp;</span> <span class="n">HEAP_XMAX_IS_MULTI</span> <span class="c1"># 暂时忽略</span>
+</span></span><span class="line"><span class="cl">                <span class="o">...</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="n">TransactionIdIsCurrentTransactionId</span><span class="p">(</span><span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">xmax</span><span class="p">):</span> <span class="c1"># Tuple的删除事务，是本事务</span>
+</span></span><span class="line"><span class="cl">                <span class="k">if</span> <span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">cid</span> <span class="o">&gt;=</span> <span class="n">curcid</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">return</span> <span class="n">HeapTupleSelfUpdated</span> <span class="c1"># 自己未来删除？</span>
+</span></span><span class="line"><span class="cl">                <span class="k">else</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">return</span> <span class="n">HeapTupleInvisible</span>
+</span></span><span class="line"><span class="cl">            <span class="k">else</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">                <span class="k">if</span> <span class="n">TransactionIdIsInProgress</span><span class="p">(</span><span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">xmax</span><span class="p">):</span> <span class="c1"># Tuple的删除事务，未提交，（遍历所有正在运行中的线程，判断事务状态）</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">return</span> <span class="n">HeapTupleBeingUpdated</span>
+</span></span><span class="line"><span class="cl">                <span class="k">else</span><span class="p">:</span> <span class="c1"># 删除Tuple的事务，已提交或发生异常</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">if</span> <span class="ow">not</span> <span class="n">TransactionIdDidCommit</span><span class="p">(</span><span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">xmax</span><span class="p">)</span><span class="err">：</span><span class="c1"># Tuple的删除事务，未提交（遍历事务提交日志）</span>
+</span></span><span class="line"><span class="cl">                        <span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">infomask</span> <span class="o">&amp;</span> <span class="n">HEAP_XMAX_INVALID</span> <span class="c1"># 删除Tuple的事务，发生异常了</span>
+</span></span><span class="line"><span class="cl">                        <span class="k">return</span> <span class="n">HeapTupleMayBeUpdated</span>
+</span></span><span class="line"><span class="cl">                    <span class="k">else</span><span class="p">:</span>   <span class="c1"># Tuple的删除事务，已提交</span>
+</span></span><span class="line"><span class="cl">                        <span class="nb">tuple</span><span class="o">-&gt;</span><span class="n">infomask</span> <span class="o">&amp;</span> <span class="n">HEAP_XMAX_COMMITTED</span>
+</span></span><span class="line"><span class="cl">                        <span class="k">return</span> <span class="n">HeapTupleUpdated</span>
+</span></span></code></pre></div><h1 id="2-postgresql事务的实现">2 PostgreSQL事务的实现<a hidden class="anchor" aria-hidden="true" href="#2-postgresql事务的实现">#</a></h1>
+<h2 id="21-insert">2.1 INSERT<a hidden class="anchor" aria-hidden="true" href="#21-insert">#</a></h2>
+<p>插入数据时，获取2次快照，获取1次事务id。未用上快照</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">exec_simple_query</span>
+</span></span><span class="line"><span class="cl">    <span class="c1"># 1. 简单的初始化</span>
+</span></span><span class="line"><span class="cl">    <span class="n">start_xact_command</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="c1"># 2. 对于INSERT/SELECT/UPDATE/DELETE语句，在语义分析之前，都会调用一次GetTransactionSnapshot，来生成一次快照</span>
+</span></span><span class="line"><span class="cl">    <span class="c1">#    此处的快照，用于语义分析、计划初始化</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="n">analyze_requires_snapshot</span>
+</span></span><span class="line"><span class="cl">        <span class="n">GetTransactionSnapshot</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_analyze_and_rewrite</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_plan_queries</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalStart</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalRun</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">PORTAL_MULTI_QUERY</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">PortalRunMulti</span>
+</span></span><span class="line"><span class="cl">                <span class="c1"># 3. 对于INSERT/DELETE/UPDATE等语法，重新获取最新快照</span>
+</span></span><span class="line"><span class="cl">                <span class="n">GetTransactionSnapshot</span>
+</span></span><span class="line"><span class="cl">                <span class="n">ProcessQuery</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">ExecutorRun</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">ExecutePlan</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">ExecProcNode</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">ExecModifyTable</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">ExecInsert</span>
+</span></span><span class="line"><span class="cl">                                        <span class="c1"># 4. 调用存储统一接口</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">heap_insert</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">GetCurrentTransactionId</span> <span class="c1"># 5. 获取当前事务的id</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">heap_prepare_insert</span>     <span class="c1"># 6. 将事务id写入Tuple</span>
+</span></span><span class="line"><span class="cl">                                            <span class="o">...</span>                     <span class="c1"># 7. 继续其他heap_insert操作</span>
+</span></span></code></pre></div><h2 id="22-delete">2.2 DELETE<a hidden class="anchor" aria-hidden="true" href="#22-delete">#</a></h2>
+<p>插入数据时，获取2次快照，获取1次事务id</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">exec_simple_query</span>
+</span></span><span class="line"><span class="cl">    <span class="c1"># 1. 简单的初始化</span>
+</span></span><span class="line"><span class="cl">    <span class="n">start_xact_command</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="c1"># 2. 对于INSERT/SELECT/UPDATE/DELETE语句，在语义分析之前，都会调用一次GetTransactionSnapshot，来生成一次快照</span>
+</span></span><span class="line"><span class="cl">    <span class="c1">#    此处的快照，用于语义分析、计划初始化</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="n">analyze_requires_snapshot</span>
+</span></span><span class="line"><span class="cl">        <span class="n">GetTransactionSnapshot</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_analyze_and_rewrite</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_plan_queries</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalStart</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalRun</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">PORTAL_MULTI_QUERY</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">PortalRunMulti</span>
+</span></span><span class="line"><span class="cl">                <span class="c1"># 3. 对于INSERT/DELETE/UPDATE等语法，重新获取最新快照</span>
+</span></span><span class="line"><span class="cl">                <span class="n">GetTransactionSnapshot</span>
+</span></span><span class="line"><span class="cl">                <span class="n">ProcessQuery</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">ExecutorRun</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">ExecutePlan</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">ExecProcNode</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">ExecModifyTable</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">ExecDelete</span>
+</span></span><span class="line"><span class="cl">                                        <span class="c1"># 4. 调用存储统一接口</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">heap_delete</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">GetCurrentTransactionId</span> <span class="c1"># 5. 获取当前事务的id</span>
+</span></span><span class="line"><span class="cl">                                            <span class="c1"># 6 根据提交日志，检查事务可见性</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">HeapTupleSatisfiesUpdate</span>
+</span></span></code></pre></div><h2 id="23-update">2.3 UPDATE<a hidden class="anchor" aria-hidden="true" href="#23-update">#</a></h2>
+<p>更新数据时，获取2次快照，获取1次事务id</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">exec_simple_query</span>
+</span></span><span class="line"><span class="cl">    <span class="c1"># 1. 简单的初始化</span>
+</span></span><span class="line"><span class="cl">    <span class="n">start_xact_command</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="c1"># 2. 对于INSERT/SELECT/UPDATE/DELETE语句，在语义分析之前，都会调用一次GetTransactionSnapshot，来生成一次快照</span>
+</span></span><span class="line"><span class="cl">    <span class="c1">#    此处的快照，用于语义分析、计划初始化</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="n">analyze_requires_snapshot</span>
+</span></span><span class="line"><span class="cl">        <span class="n">GetTransactionSnapshot</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_analyze_and_rewrite</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_plan_queries</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalStart</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalRun</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">PORTAL_MULTI_QUERY</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">PortalRunMulti</span>
+</span></span><span class="line"><span class="cl">                <span class="c1"># 3. 对于INSERT/DELETE/UPDATE等语法，重新获取最新快照</span>
+</span></span><span class="line"><span class="cl">                <span class="n">GetTransactionSnapshot</span>
+</span></span><span class="line"><span class="cl">                <span class="n">ProcessQuery</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">ExecutorRun</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">ExecutePlan</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">ExecProcNode</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">ExecModifyTable</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">ExecUpdate</span>
+</span></span><span class="line"><span class="cl">                                        <span class="c1"># 4. 调用存储统一接口</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">heap_update</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">GetCurrentTransactionId</span> <span class="c1"># 5. 获取当前事务的id</span>
+</span></span></code></pre></div><h2 id="24-select">2.4 SELECT<a hidden class="anchor" aria-hidden="true" href="#24-select">#</a></h2>
+<p>插入数据时，获取2次快照，未获取事务id</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">exec_simple_query</span>
+</span></span><span class="line"><span class="cl">    <span class="c1"># 1. 简单的初始化</span>
+</span></span><span class="line"><span class="cl">    <span class="n">start_xact_command</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="c1"># 2. 对于INSERT/SELECT/UPDATE/DELETE语句，在语义分析之前，都会调用一次GetTransactionSnapshot，来生成一次快照</span>
+</span></span><span class="line"><span class="cl">    <span class="c1">#    此处的快照，用于语义分析、计划初始化</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="n">analyze_requires_snapshot</span>
+</span></span><span class="line"><span class="cl">        <span class="n">GetTransactionSnapshot</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_analyze_and_rewrite</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_plan_queries</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="c1"># 3. 获取快照</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalStart</span>
+</span></span><span class="line"><span class="cl">        <span class="n">GetTransactionSnapshot</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalRun</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">PORTAL_ONE_SELECT</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">PortalRunSelect</span>
+</span></span><span class="line"><span class="cl">                <span class="n">ExecutorRun</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">standard_ExecutorRun</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">ExecutePlan</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">ExecProcNode</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">ExecSeqScan</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">SeqNext</span>
+</span></span><span class="line"><span class="cl">                                        <span class="c1"># 3. 在heapam层，使用快照</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">heap_getnext</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">heapgettup</span>
+</span></span><span class="line"><span class="cl">                                                <span class="n">HeapTupleSatisfiesVisibility</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">HeapTupleSatisfiesMVCC</span>
+</span></span><span class="line"><span class="cl">                                                        <span class="k">if</span> <span class="err">!</span><span class="n">HeapTupleHeaderXminCommitted</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                                            <span class="n">XidInMVCCSnapshot</span><span class="p">(</span><span class="n">HeapTupleHeaderGetRawXmin</span><span class="p">(</span><span class="nb">tuple</span><span class="p">),</span> <span class="n">HeapScanDesc</span><span class="o">-&gt;</span><span class="n">rs_snapshot</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="c1"># tuple 不可见</span>
+</span></span></code></pre></div><h2 id="21-分配事务id">2.1 分配事务ID<a hidden class="anchor" aria-hidden="true" href="#21-分配事务id">#</a></h2>
+<ul>
+<li>
+<p>事务ID类型：postgresql使用TransactionId表示事务ID，类型为uint32，简写为xid</p>
+</li>
+<li>
+<p>事务Id分配时机：</p>
+<ul>
+<li>
+<p>场景一：执行INSERT等语句，在写入数据时，才分配事务ID，分配时机如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="n">exec_simple_query</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalRun</span>
+</span></span><span class="line"><span class="cl">        <span class="n">ProcessQuery</span>
+</span></span><span class="line"><span class="cl">            <span class="n">ExecutorRun</span>
+</span></span><span class="line"><span class="cl">                <span class="n">standard_ExecutorRun</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">ExecutePlan</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">ExecProcNode</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">ExecModifyTable</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">ExecInsert</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">heap_insert</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">GetCurrentTransactionId</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">AssignTransactionId</span>
+</span></span><span class="line"><span class="cl">                                                <span class="n">TopTransactionStateData</span><span class="o">-&gt;</span><span class="n">transactionId</span> <span class="n">GetNewTransactionId</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="cm">/* 获取事务ID */</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">ExtendCLOG</span> <span class="cm">/* 记录事务状态 */</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">ExtendCommitTs</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">ExtendSUBTRANS</span>
+</span></span><span class="line"><span class="cl">                                                <span class="nf">XLogInsert</span><span class="p">(</span><span class="n">RM_XACT_ID</span><span class="p">,</span> <span class="n">XLOG_XACT_ASSIGNMENT</span><span class="p">)</span>
+</span></span></code></pre></div></li>
+<li>
+<p>场景二：执行SELECT语句，无需生成事务ID。只需在执行语句时，获取一次所有事务的状态即可（快照），将来的事务不在事务状态内。根据快照判断tuple可读性即可。</p>
+</li>
+<li>
+<p>场景三：执行BEGIN语句，并不会立刻分配事务ID，在事务中执行SELECT等也不会分配事务ID。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="n">exec_simple_query</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalRun</span>
+</span></span><span class="line"><span class="cl">        <span class="n">PortalRunMulti</span>
+</span></span><span class="line"><span class="cl">            <span class="n">PortalRunUtility</span>
+</span></span><span class="line"><span class="cl">                <span class="n">ProcessUtility</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">standard_ProcessUtility</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">BeginTransactionBlock</span>
+</span></span><span class="line"><span class="cl">                            <span class="cm">/* do nothing */</span>
+</span></span></code></pre></div></li>
+</ul>
+</li>
+<li>
+<p>事务ID持久化：在分配事务ID时，会生成xlog记录分配事务ID的操作</p>
+</li>
+</ul>
+<h2 id="22-保存事务状态">2.2 保存事务状态<a hidden class="anchor" aria-hidden="true" href="#22-保存事务状态">#</a></h2>
+<p>事务状态分为2部分：快照记录了所有进程当前处理的事务ID，提交日志记录了所有事务的状态</p>
+<h3 id="221-事务id">2.2.1 事务ID<a hidden class="anchor" aria-hidden="true" href="#221-事务id">#</a></h3>
+<ol>
+<li>
+<p>全局事务ID</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl"> allProcs            allPgXact <span class="c1"># 记录xid</span>
+</span></span><span class="line"><span class="cl">+--------+          +--------+
+</span></span><span class="line"><span class="cl"><span class="p">|</span> PGPROC <span class="p">|</span>   ---    <span class="p">|</span> PGXACT <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+--------+          +--------+
+</span></span><span class="line"><span class="cl"><span class="p">|</span> PGPROC <span class="p">|</span>   ---    <span class="p">|</span> PGXACT <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+--------+          +--------+
+</span></span><span class="line"><span class="cl"><span class="p">|</span> PGPROC <span class="p">|</span>   ---    <span class="p">|</span> PGXACT <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+--------+          +--------+
+</span></span><span class="line"><span class="cl"><span class="p">|</span> ...    <span class="p">|</span>   ---    <span class="p">|</span> ...    <span class="p">|</span>
+</span></span><span class="line"><span class="cl">+--------+          +--------+
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">struct PGPROC <span class="o">{</span>
+</span></span><span class="line"><span class="cl">    ...
+</span></span><span class="line"><span class="cl">    int pgprocno<span class="p">;</span>
+</span></span><span class="line"><span class="cl">    ...
+</span></span><span class="line"><span class="cl"><span class="o">}</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">struct PGXACT <span class="o">{</span>
+</span></span><span class="line"><span class="cl">    TransactionId xid<span class="p">;</span>
+</span></span><span class="line"><span class="cl">    TransactionId xmin<span class="p">;</span> /* 开始事务时，最小的xid */
+</span></span><span class="line"><span class="cl">    ...
+</span></span><span class="line"><span class="cl"><span class="o">}</span><span class="p">;</span>
+</span></span></code></pre></div></li>
+</ol>
+<h3 id="222-事务快照">2.2.2 事务快照<a hidden class="anchor" aria-hidden="true" href="#222-事务快照">#</a></h3>
+<p>查看当前的事务快照：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">txid_current_snapshot</span><span class="p">();</span><span class="w">
+</span></span></span></code></pre></div><p>一、快照的内容<br>
+获取事务快照的函数是GetSnapshotData，该函数会获取所有进程中当前事务的xid</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">GetSnapshotData</span>
+</span></span><span class="line"><span class="cl">    <span class="n">snapshot</span><span class="o">-&gt;</span><span class="n">xmax</span> <span class="o">=</span> <span class="n">ShmemVariableCache</span><span class="o">-&gt;</span><span class="n">latestCompletedXid</span>
+</span></span><span class="line"><span class="cl">    <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">procArray</span><span class="p">:</span> <span class="c1"># 遍历 allPgXact，获取所有xid</span>
+</span></span><span class="line"><span class="cl">        <span class="n">pgprocno</span> <span class="o">=</span> <span class="n">procArray</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+</span></span><span class="line"><span class="cl">        <span class="n">PGXACT</span> <span class="o">*</span><span class="n">pgxact</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">allPgXact</span><span class="p">[</span><span class="n">pgprocno</span><span class="p">]</span>
+</span></span><span class="line"><span class="cl">        <span class="n">xid</span> <span class="o">=</span> <span class="n">pgxact</span><span class="o">-&gt;</span><span class="n">xid</span>
+</span></span><span class="line"><span class="cl">        <span class="n">snapshot</span><span class="o">-&gt;</span><span class="n">xip</span><span class="p">[</span><span class="n">count</span><span class="o">++</span><span class="p">]</span> <span class="o">=</span> <span class="n">xid</span>
+</span></span><span class="line"><span class="cl">        <span class="n">xin</span> <span class="o">=</span> <span class="n">MIN</span><span class="p">(</span><span class="n">xid</span><span class="p">,</span> <span class="n">xin</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">snapshot</span><span class="o">-&gt;</span><span class="n">xcnt</span> <span class="o">=</span> <span class="n">count</span>
+</span></span><span class="line"><span class="cl">    <span class="n">snapshot</span><span class="o">-&gt;</span><span class="n">xin</span> <span class="o">=</span> <span class="n">xin</span>
+</span></span></code></pre></div><ul>
+<li>
+<p>二、获取快照的时机<br>
+每执行一条SQL时，都会获取一次快照。获取快照的函数为：GetTransactionSnapshot。<br>
+如果是</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">exec_simple_query</span>
+</span></span><span class="line"><span class="cl">    <span class="n">start_xact_command</span> <span class="c1"># 1. 简单的初始化</span>
+</span></span><span class="line"><span class="cl">        <span class="n">StartTransactionCommand</span>
+</span></span><span class="line"><span class="cl">            <span class="n">StartTransaction</span>
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="n">analyze_requires_snapshot</span> <span class="c1"># 2. 如果分析 INSERT/SELECT/UPDATE/DELETE，需要快照</span>
+</span></span><span class="line"><span class="cl">        <span class="n">PushActiveSnapshot</span><span class="p">(</span><span class="n">GetTransactionSnapshot</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="n">IsolationUsesXactSnapshot</span><span class="err">：</span> <span class="c1"># XactIsoLevel &gt;= XACT_REPEATABLE_READ</span>
+</span></span><span class="line"><span class="cl">                <span class="k">return</span> <span class="n">CurrentSnapshot</span> <span class="c1"># 3. 如果是可重复读级别及以上，获取旧快照</span>
+</span></span><span class="line"><span class="cl">            <span class="n">GetSnapshotData</span> <span class="c1"># 4. 如果是读已提交，则获取新快照</span>
+</span></span><span class="line"><span class="cl">                <span class="n">xmax</span>
+</span></span><span class="line"><span class="cl">                <span class="k">for</span> <span class="n">pgprocno</span> <span class="ow">in</span> <span class="n">procArray</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">xip</span><span class="p">[</span><span class="n">count</span><span class="o">++</span><span class="p">]</span> <span class="o">=</span> <span class="n">allPgXact</span><span class="p">[</span><span class="n">pgprocno</span><span class="p">]</span><span class="o">-&gt;</span><span class="n">xid</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">xmin</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_analyze_and_rewrite</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_plan_queries</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PopActiveSnapshot</span> <span class="c1"># 3. 生成计划后，删除分析阶段的快照</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">PortalStart</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">PORTAL_ONE_SELECT</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">PushActiveSnapshot</span><span class="p">(</span><span class="n">GetTransactionSnapshot</span><span class="p">)</span> <span class="c1"># 4. 如果是SELECT语句，执行计划初始化阶段，生成快照，并将快照保存在执行计划中</span>
+</span></span><span class="line"><span class="cl">            <span class="n">CreateQueryDesc</span>
+</span></span><span class="line"><span class="cl">                <span class="n">QueryDesc</span><span class="o">-&gt;</span><span class="n">snapshot</span> <span class="o">=</span> <span class="n">RegisterSnapshot</span><span class="p">(</span><span class="n">GetActiveSnapshot</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">ExecutorStart</span>
+</span></span><span class="line"><span class="cl">                <span class="n">standard_ExecutorStart</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">RegisterSnapshot</span><span class="p">(</span><span class="n">QueryDesc</span><span class="o">-&gt;</span><span class="n">snapshot</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">PopActiveSnapshot</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalRun</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">PORTAL_ONE_SELECT</span><span class="p">:</span> <span class="c1"># 5. SELECT语句无需重新获取快照，Scan使用的快照，是第4步生成的</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">PORTAL_MULTI_QUERY</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">PortalRunMulti</span>
+</span></span><span class="line"><span class="cl">                <span class="n">GetTransactionSnapshot</span> <span class="c1">#6. 对于INSERT/DELETE/UPDATE等语法，在执行阶段才获取快照</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">ProcessQuery</span>
+</span></span></code></pre></div></li>
+<li>
+<p>三、使用快照的时机</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">exec_simple_query</span>
+</span></span><span class="line"><span class="cl">    <span class="n">start_xact_command</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_analyze_and_rewrite</span>
+</span></span><span class="line"><span class="cl">    <span class="n">pg_plan_queries</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">PortalStart</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">PORTAL_ONE_SELECT</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">PushActiveSnapshot</span><span class="p">(</span><span class="n">GetTransactionSnapshot</span><span class="p">)</span> <span class="c1"># 4. 如果是SELECT语句，执行计划初始化阶段，生成快照，并将快照保存在执行计划中</span>
+</span></span><span class="line"><span class="cl">            <span class="n">RegisterSnapshot</span><span class="p">(</span><span class="n">GetActiveSnapshot</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">PopActiveSnapshot</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalRun</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">PORTAL_ONE_SELECT</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">PortalRunSelect</span>
+</span></span><span class="line"><span class="cl">                <span class="n">PushActiveSnapshot</span><span class="p">(</span><span class="n">QueryDesc</span><span class="o">-&gt;</span><span class="n">snapshot</span><span class="p">)</span> <span class="c1"># 5. SELECT语句无需重新获取快照，Scan使用的快照，是第4步生成的</span>
+</span></span><span class="line"><span class="cl">                <span class="n">ExecutorRun</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">standard_ExecutorRun</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">ExecutePlan</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">ExecProcNode</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">ExecSeqScan</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">SeqNext</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">heap_getnext</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">heapgettup</span>
+</span></span><span class="line"><span class="cl">                                                <span class="n">HeapTupleSatisfiesVisibility</span>
+</span></span><span class="line"><span class="cl">                                                    <span class="n">HeapTupleSatisfiesMVCC</span>
+</span></span><span class="line"><span class="cl">                                                        <span class="k">if</span> <span class="err">!</span><span class="n">HeapTupleHeaderXminCommitted</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                                                            <span class="n">XidInMVCCSnapshot</span><span class="p">(</span><span class="n">HeapTupleHeaderGetRawXmin</span><span class="p">(</span><span class="nb">tuple</span><span class="p">),</span> <span class="n">HeapScanDesc</span><span class="o">-&gt;</span><span class="n">rs_snapshot</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                                                                <span class="c1"># tuple 不可见</span>
+</span></span><span class="line"><span class="cl">                <span class="n">PopActiveSnapshot</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">PORTAL_MULTI_QUERY</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">PortalRunMulti</span>
+</span></span><span class="line"><span class="cl">                <span class="n">GetTransactionSnapshot</span> <span class="c1">#6. 对于INSERT/DELETE/UPDATE等语法，在执行阶段才获取快照</span>
+</span></span><span class="line"><span class="cl">                <span class="n">RegisterSnapshot</span>
+</span></span><span class="line"><span class="cl">                <span class="n">PushCopiedSnapshot</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">                <span class="n">ProcessQuery</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">ExecutorStart</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">ExecutorRun</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">ExecutePlan</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">ExecProcNode</span>
+</span></span><span class="line"><span class="cl">                                <span class="n">ExecModifyTable</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">ExecInsert</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">heap_insert</span> <span class="c1"># INSERT 好像用不到快照</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">ExecUpdate</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">heap_update</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">HeapTupleSatisfiesUpdate</span>
+</span></span><span class="line"><span class="cl">                                                <span class="n">TransactionIdIsInProgress</span><span class="p">(</span><span class="n">HeapTupleHeaderGetRawXmin</span><span class="p">(</span><span class="nb">tuple</span><span class="p">))</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">HeapTupleSatisfiesVisibility</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">HeapTupleHeaderAdjustCmax</span>
+</span></span><span class="line"><span class="cl">                                    <span class="n">ExecDelete</span>
+</span></span><span class="line"><span class="cl">                                        <span class="n">heap_delete</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">HeapTupleSatisfiesUpdate</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">HeapTupleSatisfiesVisibility</span>
+</span></span><span class="line"><span class="cl">                                            <span class="n">HeapTupleHeaderAdjustCmax</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalDrop</span>
+</span></span><span class="line"><span class="cl">    <span class="n">finish_xact_command</span>
+</span></span></code></pre></div></li>
+</ul>
+<h3 id="223-提交日志">2.2.3 提交日志<a hidden class="anchor" aria-hidden="true" href="#223-提交日志">#</a></h3>
+<ul>
+<li>
+<p>一、提交日志<br>
+事务的提交日志中，记录了所有事务的状态：是否在运行、是否已提交等<br>
+由于事务ID是从1开始递增，可用位图表示所有事务的状态，位图的索引即事务ID<br>
+提交日志也需持久化，位图被划分存储在Page中，Page存储在提交日志文件中<br>
+内存中也会缓存一些Page，使用LRU缓存Page</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="n">ClogCtlData</span> <span class="o">/</span> <span class="n">ClogCtl</span>
+</span></span><span class="line"><span class="cl"><span class="o">+------+------+------+------+</span>
+</span></span><span class="line"><span class="cl"><span class="o">|</span> <span class="n">Page</span> <span class="o">|</span> <span class="n">Page</span> <span class="o">|</span> <span class="n">Page</span> <span class="o">|</span> <span class="n">Page</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl"><span class="o">+------+------+------+------+</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">XidStatus</span>
+</span></span><span class="line"><span class="cl"><span class="cp">#define TRANSACTION_STATUS_IN_PROGRESS		0x00
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define TRANSACTION_STATUS_COMMITTED		0x01
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define TRANSACTION_STATUS_ABORTED			0x02
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define TRANSACTION_STATUS_SUB_COMMITTED	0x03
+</span></span></span></code></pre></div></li>
+<li>
+<p>二、更新提交日志<br>
+在分析或执行阶段，首次获取事务ID时，会扩展提交日志。在执行结束后，会根据事务状态更新提交日志。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">exec_simple_query</span>
+</span></span><span class="line"><span class="cl">    <span class="n">start_xact_command</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="c1"># 执行解析、分析、执行等步骤</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PortalRun</span>
+</span></span><span class="line"><span class="cl">        <span class="o">...</span>
+</span></span><span class="line"><span class="cl">            <span class="n">heap_insert</span>
+</span></span><span class="line"><span class="cl">                <span class="n">GetNewTransactionId</span>
+</span></span><span class="line"><span class="cl">                    <span class="o">/*</span> <span class="n">获取事务ID</span> <span class="o">*/</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">ExtendCLOG</span> <span class="o">/*</span> <span class="n">记录事务状态</span> <span class="o">*/</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">finish_xact_command</span>
+</span></span><span class="line"><span class="cl">        <span class="n">CommitTransactionCommand</span> <span class="c1"># autovacuum / walsender等都会调用</span>
+</span></span><span class="line"><span class="cl">            <span class="n">s</span> <span class="o">=</span> <span class="n">CurrentTransactionState</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="n">TBLOCK_STARTED</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="n">CommitTransaction</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">ProcArrayEndTransaction</span> <span class="c1"># 清理进程当前处理的xid</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">pgxact</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">allPgXact</span><span class="p">[</span><span class="n">pgprocno</span><span class="p">]</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">ProcArrayEndTransactionInternal</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">pgxact</span><span class="o">-&gt;</span><span class="n">xid</span> <span class="o">=</span> <span class="n">InvalidTransactionId</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">pgxact</span><span class="o">-&gt;</span><span class="n">xmin</span> <span class="o">=</span> <span class="n">InvalidTransactionId</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">RecordTransactionCommit</span> <span class="o">/</span> <span class="n">xact_redo_commit</span> <span class="c1"># 更新提交日志</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">XactLogCommitRecord</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">XLogInsert</span><span class="p">(</span><span class="n">RM_XACT_ID</span><span class="p">,</span> <span class="n">info</span><span class="p">)</span> <span class="c1"># 生成xlog，记录事务已提交</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">TransactionIdCommitTree</span>
+</span></span><span class="line"><span class="cl">                            <span class="n">TransactionIdSetTreeStatus</span><span class="p">(</span><span class="n">TRANSACTION_STATUS_COMMITTED</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="n">TBLOCK_BEGIN</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="n">不提交事务</span>
+</span></span><span class="line"><span class="cl">                <span class="n">s</span><span class="o">-&gt;</span><span class="n">blockState</span> <span class="o">=</span> <span class="n">TBLOCK_INPROGRESS</span>
+</span></span><span class="line"><span class="cl">            <span class="k">if</span> <span class="n">TBLOCK_INPROGRESS</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">                <span class="n">CommandCounterIncrement</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># 其他更新事务状态的场景，不额外介绍</span>
+</span></span><span class="line"><span class="cl"><span class="n">TransactionIdAsyncCommitTree</span>
+</span></span><span class="line"><span class="cl">    <span class="n">TransactionIdSetTreeStatus</span><span class="p">(</span><span class="n">TRANSACTION_STATUS_COMMITTED</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="n">TransactionIdAbortTree</span>
+</span></span><span class="line"><span class="cl">    <span class="n">TransactionIdSetTreeStatus</span><span class="p">(</span><span class="n">TRANSACTION_STATUS_ABORTED</span><span class="p">)</span>
+</span></span></code></pre></div></li>
+<li>
+<p>三、使用提交日志<br>
+在更新或删除一条tuple前，会先检查是否有事务删除tuple，如果有则检查事务是已提交。判断是否已提交便是根据提交日志判断。下文会继续介绍判断逻辑</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">heap_update</span>
+</span></span><span class="line"><span class="cl">    <span class="n">HeapTupleSatisfiesUpdate</span>
+</span></span><span class="line"><span class="cl">        <span class="n">TransactionIdDidCommit</span>
+</span></span><span class="line"><span class="cl">            <span class="n">TransactionLogFetch</span>
+</span></span><span class="line"><span class="cl">    <span class="n">UpdateXmaxHintBits</span>
+</span></span><span class="line"><span class="cl">        <span class="n">XidStatus</span> <span class="o">=</span> <span class="n">TransactionIdDidCommit</span>
+</span></span><span class="line"><span class="cl">        <span class="k">return</span> <span class="n">xidstatus</span> <span class="o">==</span> <span class="n">TRANSACTION_STATUS_COMMITTED</span>
+</span></span><span class="line"><span class="cl"><span class="n">heap_delete</span>
+</span></span><span class="line"><span class="cl">    <span class="n">UpdateXmaxHintBits</span>
+</span></span><span class="line"><span class="cl">        <span class="n">TransactionIdDidCommit</span>
+</span></span></code></pre></div></li>
+</ul>
+<h2 id="23-tuple携带事务id">2.3 Tuple携带事务ID<a hidden class="anchor" aria-hidden="true" href="#23-tuple携带事务id">#</a></h2>
+<p>以下是tuple的结构：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span> <span class="cm">/* ignore Union */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">TransactionId</span> <span class="n">t_xmin</span><span class="p">;</span> <span class="cm">/* 生成tuple的事务ID */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">TransactionId</span> <span class="n">t_xmax</span><span class="p">;</span> <span class="cm">/* 删除tuple的事务ID，默认为0 */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">CommandId</span>	<span class="n">t_cid</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">ItemPointerData</span> <span class="n">t_ctid</span><span class="p">;</span> <span class="cm">/* 更新tuple时，新数据的事务ID，默认为0 */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">uint16</span> <span class="n">t_infomask2</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint16</span> <span class="n">t_infomask</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">uint8</span> <span class="n">t_hoff</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">bits8</span> <span class="n">t_bits</span><span class="p">[</span><span class="n">FLEXIBLE_ARRAY_MEMBER</span><span class="p">];</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="cm">/* tuple data */</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">HeapTupleHeader</span><span class="p">;</span>
+</span></span></code></pre></div><h2 id="24-判断tuple可见性">2.4 判断Tuple可见性<a hidden class="anchor" aria-hidden="true" href="#24-判断tuple可见性">#</a></h2>
+<p>内容太多，学得头大，下次继续</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="n">heap_insert</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">tup</span><span class="p">,</span> <span class="n">cid</span><span class="p">)</span> <span class="c1"># CommandId</span>
+</span></span><span class="line"><span class="cl">    <span class="n">xid</span> <span class="o">=</span> <span class="n">get_cur_trans_id</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">heap_prepare_insert</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">tup</span><span class="p">,</span> <span class="n">xid</span><span class="p">,</span> <span class="n">cid</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">heap_tup_set_xmin</span><span class="p">(</span><span class="n">tup</span><span class="p">,</span> <span class="n">xid</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">heap_tup_set_cmin</span><span class="p">(</span><span class="n">tup</span><span class="p">,</span> <span class="n">cid</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">buf</span> <span class="o">=</span> <span class="n">rel_get_buf_for_tup</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">tup</span><span class="o">.</span><span class="n">len</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">blkno</span> <span class="o">=</span> <span class="n">get_page_with_free_space</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">tlen</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">fsm_search</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">tlen</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                <span class="n">fsm_search_avail</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">tlen</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">read_buffer_bi</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">blkno</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">read_buf</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">blkno</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                <span class="n">read_buf_extend</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">blkno</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">read_buf_comm</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">blkno</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">bufhdr</span> <span class="o">=</span> <span class="n">buf_alloc</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">blkno</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                        <span class="n">lwlock_acquire</span><span class="p">(</span><span class="n">bufhdr</span><span class="p">,</span> <span class="n">LW_EXCLUSIVE</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">visibilitymap_pin</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">vmbuf</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">vm_readbuf</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">                <span class="n">vm_extend</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">                <span class="n">read_buf_extend</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">        <span class="n">lock_buffer</span><span class="p">(</span><span class="n">BUFFER_LOCK_EXCLUSIVE</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="o">...</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">        <span class="n">needlock</span> <span class="o">=</span> <span class="ow">not</span> <span class="n">rel_is_local</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">needlock</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">            <span class="n">LockRelationForExtension</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">ExclusiveLock</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                <span class="n">LockAcquire</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">ExclusiveLock</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">                    <span class="n">LockAcquireExtended</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">ExclusiveLock</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">LockAcquireExtended</span><span class="p">(</span><span class="n">relid</span><span class="p">,</span> <span class="n">mode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">locallock</span> <span class="o">=</span> <span class="n">hash_search</span><span class="p">(</span><span class="n">LockMethodLocalHash</span><span class="p">,</span> <span class="n">relid</span><span class="p">,</span> <span class="n">enter</span><span class="p">)</span>
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">LOCKTAG</span> <span class="n">tag</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">SHM_QUEUE</span> <span class="n">proLocks</span><span class="p">;</span> <span class="cm">/* 持有锁的进程：PROCLOCK  */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PROC_QUEUE</span> <span class="n">waitProcs</span><span class="p">;</span> <span class="cm">/* PGPROC */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">granted</span><span class="p">[</span><span class="n">MAX_LOCKMODES</span><span class="p">];</span> <span class="cm">/* 锁上加锁次数，会同时持有多种锁 */</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">LOCK</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PROCLOCKTAG</span> <span class="n">tag</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PGPROC</span> <span class="o">*</span><span class="n">groupLeader</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">SHM_QUEUE</span> <span class="n">lockLink</span><span class="p">;</span> <span class="cm">/* LOCK */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">SHM_QUEUE</span> <span class="n">proLink</span><span class="p">;</span> <span class="cm">/* PGPROC */</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">PROCLOCK</span><span class="p">;</span>
+</span></span></code></pre></div><p>每个后端进程维护正持有的锁和等待加的锁。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">LOCALLOCKTAG</span> <span class="n">tag</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="n">LOCK</span> <span class="n">lock</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">PROCLOCK</span> <span class="o">*</span><span class="n">proclock</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="n">int64</span> <span class="n">nLocks</span><span class="p">;</span> <span class="cm">/* 持有锁数量 */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">LOCALLOCK</span><span class="p">;</span>
+</span></span></code></pre></div><p>加锁：LockAcquire()</p>
+<ol>
+<li>查找进程持有锁，如果存在，返回锁，granted++</li>
+<li>通过fastpath找锁</li>
+<li>在哈希表中加锁：先创建LOCK，PROLOCK</li>
+<li>if 加锁与等锁冲突：等待，if 加锁失败：等待</li>
+<li>if dontwait: 返回加锁失败，否则，进入等待队列，进程休眠</li>
+</ol>
+<p>放锁：</p>
+<ol>
+<li>查找进程持有锁，如果存在，if –ResourceOwner = 0: 释放锁。granted–</li>
+<li>从fastpath找锁</li>
+<li>从哈希表找锁</li>
+<li>释放锁，唤醒其他等锁进程</li>
+</ol>
+<table>
+  <thead>
+      <tr>
+          <th>锁</th>
+          <th>取值</th>
+          <th>操作</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>AccessShareLock</td>
+          <td>1</td>
+          <td>SELECT</td>
+      </tr>
+      <tr>
+          <td>RowShareLock</td>
+          <td>2</td>
+          <td>SELECT FOR UPDATE/SHARE</td>
+      </tr>
+      <tr>
+          <td>RowExclusiveLock</td>
+          <td>3</td>
+          <td>INSERT/UPDATE/DELETE</td>
+      </tr>
+      <tr>
+          <td>ShareUpdateExclusiveLock</td>
+          <td>4</td>
+          <td>VACUUM/ANALYZE/CRATE INDEX CONCURRENTLY</td>
+      </tr>
+      <tr>
+          <td>ShareLock</td>
+          <td>5</td>
+          <td>CREATE INDEX</td>
+      </tr>
+      <tr>
+          <td>ShareRowExclusiveLock</td>
+          <td>6</td>
+          <td>row share</td>
+      </tr>
+      <tr>
+          <td>ExclusiveLock</td>
+          <td>7</td>
+          <td>block ROW SHARE/SELECT FOR UPDATE</td>
+      </tr>
+      <tr>
+          <td>AccessExclusiveLock</td>
+          <td>8</td>
+          <td>ALTER TABLE/DROP TABLE/VACUUM FULL</td>
+      </tr>
+  </tbody>
+</table>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-python" data-lang="python"><span class="line"><span class="cl"><span class="o">-</span> <span class="n">heap_open</span><span class="p">(</span><span class="n">relid</span> <span class="n">lockmode</span><span class="p">)</span> <span class="c1"># not index</span>
+</span></span><span class="line"><span class="cl"><span class="o">-</span> <span class="n">relation_open</span><span class="p">(</span><span class="n">relid</span><span class="p">,</span> <span class="n">lockmode</span><span class="p">)</span> <span class="c1"># any rel</span>
+</span></span><span class="line"><span class="cl">    <span class="n">LockRelationOid</span><span class="p">(</span><span class="n">relid</span><span class="p">,</span> <span class="n">lockmode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">LockAcquire</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">lockmode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">RelationIdGetRelation</span><span class="p">(</span><span class="n">relid</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="k">if</span> <span class="n">RelationIdCacheLookup</span><span class="p">(</span><span class="n">relationId</span><span class="p">,</span> <span class="n">rd</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">hash_search</span><span class="p">(</span><span class="n">RelationIdCache</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">RelationIncrementReferenceCount</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="k">else</span> <span class="n">RelationBuildDesc</span><span class="p">(</span><span class="n">relid</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">            <span class="n">RelationIncrementReferenceCount</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="o">-</span> <span class="n">heap_close</span><span class="p">(</span><span class="n">relid</span><span class="p">,</span> <span class="n">lockmode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="o">-</span> <span class="n">relation_close</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">lockmode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">RelationClose</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">RelationDecrementReferenceCount</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">        <span class="n">UnlockRelationId</span><span class="p">(</span><span class="n">lockmode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">heap_insert</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">tup</span><span class="p">,</span> <span class="n">cid</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">xid</span> <span class="o">=</span> <span class="n">GetCurrentTransactionId</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">    <span class="n">tup</span> <span class="o">=</span> <span class="n">heap_prepare_insert</span><span class="p">()</span> <span class="c1"># set [ insert xid | delete xid | cmd id | ... ]</span>
+</span></span><span class="line"><span class="cl">    <span class="n">buf</span> <span class="o">=</span> <span class="n">RelationGetBufferForTuple</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">tup</span><span class="o">.</span><span class="n">len</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">LockRelationForExtension</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">ExclusiveLock</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">ReadBuffer</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">blkno</span><span class="p">)</span> <span class="c1"># LWLockAcquire(bufhdr, LW_EXCLUSIVE), LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">UnlockRelationForExtension</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">ExclusiveLock</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">RelationPutHeapTuple</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">buf</span><span class="p">,</span> <span class="n">tup</span><span class="p">)</span> <span class="c1"># PageAddItem</span>
+</span></span><span class="line"><span class="cl">    <span class="o">/*</span> <span class="n">xlog</span> <span class="o">*/</span>
+</span></span><span class="line"><span class="cl">    <span class="n">UnlockReleaseBuffer</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">LockBuffer</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">BUFFER_LOCK_UNLOCK</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">        <span class="n">ReleaseBuffer</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="n">heap_delete</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">tid</span><span class="p">,</span> <span class="n">cid</span><span class="p">,</span> <span class="n">snapshot</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="n">xid</span> <span class="o">=</span> <span class="n">GetCurrentTransactionId</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">    <span class="n">buf</span> <span class="o">=</span> <span class="n">ReadBuffer</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">ItemPointerGetBlockNumber</span><span class="p">(</span><span class="n">tid</span><span class="p">))</span>
+</span></span><span class="line"><span class="cl">    <span class="n">LockBuffer</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="n">BUFFER_LOCK_EXCLUSIVE</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="o">...</span> <span class="n">复杂</span>
+</span></span><span class="line"><span class="cl">    <span class="n">heap_acquire_tuplock</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">tup</span><span class="p">,</span> <span class="n">LockTupleExclusive</span><span class="p">,</span> <span class="n">LockWaitBlock</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="o">...</span>
+</span></span><span class="line"><span class="cl">    <span class="n">UnlockTupleTuplock</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">tup</span><span class="p">,</span> <span class="n">LockTupleExclusive</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="n">heap_update</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">okdtid</span><span class="p">,</span> <span class="n">newtup</span><span class="p">,</span> <span class="n">cid</span><span class="p">,</span> <span class="n">snapshot</span><span class="p">,</span> <span class="n">lockmode</span><span class="p">)</span>
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="n">relation锁</span><span class="err">：</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">buffer锁</span><span class="err">：</span> <span class="n">call</span> <span class="nf">LWLockAcquire</span><span class="p">(</span><span class="n">LW_SHARED</span> <span class="o">/</span> <span class="n">LW_EXCLUSIVE</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="cp">#define BUFFER_LOCK_UNLOCK		0
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define BUFFER_LOCK_SHARE		1
+</span></span></span><span class="line"><span class="cl"><span class="cp">#define BUFFER_LOCK_EXCLUSIVE	2
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="n">tuple锁</span><span class="err">：</span>
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">enum</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">LockTupleKeyShare</span><span class="p">,</span> <span class="cm">/* SELECT FOR KEY SHARE */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">LockTupleShare</span><span class="p">,</span> <span class="cm">/* SELECT FOR SHARE */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">LockTupleNoKeyExclusive</span><span class="p">,</span> <span class="cm">/* SELECT FOR NO KEY UPDATE, and UPDATEs that don&#39;t modify key columns */</span>
+</span></span><span class="line"><span class="cl">    <span class="n">LockTupleExclusive</span><span class="p">,</span> <span class="cm">/* SELECT FOR UPDATE, UPDATEs that modify key columns, and DELETE */</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">LockTupleMode</span><span class="p">;</span> <span class="err">映射到</span><span class="n">reguler锁</span> <span class="n">LockMode</span>
+</span></span><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="p">{</span><span class="n">AccessShareLock</span><span class="p">,</span> <span class="n">MultiXactStatusForKeyShare</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">},</span>
+</span></span><span class="line"><span class="cl">    <span class="p">{</span><span class="n">RowShareLock</span><span class="p">,</span> <span class="n">MultiXactStatusForShare</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">},</span>
+</span></span><span class="line"><span class="cl">    <span class="p">{</span><span class="n">ExclusiveLock</span><span class="p">,</span> <span class="n">MultiXactStatusForNoKeyUpdate</span><span class="p">,</span> <span class="n">MultiXactStatusNoKeyUpdate</span><span class="p">,},</span>
+</span></span><span class="line"><span class="cl">    <span class="p">{</span><span class="n">AccessExclusiveLock</span><span class="p">,</span> <span class="n">MultiXactStatusForUpdate</span><span class="p">,</span> <span class="n">MultiXactStatusUpdate</span><span class="p">}</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nf">LockTupleTuplock</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">tid</span><span class="p">,</span> <span class="n">lockmode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">    <span class="nf">LockTuple</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">tup</span><span class="p">,</span> <span class="n">tupleLockExtraInfo</span><span class="p">[</span><span class="n">lockmode</span><span class="p">])</span>
+</span></span><span class="line"><span class="cl">        <span class="nf">LockAcquire</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">lockmode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">enum</span>
+</span></span><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="n">MultiXactStatusForKeyShare</span> <span class="o">=</span> <span class="mh">0x00</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="n">MultiXactStatusForShare</span> <span class="o">=</span> <span class="mh">0x01</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="n">MultiXactStatusForNoKeyUpdate</span> <span class="o">=</span> <span class="mh">0x02</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="n">MultiXactStatusForUpdate</span> <span class="o">=</span> <span class="mh">0x03</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="cm">/* an update that doesn&#39;t touch &#34;key&#34; columns */</span>
+</span></span><span class="line"><span class="cl">	<span class="n">MultiXactStatusNoKeyUpdate</span> <span class="o">=</span> <span class="mh">0x04</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="cm">/* other updates, and delete */</span>
+</span></span><span class="line"><span class="cl">	<span class="n">MultiXactStatusUpdate</span> <span class="o">=</span> <span class="mh">0x05</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">MultiXactStatus</span><span class="p">;</span>
+</span></span></code></pre></div>
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/postgresql/">PostgreSQL</a></li><li><a href="http://localhost:1313/tags/%E4%BA%8B%E5%8A%A1/">事务</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/postgresql/3-6-tans-ai/">PostgreSQL 3-2 Transation (v2)</a></li><li><a href="/posts/postgresql/postgresinternal/">PostgresInternal</a></li><li><a href="/posts/postgresql/2-10-func/">PostgreSQL 2-10 function</a></li><li><a href="/posts/postgresql/5-1-libpq/">PostgreSQL 5-1 libpq</a></li><li><a href="/posts/postgresql/3-14-physical-replication/">PostgreSQL 3-14 物理复制</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./PostgreSQL</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

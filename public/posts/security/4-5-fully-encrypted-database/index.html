@@ -1,0 +1,2735 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>数据库安全 5 全密态 | Kernel Notes</title>
+<meta name="keywords" content="加密">
+<meta name="description" content="
+0 基础调研
+
+一、运算符
+二、数据类型
+
+
+1 架构设计
+
+工作计划
+
+Table 1: Scan Nodes
+Table 2: Join Nodes
+Table 3: Processing Nodes
+Table 4: Set &amp; Control Nodes
+单独说明：Table Function Materialization（表函数物化计算）
+
+
+
+
+2 驱动加密 - 实现
+
+2.1 新增类型ciphera
+2.2 新增系统表pg_key
+2.3 新增语法DATA KEY
+2.4 新增系统表pg_sec_class
+2.4 新增语法ENCRYPT
+2.5 新增公共语法解析libgram
+2.6 libpq重写INSERT
+2.7 libpq重写SELECT结果
+2.8 新增支持int类型
+
+
+3 机密计算 - 实现
+
+3.1 简单计划
+3.2 支持范围
+
+一、数据类型
+二、操作符与函数
+
+
+3.2 新增libcalc
+3.2 新增ta_calc/ca_calc
+3.3 内核新增ciphera函数
+3.4 内核新增ciphera运算符
+3.5 内核make_op识别机密计算
+3.6 index_scan算子
+3.6 优化
+
+ca/ta通信
+
+
+
+
+4 测试用例
+
+等值查询
+范围查询
+模糊查询
+
+
+附录：专利
+附录：AI
+
+代码要求：
+
+
+附录：参考文献
+
+0 基础调研
+一、运算符
+
+运算符
+以int4为例：select proname from pg_catalog.pg_proc where proname like &#39;%int4%&#39; order by proname;
+
+
+一、比较运算符函数">
+<meta name="author" content="Me">
+<link rel="canonical" href="http://localhost:1313/posts/security/4-5-fully-encrypted-database/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/security/4-5-fully-encrypted-database/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script><meta property="og:url" content="http://localhost:1313/posts/security/4-5-fully-encrypted-database/">
+  <meta property="og:site_name" content="Kernel Notes">
+  <meta property="og:title" content="数据库安全 5 全密态">
+  <meta property="og:description" content=" 0 基础调研 一、运算符 二、数据类型 1 架构设计 工作计划 Table 1: Scan Nodes Table 2: Join Nodes Table 3: Processing Nodes Table 4: Set &amp; Control Nodes 单独说明：Table Function Materialization（表函数物化计算） 2 驱动加密 - 实现 2.1 新增类型ciphera 2.2 新增系统表pg_key 2.3 新增语法DATA KEY 2.4 新增系统表pg_sec_class 2.4 新增语法ENCRYPT 2.5 新增公共语法解析libgram 2.6 libpq重写INSERT 2.7 libpq重写SELECT结果 2.8 新增支持int类型 3 机密计算 - 实现 3.1 简单计划 3.2 支持范围 一、数据类型 二、操作符与函数 3.2 新增libcalc 3.2 新增ta_calc/ca_calc 3.3 内核新增ciphera函数 3.4 内核新增ciphera运算符 3.5 内核make_op识别机密计算 3.6 index_scan算子 3.6 优化 ca/ta通信 4 测试用例 等值查询 范围查询 模糊查询 附录：专利 附录：AI 代码要求： 附录：参考文献 0 基础调研 一、运算符 运算符
+以int4为例：select proname from pg_catalog.pg_proc where proname like &#39;%int4%&#39; order by proname; 一、比较运算符函数">
+  <meta property="og:locale" content="zh-cn">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="posts">
+    <meta property="article:published_time" content="2026-06-24T14:47:00+08:00">
+    <meta property="article:modified_time" content="2026-08-19T15:39:42+08:00">
+    <meta property="article:tag" content="加密">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="数据库安全 5 全密态">
+<meta name="twitter:description" content="
+0 基础调研
+
+一、运算符
+二、数据类型
+
+
+1 架构设计
+
+工作计划
+
+Table 1: Scan Nodes
+Table 2: Join Nodes
+Table 3: Processing Nodes
+Table 4: Set &amp; Control Nodes
+单独说明：Table Function Materialization（表函数物化计算）
+
+
+
+
+2 驱动加密 - 实现
+
+2.1 新增类型ciphera
+2.2 新增系统表pg_key
+2.3 新增语法DATA KEY
+2.4 新增系统表pg_sec_class
+2.4 新增语法ENCRYPT
+2.5 新增公共语法解析libgram
+2.6 libpq重写INSERT
+2.7 libpq重写SELECT结果
+2.8 新增支持int类型
+
+
+3 机密计算 - 实现
+
+3.1 简单计划
+3.2 支持范围
+
+一、数据类型
+二、操作符与函数
+
+
+3.2 新增libcalc
+3.2 新增ta_calc/ca_calc
+3.3 内核新增ciphera函数
+3.4 内核新增ciphera运算符
+3.5 内核make_op识别机密计算
+3.6 index_scan算子
+3.6 优化
+
+ca/ta通信
+
+
+
+
+4 测试用例
+
+等值查询
+范围查询
+模糊查询
+
+
+附录：专利
+附录：AI
+
+代码要求：
+
+
+附录：参考文献
+
+0 基础调研
+一、运算符
+
+运算符
+以int4为例：select proname from pg_catalog.pg_proc where proname like &#39;%int4%&#39; order by proname;
+
+
+一、比较运算符函数">
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position":  1 ,
+      "name": "Posts",
+      "item": "http://localhost:1313/posts/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "数据库安全 5 全密态",
+      "item": "http://localhost:1313/posts/security/4-5-fully-encrypted-database/"
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "数据库安全 5 全密态",
+  "name": "数据库安全 5 全密态",
+  "description": " 0 基础调研 一、运算符 二、数据类型 1 架构设计 工作计划 Table 1: Scan Nodes Table 2: Join Nodes Table 3: Processing Nodes Table 4: Set \u0026amp; Control Nodes 单独说明：Table Function Materialization（表函数物化计算） 2 驱动加密 - 实现 2.1 新增类型ciphera 2.2 新增系统表pg_key 2.3 新增语法DATA KEY 2.4 新增系统表pg_sec_class 2.4 新增语法ENCRYPT 2.5 新增公共语法解析libgram 2.6 libpq重写INSERT 2.7 libpq重写SELECT结果 2.8 新增支持int类型 3 机密计算 - 实现 3.1 简单计划 3.2 支持范围 一、数据类型 二、操作符与函数 3.2 新增libcalc 3.2 新增ta_calc/ca_calc 3.3 内核新增ciphera函数 3.4 内核新增ciphera运算符 3.5 内核make_op识别机密计算 3.6 index_scan算子 3.6 优化 ca/ta通信 4 测试用例 等值查询 范围查询 模糊查询 附录：专利 附录：AI 代码要求： 附录：参考文献 0 基础调研 一、运算符 运算符\n以int4为例：select proname from pg_catalog.pg_proc where proname like '%int4%' order by proname; 一、比较运算符函数\n",
+  "keywords": [
+    "加密"
+  ],
+  "articleBody": " 0 基础调研 一、运算符 二、数据类型 1 架构设计 工作计划 Table 1: Scan Nodes Table 2: Join Nodes Table 3: Processing Nodes Table 4: Set \u0026 Control Nodes 单独说明：Table Function Materialization（表函数物化计算） 2 驱动加密 - 实现 2.1 新增类型ciphera 2.2 新增系统表pg_key 2.3 新增语法DATA KEY 2.4 新增系统表pg_sec_class 2.4 新增语法ENCRYPT 2.5 新增公共语法解析libgram 2.6 libpq重写INSERT 2.7 libpq重写SELECT结果 2.8 新增支持int类型 3 机密计算 - 实现 3.1 简单计划 3.2 支持范围 一、数据类型 二、操作符与函数 3.2 新增libcalc 3.2 新增ta_calc/ca_calc 3.3 内核新增ciphera函数 3.4 内核新增ciphera运算符 3.5 内核make_op识别机密计算 3.6 index_scan算子 3.6 优化 ca/ta通信 4 测试用例 等值查询 范围查询 模糊查询 附录：专利 附录：AI 代码要求： 附录：参考文献 0 基础调研 一、运算符 运算符\n以int4为例：select proname from pg_catalog.pg_proc where proname like '%int4%' order by proname; 一、比较运算符函数\n运算符 函数 \u003c int4lt \u003c= int4le = int4eq != / \u003c\u003e int4ne \u003e int4gt \u003e= int4ge (btree) btint4cmp 二、算数运算符函数\n运算符 函数 + int4pl - int4mi * int4mul / int4div % int4mod @ int4abs 三、聚合函数\n运算符 函数 sum() int4_sum max() int4larger min() int4smaller avg() int4_avg_accum + int8_avg 二、数据类型 - 一、数值与字符串 | 类型 | 别名 | 说明 | | -| -| -| | smallint | int2 | - | | integer | int, int4 | - | | bigint | int8 | - | | real | float4 | - | | double precision | float8 | - | | character varying(n) | varchar(n) | - | | character(n) | char(n) | - | | text | - | - | - 二、时间、布尔、二进制 | 类型 | 别名 | 说明 | | -| -| -| | boolean | bool | - | | bytea | - | - | | timestamp | - | - | | timestamp with time zone | timestamptz | - | | time | - | - | | time with time zone | timetz | - | | interval | - | - | - 三、自增序列 | 类型 | 别名 | 说明 | | -| -| -| | smallserial | serial2 | - | | serial | serial4 | - | | bigserial | serial8 | - | - 四、其他 | 类型 | 别名 | 说明 | | -| -| -| | numeric(p,s) | decimal(p,s) | - | | bit varying(n) | varbit(n) | - | | jsonb | - | - | | uuid | - | -| 1 架构设计 Driver +Cache +Parser (libgram.so) +Encrypt (libdrvenc.so) +Rewrite (libdrvenc.so) Protocol Connect Server Parser Analyze Rewrite Plan Executor +TeeProtocol +CipherQual (libcalc.so) 代码结构：\nsrc interfaces libpq fe-drvenc.c backend utils adt ciphera.c # 新增数据类型 security 直接计算 (ExecMakeTableFunctionResult)\napp libpq libdrvenc kernel ta_cacl |---------------------------------------|---------------------------|-------------------|-------------------------------|----------------------------------- CREATE DATA KEY k1 .. insert catalog pg_key CREATE TABLE t1(c1 INT ENCRYPT .., c2 INT) insert catalog pg_attribute [c1, ciphera] insert catalog pg_sec_class [t1, c1, int] connect(drvenc=on) get encrypted columns info from catalog pg_sec_class set encrypted columns load encrypted columns get search_paths from catalog pg_namespace set search_paths INSERT INTO t1 VALUES(11,22) rewrite query if need load search_path parse query 'INSERT INTO t1 VALUES(11,22)' check if column encryptd [public.t1.c1] [public.t1.c2] encrypt column value '11' rewrite query 'INSERT INTO t1 VALUES('cipher_11',22)' send new query 'INSERT INTO t1 VALUES('cipher_11',22)' insert t1 ['cipher_11',22] SELECT * FROM t1 WHERE c1 = 11 (assume: seqscan) rewrite query if need parse query 'SELECT * FROM t1 WHERE c1 = 11' check if column encryptd [public.t1.c1] encrypt column value '11' to 'cipher_11' rewrite query 'SELECT * FROM t1 WHERE c1 = cipher_11' send new query 'SELECT * FROM t1 WHERE c1 = cipher_11' scan tuple [c1 = cipher_11] send result ['cipher_11',22] recv result ['cipher_11',22] decrypt result if need check if column encryptd [public.t1.c1] decrypt column result 'cipher_11' to 11 rewrite column reslut [11,22] return result [11,22] receive [11,22] SELECT * FROM t1 WHERE c1 \u003e 10 (assume: seqscan) rewrite query if need parse query 'SELECT * FROM t1 WHERE c1 \u003e 10' .. rewrite query 'SELECT * FROM t1 WHERE c1 \u003e cipher_10' send new query 'SELECT * FROM t1 WHERE c1 \u003e cipher_10' parse analyze qual 'c1 \u003e cipher_10' to 'ciphera_gt(c1, cipher_10)' plan execute scan tuple ['cipher_11',22] call 'ciphera_gt('cipher_11', cipher_10)' package calculation [ciphera_gt, cipher_11, cipher_10] send calculation receive calculation [ciphera_gt, cipher_11, cipher_10] decrypt cipher_11 to 11 decrypt cipher_10 to 10 call int4gt(11,10) -\u003e true send result [true] recv calculation [true] send scan result ['cipher_11',22] recv result ['cipher_11',22] decrypt result if need .. return result [11,22] SELECT c1 + c2 FROM t1 (assume: seqscan) rewrite query if need send query 'SELECT c1 + c2 FROM t1' parse analyze qual 'c1 + c2' to 'ciphera_pl(c1,c2)' plan execute scan tuple ['cipher_11',22] call 'ciphera_pl('cipher_11', 22)' package calculation [ciphera_pl, cipher_11, 22] send calculation receive calculation [ciphera_pl, cipher_11, 22] decrypt cipher11 to 11 call int4pl(11,22) -\u003e 33 encrypt result 33 to cipher_33 send result [cipher_33] recv calculation [cipher_33] send result [cipher_33] recv result ['cipher_11',22] decrypt result if need .. return result [33] receive [33] 例外：\nINSERT INTO t1 VALUES(10+1, 22); --\u003e INSERT INTO t1 VALUES(ciphera_sum(cipher_10, cipher_1), 22); INSERT INTO t1 SELECT c21,c22 FROM t2; INSERT INTO t1 SELECT c21::ciphera,c22 FROM t2; -- ciphera中，需包含key oid INSERT INTO t1 SELECT re_encrypt(c21, t1, c1),c22 FROM t2; 工作计划 一、基本功能\n语句加密（驱动侧 语法解析 [0.2人月] 语句重写：10+数据类型、20+语法 [0.5人月] 结果解密 [0.1人月] 加密适配器 [0.2人月] 密钥适配器 [0.2人月] 密文处理（内核侧） 密文操作符处理：15+ [0.2人月] 密文函数处理：30+ [0.3人月] 密文索引处理：btree [0.3人月] 密文聚集算子处理：sort, agg, group, unique [0.6人月] 密文连接算子处理：hashjoin, mergejoin, nestloopjoin [0.5人月] 机密计算适配器 [0.3人月] 密文计算（可信侧） 密文函数计算：40+ [0.3人月] 密文索引处理：btree [0.3人月] 二、软硬适配\n加密适配\n三未信安加密机 [0.2人月] 密钥适配\n华为云管理服务 [0.2人月] 驱动适配\nJDBC [0.5人月] 机密计算适配\n国产CPU：5 [0.8人月] 国产OS：10 [0.8人月] 分类\n表达式求值： ExecEvalExpr ExecQual ExecProject 索引访问计算： bt_compare bt_search hash_func 基础设施回调 索引 _bt_compare _bt_binsrch 排序 ApplySortComparator ST_COMPARE 哈希 ExecHashGetHashValue 合并 ExecMergeCompareKeys Table 1: Scan Nodes No. Node Exec Function Expression Evaluation Infrastructure Callback 1 Seq Scan ExecSeqScan ExecQual, ExecProject N/A 2 Index Scan ExecIndexScan ExecQual (Filter/Recheck) _bt_compare, _bt_binsrch 3 Index Only Scan ExecIndexOnlyScan ExecQual (Filter) _bt_compare, _bt_binsrch 4 Bitmap Heap Scan ExecBitmapHeapScan ExecQual, ExecProject N/A 5 Bitmap Index Scan ExecBitmapIndexScan N/A _bt_compare, _bt_binsrch 6 Tid Scan ExecTidScan ExecQual, ExecProject N/A 7 Tid Range Scan ExecTidRangeScan ExecQual, ExecProject N/A 8 Subquery Scan ExecSubqueryScan ExecQual, ExecProject N/A 9 Function Scan ExecFunctionScan ExecQual, ExecProject N/A 10 TableFunc Scan ExecTableFuncScan ExecQual, ExecProject N/A 11 Values Scan ExecValuesScan ExecQual, ExecProject N/A 12 CTE Scan ExecCteScan ExecQual, ExecProject N/A 13 Named Tuplestore Scan ExecNamedTuplestoreScan ExecQual, ExecProject N/A 14 WorkTable Scan ExecWorkTableScan ExecQual, ExecProject N/A 15 Foreign Scan ExecForeignScan ExecQual, ExecProject N/A 16 Sample Scan ExecSampleScan ExecQual, ExecProject N/A Table 2: Join Nodes No. Node Exec Function Expression Evaluation Infrastructure Callback 1 Nested Loop ExecNestLoop ExecQual (Join Filter), ExecProject N/A 2 Hash Join ExecHashJoin ExecQual, ExecProject ExecHashGetHashValue, ExecHashGetBucket 3 Merge Join ExecMergeJoin ExecQual, ExecProject ExecMergeCompareKeys Table 3: Processing Nodes No. Node Exec Function Expression Evaluation Infrastructure Callback 1 Sort ExecSort N/A ApplySortComparator (ST_COMPARE) 2 Incremental Sort ExecIncrementalSort N/A ApplySortComparator (ST_COMPARE) 3 Aggregate ExecAgg ExecEvalExpr (transfn, finalfn) N/A 4 Group ExecGroup N/A execTuplesMatchPrepare / Compare 5 Unique ExecUnique N/A execTuplesMatchPrepare / Compare 6 Hash ExecHash N/A ExecHashGetHashValue, ExecHashGetBucket 7 WindowAgg ExecWindowAgg ExecEvalExpr (window func) N/A 8 ProjectSet ExecProjectSet ExecEvalExpr (SRF in targetlist) N/A 9 ModifyTable ExecModifyTable ExecEvalExpr (SET/WHERE exprs) N/A 10 Limit ExecLimit N/A N/A 11 Material ExecMaterial N/A N/A 12 Memoize ExecMemoize N/A ExecMemoizeGetHashValue 13 Gather ExecGather N/A N/A 14 Gather Merge ExecGatherMerge N/A ApplySortComparator (ST_COMPARE) 15 LockRows ExecLockRows N/A N/A 16 SetOp ExecSetOp N/A execTuplesMatchPrepare / Compare Table 4: Set \u0026 Control Nodes No. Node Exec Function Expression Evaluation Infrastructure Callback 1 Append ExecAppend N/A N/A 2 Merge Append ExecMergeAppend N/A ApplySortComparator (ST_COMPARE) 3 Result ExecResult ExecQual, ExecProject N/A 4 Recursive Union ExecRecursiveUnion N/A N/A 单独说明：Table Function Materialization（表函数物化计算） 在原生 PostgreSQL 中，仅 Function Scan 算子涉及此类计算。当函数被用作 FROM 子句中的数据源（即 SRF，Set-Returning Function）时，PG 执行引擎会通过 ExecMakeTableFunctionResult 接管控制权，循环调用该函数的 SRF 接口，并将返回的多行结果物化到内存或磁盘的 Tuplestore 中。此计算路径独立于表达式求值和基础设施回调，是 PG 内核中第三种且唯一的表函数专用计算机制。注意：TableFunc Scan（如 XMLTABLE/JSON_TABLE）走的是专门的 TableFunc API，不经过 ExecMakeTableFunctionResult，因此不属于此类。\nSELECT * FROM generate_series(1, 1000000);\nSELECT * FROM pg_stat_activity;\n2 驱动加密 - 实现 2.1 新增类型ciphera pg_type.dat\nciphera.h / ciphera.c\n``` ```c pg_proc.dat\nMakefile\n验证：\npsql -d postgres -- 查看内置的数据类型 SELECT * FROM pg_type WHERE typname = 'ciphera'; -- 使用新类型 CREATE TABLE t1(c1 INT, c2 CIPHERA); \\d t1 -- 检查数据正常处理 INSERT INTO t1 VALUES (1, 'c101aaff'); SELECT * FROM t1; 2.2 新增系统表pg_key SELECT * FROM pg_key; \\d+ pg_key 2.3 新增语法DATA KEY CREATE DATA KEY dk1(password='pass.123'); -- 在pg_key中，存储密钥信息 SELECT * FROM pg_key; DROP DATA KEY dk1; 2.4 新增系统表pg_sec_class SELECT * FROM pg_sec_class; -- reloid, attname, atttypid, atttypmod 2.4 新增语法ENCRYPT CREATE DATA KEY dk1(password='pass.123'); CREATE TABLE t1(c1 INT ENCRYPT dk1); -- pg_attribute中，c1列的类型自动变更为ciphera -- pg_sec_class中，attroid列，存储c1列才pg_attribute中的oid -- pg_sec_class中，attrtype, attrmod SELECT * FROM pg_attribute WHERE attname = 'c1'; SELECT * FROM pg_sec_class; 2.5 新增公共语法解析libgram 2.6 libpq重写INSERT CREATE DATA KEY dk1(password='pass.123'); CREATE TABLE t1(c1 TEXT, c2 TEXT ENCRYPT dk1, c3 TEXT); INSERT INTO t1 VALUES ('aaa', 'bbb', 'ccc'); INSERT INTO t1(c2,c3) VALUES ('xxx', 'yyy'); INSERT INTO t1 VALUES ('a1', 'b1', 'c1'), ('a2', 'b2', 'c2'); SELECT * FROM t1; 2.7 libpq重写SELECT结果 CREATE DATA KEY dk1(password='pass.123'); CREATE TABLE t1(c1 TEXT, c2 TEXT ENCRYPT dk1, c3 TEXT); INSERT INTO t1 VALUES ('aaa', 'bbb', 'ccc'), ('xxx', 'yyy', 'zzz');; SELECT * FROM t1 WHERE c2 = 'yyy'; -- where ciphera_eq(c2,'...') 2.8 新增支持int类型 CREATE DATA KEY dk1(password='pass.123'); CREATE TABLE t1(c1 INT, c2 INT ENCRYPT dk1, c3 INT); INSERT INTO t1 VALUES (10,11,12); INSERT INTO t1(c2,c3) VALUES (100,101); INSERT INTO t1 VALUES (1001,1002,1003), (1011,1012,1013); SELECT * FROM t1 WHERE c2 = 100; 3 机密计算 - 实现 3.1 简单计划 目标\n-- 构造 CREATE DATA KEY dk1(password='pass.123'); CREATE TABLE t1(c1 INT, c2 INT ENCRYPT dk1, c3 INT); INSERT INTO t1 VALUES (11,12,13), (21,22,23), (31,32,33), (41,42,43); -- 预期：tee中，执行ciphera_gt SELECT * FROM t1 WHERE c2 \u003e 30; -- 清理 DROP TABLE t1; DROP DATA KEY dk1; AI提示\n我已经在pg16中，从0实现全密态等值查询，使用方法如下：\n-- -- 1 定义密钥（新增语法）：在系统表pg_key中，存储密钥 CREATE DATA KEY dk1(password='pass.123'); -- 2 新增内置数据类型：新增ciphera类型，存储text, int加密后的值，类似与bytea -- 3 定义加密列（新增语法 ）：在系统表 pg_attrbute中，c2存储为ciphera类型，在新系统表pg_sec_class中，存储c2的原始类型int CREATE TABLE t1(c1 INT, c2 INT ENCRYPT dk1, c3 INT); -- 4 自动加密：在libpq中，自动加密INSERT语法中c2列的值，将其转换为ciphera类型 INSERT INTO t1 VALUES (11,12,13), (21,22,23), (31,32,33), (41,42,43); -- 5 自动解密：在libpq中，自动解密SELECT返回结果中c2的值，将其转换为int类型 SELECT * FROM t1; -- 6 密态等值查询：自动加密SELECT语法中c2列的值，服务端直接比较密文 SELECT * FROM t1 WHERE c2 = 12; 其中，支持自动加解密的数据类型如下：\nint2 int4 int8 varchar(n) text bytea 执行计划\nCREATE TABLE t1(c1 INT, c2 INT ENCRYPT dk1, c3 INT); INSERT INTO t1 VALUES (11,12,13), (21,22,23), (31,32,33), (41,42,43); -- 在代码中，以下SQL的执行计划 SELECT sum(c1) FROM t1 WHERE c1 \u003e 10 AND c2 \u003c 40; \"Agg -\u003e Scan t1 Filter (c1 \u003e 10) AND (c2 \u003c '40'::ciphera) \" SELECT c1,c2 FROM t1 WHERE c2 \u003c 40 ORDER BY c2 LIMIT 10; \"LIMIT -\u003e Sort Sort Key: c2 -\u003e Scan t1 Filter c2 \u003c '40' \" -- 如果数据很多，要确保以下计算速度最快，怎么创建索引优化呢？注意c1加密，c2不加密。 SELECT * FROM t1 WHERE c1 \u003e 10 AND c2 \u003c 40; SELECT * FROM t1 WHERE c1 \u003e 10 OR c2 \u003c 40; 现在，我要在服务端实现机密计算，支持int类型的各种操作，我要新增一批ciphera的运算函数，比如cipehra_lt等，cipehra_lt中，解密数据，然后转换为int4_lt。为覆盖int的各种运算，我需要新增的ciphera运算函数应该包含哪些？\n3.2 支持范围 一、数据类型 - 一、数值与字符串 | 类型 | 别名 | 说明 | | -| -| -| | smallint | int2 | - | | integer | int, int4 | - | | bigint | int8 | - | | real | float4 | - | | double precision | float8 | - | | character varying(n) | varchar(n) | - | | character(n) | char(n) | - | | text | - | - | - 二、时间、布尔、二进制 | 类型 | 别名 | 说明 | | -| -| -| | boolean | bool | - | | bytea | - | - | - 三、其他 | 类型 | 别名 | 说明 | | -| -| -| | numeric(p,s) | decimal(p,s) | - | 二、操作符与函数 - 一、比较运算符函数 | 运算符 | 函数 | | -| -| | \u003c | ciphera_lt | | \u003c= | ciphera_le | | = | ciphera_eq | | != / \u003c\u003e | ciphera_ne | | \u003e | ciphera_gt | | \u003e= | ciphera_ge | | (btree) | bt_ciphera_cmp | - 二、算术运算符函数 | 运算符 | 函数 | | -| -| | + | ciphera_pl | | - | ciphera_mi | | * | ciphera_mul | | / | ciphera_div | | % | ciphera_mod | | @ | ciphera_abs | - 三、位运算符函数 | 运算符 | 函数 | | -| -| | \u0026 | ciphera_bitand | | \\| | ciphera_bitor | | # | ciphera_bitxor | | ~ | ciphera_bitnot | | \u003c\u003c | ciphera_bitshiftleft | | \u003e\u003e | ciphera_bitshiftright | - 四、字符串与二进制操作函数 | 运算符 / 函数名 | 函数 | | -| -| | \\|\\| | ciphera_cat | | length() | ciphera_length | | substr() | ciphera_substr | | lower() | ciphera_lower | | upper() | ciphera_upper | | trim() | ciphera_trim | | replace() | ciphera_replace | | position() | ciphera_position | | like | ciphera_like | | ilike | ciphera_ilike | | ~ / ~* | ciphera_regexp_match | - 五、聚合状态转换函数 | 聚合函数 | 函数 | | -| -| | SUM() | ciphera_sum | | MAX() | ciphera_larger | | MIN() | ciphera_smaller | | AVG() | ciphera_avg_accum | | STRING_AGG() | ciphera_string_agg | 3.2 新增libcalc 3.2 新增ta_calc/ca_calc ca_calc：独立进程。自动生成pg的各种计算int2，text等计算，比如int2eq等，格式化入参，通过共享内内存的方式，把数据发送给ta_calc进程，等待计算结果。 ta_calc：独立进程。通过共享内存，接收ca_calc发送的数据，并且反格式化，并调用libcalc.so接口，完成计算，把计算结果返回给ca_calc。 3.3 内核新增ciphera函数 SELECT oid,proname,prorows,pronargs,proargtypes,prorettype,pronargdefaults,proargnames,prosrc FROM pg_proc WHERE proname like '%cipher%'; SELECT oid, proname, prorows, pronargs, (SELECT string_agg(format_type(oid, NULL), ', ' ORDER BY ord) FROM unnest(proargtypes) WITH ORDINALITY AS u(oid, ord)) AS argin, format_type(prorettype, NULL) AS argout, pronargdefaults, proargnames, prosrc FROM pg_proc WHERE proname LIKE '%cipher%' ORDER BY oid; 3.4 内核新增ciphera运算符 3.5 内核make_op识别机密计算 3.6 index_scan算子 CREATE TABLE t1(c1 INT, c2 TEXT, c3 INT); CREATE INDEX i1 ON t1(c1,c2); -- 假设t1有很多数据，且analyze过 -- 哪些查询会走索引？哪些不走？给一些例子！要全一点 -- 走索引： SELECT * FROM t1 WHERE c1 = 1； SELECT * FROM t1 WHERE c1 = 1 + 1； SELECT * FROM t1 WHERE c1 IN (1,2,3); SELECT * FROM t1 WHERE c1 \u003e 1; SELECT * FROM t1 WHERE c1 \u003e 1 AND c1 \u003c 2; SELECT * FROM t1 WHERE c1 = 1 AND c2 = 'a'; -- 不能c2 \u003e 'a' SELECT * FROM t1 ORDER BY c1； SELECT c1,count(*) FROM t1 GROUP BY c1; SELECT max(c1) FROM t1; SELECT * FROm t1 JOIN t2 ON t1.c1 = t2.c1; DELETE FROM t1 WHERE c1 = 1; UPDATE t1 SET c2 = 'b' WHERE c1 = 1; -- 不走索引 SELECT * FROM t1 WHERE c2 = 'a'; SELECT * FROM t1 WHERE c2 \u003e 'a'; SELECT * FROM t1 WHERE c1 + 1 = 2; -- 不行 SELECT * FROM t1 WHERE c1::text = '1'; SELECT * FROM t1 WHERE c1 != 1; SELECT * FROM t1 WHERE c1 NO IN (1,2,3); SELECT * FROM t1 WHERE c1 = 1 AND c2 \u003e 'a'; SELECT * FROM t1 WHERE c1 = 5 OR c3 = 10; tpcc 1000 warehouse\nbmsql_customer 表： 行数：3000w 大小：13.5 G 索引：(c_w_id, c_d_id, c_id) 索引大小：700 M 索引行数：300w 索引层数：3层 root：1 page * 400 tup/page internal：400 page * 400 tup/page leaf：8.8w page * 400 tup/page tee交互次数：3 3.6 优化 ca/ta通信 ca1 ca1 ca2 ca3 +--------[fdbk]+----------[fdbk]+-------------[fdbk]+---------------+ --------- itemdesc itemdesc itemdesc itemdesc total=1000 p1 alloc off=[0-100] p2 alloc off=[100-300] p3 alloc off=[300-700] p4 alloc off=[700-1000] p3 free off=[300-700] p5 alloc len=100, 怎么处理？ p6 alloc len=200，怎么处理？ 我在使用C语言编程。有个场景：多个生产者，比如是p1,p2,p3,p4。1个消费者s1。每个p1都执行psend，然后执行precv阻塞等待s1反馈。帮我设计并实现一个demo。\n4 测试用例 等值查询 范围查询 -- 构造 CREATE DATA KEY dk1(password='pass.123'); CREATE TABLE t1(c1 INT, c2 INT ENCRYPT dk1, c3 INT); INSERT INTO t1 VALUES (11,12,13), (21,22,23), (31,32,33), (41,42,43); -- 预期：tee中，执行ciphera_gt SELECT * FROM t1 WHERE c2 \u003e 30; -- 清理 DROP TABLE t1; DROP DATA KEY dk1; 模糊查询 附录：专利 SQL改写 select * from t1 where c1 \u003e 10 select * from t1 where ciphera_gt(c1, cipherf_10) 加密上下文 驱动侧：’Q’修改为’C’：携带 加密上下文版本号 内核侧：CREATE/ALTER/DROP TABLE，CREAT/ALTER/DROP KEY，更新 加密上下文版本号 表达式短路求值 内核侧：SELECT .. WHERE cipher \u003e .. OR plian \u003e ..优化为WHERE plian \u003e .. OR cipher \u003e .. OR 附录：AI 代码要求： 尽量少使用换行，遵循以下格式：\ntypedef struct CreateDataKeyStmt { NodeTag\ttype; char *keyname; } CreateDataKeyStmt; int funcname(int arg1, char *arg2) /* 要求1：返回值、函数名等放在一行 */ { int tmpa; /* 要求2：缩进统一用1个tab，1个tab是4个空格，确保是4个空格哦 */ int tmpb; /* 要求3：类型和变量名之间，用1个空格 */ if (arg1 \u003c 5 \u0026\u0026 arg \u003c 10 \u0026\u0026 arg2 != NULL) { /* 要求4：换行缩进1个tab，除了函数定义外，所有大括号不单独换行 */ /* do something */ } switch (arg1) { /* 要求5：switch和大括号放在同一行 */ case 30: /* do something */ break; case 40: /* do something */ break; default: break; } if (arg == NULL) { /* 要求6：即使if中只有1行代码，也加大括号 */ return -1; } else { /* do something */ } return 1; } 计划 新增libcalc.so 支持的类型：int2,int4,int8,varchar(n),text,bytea 支持的运算：lt, le, eq, ne, gt, ge, bt_cmp, pl, mi, mul, div, mod, abs, bitand, bitor, bitxor, bitnot, bitshiftleft, bitshiftright, cat, length, substr, lower, upper, trim, replace, position, like, ilike, regexp_match, sum, larger, smaller, avg_accum, string_agg 新增内置函数：ciphera内置函数：lt, le, eq, ne, gt, ge, bt_cmp, pl, mi, mul, div, mod, abs, bitand, bitor, bitxor, bitnot, bitshiftleft, bitshiftright, cat, length, substr, lower, upper, trim, replace, position, like, ilike, regexp_match, sum, larger, smaller, avg_accum, string_agg (ciphera, ciphera)：密文和密文 (ciphera, int2)：密文和明文 独立编译运 附录：参考文献 全密态概述：https://www.jos.org.cn/html/2024/8/7095.htm#outline_anchor_6 ",
+  "wordCount" : "2649",
+  "inLanguage": "en",
+  "datePublished": "2026-06-24T14:47:00+08:00",
+  "dateModified": "2026-08-19T15:39:42+08:00",
+  "author":{
+    "@type": "Person",
+    "name": "Me"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "http://localhost:1313/posts/security/4-5-fully-encrypted-database/"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Kernel Notes",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "http://localhost:1313/favicon.ico"
+    }
+  }
+}
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="Kernel Notes (Alt + H)">Kernel Notes</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="http://localhost:1313/categories/" title="分类">
+                    <span>分类</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/search/" title="搜索 (Alt &#43; /)" accesskey=/>
+                    <span>搜索</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/tags/" title="标签">
+                    <span>标签</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/archives/" title="归档">
+                    <span>归档</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/ebooks/" title="电子书">
+                    <span>电子书</span>
+                </a>
+            </li>
+            <li>
+                <a href="http://localhost:1313/admin/" title="写作">
+                    <span>写作</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main"><article class="post-single">
+  
+  <header class="post-header">
+    
+    <h1 class="post-title">
+      数据库安全 5 全密态
+    </h1>
+    <div class="post-meta">
+      <span title='2026-06-24 14:47:00 +0800 CST'>June 24, 2026</span>&nbsp;·&nbsp;<span>13 min</span>&nbsp;·&nbsp;<span>2649 words</span>&nbsp;·&nbsp;<span>Me</span>
+      
+      
+
+      
+
+    </div>
+  </header>
+
+   
+
+  <div class="toc">
+    <details  open>
+        <summary accesskey="c" title="(Alt + C)">
+            <span class="details">Table of Contents</span>
+        </summary>
+
+        <div class="inner"><ul>
+                <li>
+                    <a href="#0-%e5%9f%ba%e7%a1%80%e8%b0%83%e7%a0%94" aria-label="0 基础调研">0 基础调研</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e8%bf%90%e7%ae%97%e7%ac%a6" aria-label="一、运算符">一、运算符</a></li>
+                <li>
+                    <a href="#%e4%ba%8c%e6%95%b0%e6%8d%ae%e7%b1%bb%e5%9e%8b" aria-label="二、数据类型">二、数据类型</a></li></ul>
+                </li>
+                <li>
+                    <a href="#1-%e6%9e%b6%e6%9e%84%e8%ae%be%e8%ae%a1" aria-label="1 架构设计">1 架构设计</a><ul>
+                        
+                <li>
+                    <a href="#%e5%b7%a5%e4%bd%9c%e8%ae%a1%e5%88%92" aria-label="工作计划">工作计划</a><ul>
+                        
+                <li>
+                    <a href="#table-1-scan-nodes" aria-label="Table 1: Scan Nodes">Table 1: Scan Nodes</a></li>
+                <li>
+                    <a href="#table-2-join-nodes" aria-label="Table 2: Join Nodes">Table 2: Join Nodes</a></li>
+                <li>
+                    <a href="#table-3-processing-nodes" aria-label="Table 3: Processing Nodes">Table 3: Processing Nodes</a></li>
+                <li>
+                    <a href="#table-4-set--control-nodes" aria-label="Table 4: Set &amp; Control Nodes">Table 4: Set &amp; Control Nodes</a></li>
+                <li>
+                    <a href="#%e5%8d%95%e7%8b%ac%e8%af%b4%e6%98%8etable-function-materialization%e8%a1%a8%e5%87%bd%e6%95%b0%e7%89%a9%e5%8c%96%e8%ae%a1%e7%ae%97" aria-label="单独说明：Table Function Materialization（表函数物化计算）">单独说明：Table Function Materialization（表函数物化计算）</a></li></ul>
+                </li></ul>
+                </li>
+                <li>
+                    <a href="#2-%e9%a9%b1%e5%8a%a8%e5%8a%a0%e5%af%86---%e5%ae%9e%e7%8e%b0" aria-label="2 驱动加密 - 实现">2 驱动加密 - 实现</a><ul>
+                        
+                <li>
+                    <a href="#21-%e6%96%b0%e5%a2%9e%e7%b1%bb%e5%9e%8bciphera" aria-label="2.1 新增类型ciphera">2.1 新增类型ciphera</a></li>
+                <li>
+                    <a href="#22-%e6%96%b0%e5%a2%9e%e7%b3%bb%e7%bb%9f%e8%a1%a8pg_key" aria-label="2.2 新增系统表pg_key">2.2 新增系统表pg_key</a></li>
+                <li>
+                    <a href="#23-%e6%96%b0%e5%a2%9e%e8%af%ad%e6%b3%95data-key" aria-label="2.3 新增语法DATA KEY">2.3 新增语法DATA KEY</a></li>
+                <li>
+                    <a href="#24-%e6%96%b0%e5%a2%9e%e7%b3%bb%e7%bb%9f%e8%a1%a8pg_sec_class" aria-label="2.4 新增系统表pg_sec_class">2.4 新增系统表pg_sec_class</a></li>
+                <li>
+                    <a href="#24-%e6%96%b0%e5%a2%9e%e8%af%ad%e6%b3%95encrypt" aria-label="2.4 新增语法ENCRYPT">2.4 新增语法ENCRYPT</a></li>
+                <li>
+                    <a href="#25-%e6%96%b0%e5%a2%9e%e5%85%ac%e5%85%b1%e8%af%ad%e6%b3%95%e8%a7%a3%e6%9e%90libgram" aria-label="2.5 新增公共语法解析libgram">2.5 新增公共语法解析libgram</a></li>
+                <li>
+                    <a href="#26-libpq%e9%87%8d%e5%86%99insert" aria-label="2.6 libpq重写INSERT">2.6 libpq重写INSERT</a></li>
+                <li>
+                    <a href="#27-libpq%e9%87%8d%e5%86%99select%e7%bb%93%e6%9e%9c" aria-label="2.7 libpq重写SELECT结果">2.7 libpq重写SELECT结果</a></li>
+                <li>
+                    <a href="#28-%e6%96%b0%e5%a2%9e%e6%94%af%e6%8c%81int%e7%b1%bb%e5%9e%8b" aria-label="2.8 新增支持int类型">2.8 新增支持int类型</a></li></ul>
+                </li>
+                <li>
+                    <a href="#3-%e6%9c%ba%e5%af%86%e8%ae%a1%e7%ae%97---%e5%ae%9e%e7%8e%b0" aria-label="3 机密计算 - 实现">3 机密计算 - 实现</a><ul>
+                        
+                <li>
+                    <a href="#31-%e7%ae%80%e5%8d%95%e8%ae%a1%e5%88%92" aria-label="3.1 简单计划">3.1 简单计划</a></li>
+                <li>
+                    <a href="#32-%e6%94%af%e6%8c%81%e8%8c%83%e5%9b%b4" aria-label="3.2 支持范围">3.2 支持范围</a><ul>
+                        
+                <li>
+                    <a href="#%e4%b8%80%e6%95%b0%e6%8d%ae%e7%b1%bb%e5%9e%8b" aria-label="一、数据类型">一、数据类型</a></li>
+                <li>
+                    <a href="#%e4%ba%8c%e6%93%8d%e4%bd%9c%e7%ac%a6%e4%b8%8e%e5%87%bd%e6%95%b0" aria-label="二、操作符与函数">二、操作符与函数</a></li></ul>
+                </li>
+                <li>
+                    <a href="#32-%e6%96%b0%e5%a2%9elibcalc" aria-label="3.2 新增libcalc">3.2 新增libcalc</a></li>
+                <li>
+                    <a href="#32-%e6%96%b0%e5%a2%9eta_calcca_calc" aria-label="3.2 新增ta_calc/ca_calc">3.2 新增ta_calc/ca_calc</a></li>
+                <li>
+                    <a href="#33-%e5%86%85%e6%a0%b8%e6%96%b0%e5%a2%9eciphera%e5%87%bd%e6%95%b0" aria-label="3.3 内核新增ciphera函数">3.3 内核新增ciphera函数</a></li>
+                <li>
+                    <a href="#34-%e5%86%85%e6%a0%b8%e6%96%b0%e5%a2%9eciphera%e8%bf%90%e7%ae%97%e7%ac%a6" aria-label="3.4 内核新增ciphera运算符">3.4 内核新增ciphera运算符</a></li>
+                <li>
+                    <a href="#35-%e5%86%85%e6%a0%b8make_op%e8%af%86%e5%88%ab%e6%9c%ba%e5%af%86%e8%ae%a1%e7%ae%97" aria-label="3.5 内核make_op识别机密计算">3.5 内核make_op识别机密计算</a></li>
+                <li>
+                    <a href="#36-index_scan%e7%ae%97%e5%ad%90" aria-label="3.6 index_scan算子">3.6 index_scan算子</a></li>
+                <li>
+                    <a href="#36-%e4%bc%98%e5%8c%96" aria-label="3.6 优化">3.6 优化</a><ul>
+                        
+                <li>
+                    <a href="#cata%e9%80%9a%e4%bf%a1" aria-label="ca/ta通信">ca/ta通信</a></li></ul>
+                </li></ul>
+                </li>
+                <li>
+                    <a href="#4-%e6%b5%8b%e8%af%95%e7%94%a8%e4%be%8b" aria-label="4 测试用例">4 测试用例</a><ul>
+                        
+                <li>
+                    <a href="#%e7%ad%89%e5%80%bc%e6%9f%a5%e8%af%a2" aria-label="等值查询">等值查询</a></li>
+                <li>
+                    <a href="#%e8%8c%83%e5%9b%b4%e6%9f%a5%e8%af%a2" aria-label="范围查询">范围查询</a></li>
+                <li>
+                    <a href="#%e6%a8%a1%e7%b3%8a%e6%9f%a5%e8%af%a2" aria-label="模糊查询">模糊查询</a></li></ul>
+                </li>
+                <li>
+                    <a href="#%e9%99%84%e5%bd%95%e4%b8%93%e5%88%a9" aria-label="附录：专利">附录：专利</a></li>
+                <li>
+                    <a href="#%e9%99%84%e5%bd%95ai" aria-label="附录：AI">附录：AI</a><ul>
+                        
+                <li>
+                    <a href="#%e4%bb%a3%e7%a0%81%e8%a6%81%e6%b1%82" aria-label="代码要求：">代码要求：</a></li></ul>
+                </li>
+                <li>
+                    <a href="#%e9%99%84%e5%bd%95%e5%8f%82%e8%80%83%e6%96%87%e7%8c%ae" aria-label="附录：参考文献">附录：参考文献</a>
+                </li>
+            </ul>
+        </div>
+    </details>
+</div>
+
+
+  
+  <div class="post-content"><ol>
+<li><a href="#0-%E5%9F%BA%E7%A1%80%E8%B0%83%E7%A0%94">0 基础调研</a>
+<ol>
+<li><a href="#%E4%B8%80%E3%80%81%E8%BF%90%E7%AE%97%E7%AC%A6">一、运算符</a></li>
+<li><a href="#%E4%BA%8C%E3%80%81%E6%95%B0%E6%8D%AE%E7%B1%BB%E5%9E%8B">二、数据类型</a></li>
+</ol>
+</li>
+<li><a href="#1-%E6%9E%B6%E6%9E%84%E8%AE%BE%E8%AE%A1">1 架构设计</a>
+<ol>
+<li><a href="#%E5%B7%A5%E4%BD%9C%E8%AE%A1%E5%88%92">工作计划</a>
+<ol>
+<li><a href="#Table-1-Scan-Nodes">Table 1: Scan Nodes</a></li>
+<li><a href="#Table-2-Join-Nodes">Table 2: Join Nodes</a></li>
+<li><a href="#Table-3-Processing-Nodes">Table 3: Processing Nodes</a></li>
+<li><a href="#Table-4-Set-amp-Control-Nodes">Table 4: Set &amp; Control Nodes</a></li>
+<li><a href="#%E5%8D%95%E7%8B%AC%E8%AF%B4%E6%98%8E%EF%BC%9ATable-Function-Materialization%EF%BC%88%E8%A1%A8%E5%87%BD%E6%95%B0%E7%89%A9%E5%8C%96%E8%AE%A1%E7%AE%97%EF%BC%89">单独说明：Table Function Materialization（表函数物化计算）</a></li>
+</ol>
+</li>
+</ol>
+</li>
+<li><a href="#2-%E9%A9%B1%E5%8A%A8%E5%8A%A0%E5%AF%86-%E5%AE%9E%E7%8E%B0">2 驱动加密 - 实现</a>
+<ol>
+<li><a href="#2-1-%E6%96%B0%E5%A2%9E%E7%B1%BB%E5%9E%8Bciphera">2.1 新增类型ciphera</a></li>
+<li><a href="#2-2-%E6%96%B0%E5%A2%9E%E7%B3%BB%E7%BB%9F%E8%A1%A8pg-key">2.2 新增系统表pg_key</a></li>
+<li><a href="#2-3-%E6%96%B0%E5%A2%9E%E8%AF%AD%E6%B3%95DATA-KEY">2.3 新增语法DATA KEY</a></li>
+<li><a href="#2-4-%E6%96%B0%E5%A2%9E%E7%B3%BB%E7%BB%9F%E8%A1%A8pg-sec-class">2.4 新增系统表pg_sec_class</a></li>
+<li><a href="#2-4-%E6%96%B0%E5%A2%9E%E8%AF%AD%E6%B3%95ENCRYPT">2.4 新增语法ENCRYPT</a></li>
+<li><a href="#2-5-%E6%96%B0%E5%A2%9E%E5%85%AC%E5%85%B1%E8%AF%AD%E6%B3%95%E8%A7%A3%E6%9E%90libgram">2.5 新增公共语法解析libgram</a></li>
+<li><a href="#2-6-libpq%E9%87%8D%E5%86%99INSERT">2.6 libpq重写INSERT</a></li>
+<li><a href="#2-7-libpq%E9%87%8D%E5%86%99SELECT%E7%BB%93%E6%9E%9C">2.7 libpq重写SELECT结果</a></li>
+<li><a href="#2-8-%E6%96%B0%E5%A2%9E%E6%94%AF%E6%8C%81int%E7%B1%BB%E5%9E%8B">2.8 新增支持int类型</a></li>
+</ol>
+</li>
+<li><a href="#3-%E6%9C%BA%E5%AF%86%E8%AE%A1%E7%AE%97-%E5%AE%9E%E7%8E%B0">3 机密计算 - 实现</a>
+<ol>
+<li><a href="#3-1-%E7%AE%80%E5%8D%95%E8%AE%A1%E5%88%92">3.1 简单计划</a></li>
+<li><a href="#3-2-%E6%94%AF%E6%8C%81%E8%8C%83%E5%9B%B4">3.2 支持范围</a>
+<ol>
+<li><a href="#%E4%B8%80%E3%80%81%E6%95%B0%E6%8D%AE%E7%B1%BB%E5%9E%8B">一、数据类型</a></li>
+<li><a href="#%E4%BA%8C%E3%80%81%E6%93%8D%E4%BD%9C%E7%AC%A6%E4%B8%8E%E5%87%BD%E6%95%B0">二、操作符与函数</a></li>
+</ol>
+</li>
+<li><a href="#3-2-%E6%96%B0%E5%A2%9Elibcalc">3.2 新增libcalc</a></li>
+<li><a href="#3-2-%E6%96%B0%E5%A2%9Eta-calc-x2F-ca-calc">3.2 新增ta_calc/ca_calc</a></li>
+<li><a href="#3-3-%E5%86%85%E6%A0%B8%E6%96%B0%E5%A2%9Eciphera%E5%87%BD%E6%95%B0">3.3 内核新增ciphera函数</a></li>
+<li><a href="#3-4-%E5%86%85%E6%A0%B8%E6%96%B0%E5%A2%9Eciphera%E8%BF%90%E7%AE%97%E7%AC%A6">3.4 内核新增ciphera运算符</a></li>
+<li><a href="#3-5-%E5%86%85%E6%A0%B8make-op%E8%AF%86%E5%88%AB%E6%9C%BA%E5%AF%86%E8%AE%A1%E7%AE%97">3.5 内核make_op识别机密计算</a></li>
+<li><a href="#3-6-index-scan%E7%AE%97%E5%AD%90">3.6 index_scan算子</a></li>
+<li><a href="#3-6-%E4%BC%98%E5%8C%96">3.6 优化</a>
+<ol>
+<li><a href="#ca-x2F-ta%E9%80%9A%E4%BF%A1">ca/ta通信</a></li>
+</ol>
+</li>
+</ol>
+</li>
+<li><a href="#4-%E6%B5%8B%E8%AF%95%E7%94%A8%E4%BE%8B">4 测试用例</a>
+<ol>
+<li><a href="#%E7%AD%89%E5%80%BC%E6%9F%A5%E8%AF%A2">等值查询</a></li>
+<li><a href="#%E8%8C%83%E5%9B%B4%E6%9F%A5%E8%AF%A2">范围查询</a></li>
+<li><a href="#%E6%A8%A1%E7%B3%8A%E6%9F%A5%E8%AF%A2">模糊查询</a></li>
+</ol>
+</li>
+<li><a href="#%E9%99%84%E5%BD%95%EF%BC%9A%E4%B8%93%E5%88%A9">附录：专利</a></li>
+<li><a href="#%E9%99%84%E5%BD%95%EF%BC%9AAI">附录：AI</a>
+<ol>
+<li><a href="#%E4%BB%A3%E7%A0%81%E8%A6%81%E6%B1%82%EF%BC%9A">代码要求：</a></li>
+</ol>
+</li>
+<li><a href="#%E9%99%84%E5%BD%95%EF%BC%9A%E5%8F%82%E8%80%83%E6%96%87%E7%8C%AE">附录：参考文献</a></li>
+</ol>
+<h1 id="0-基础调研">0 基础调研<a hidden class="anchor" aria-hidden="true" href="#0-基础调研">#</a></h1>
+<h2 id="一运算符">一、运算符<a hidden class="anchor" aria-hidden="true" href="#一运算符">#</a></h2>
+<ul>
+<li>运算符<br>
+以int4为例：<code>select proname from pg_catalog.pg_proc where proname like '%int4%' order by proname;</code>
+<ul>
+<li>
+<p>一、比较运算符函数</p>
+<table>
+  <thead>
+      <tr>
+          <th>运算符</th>
+          <th>函数</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>&lt;</td>
+          <td>int4lt</td>
+      </tr>
+      <tr>
+          <td>&lt;=</td>
+          <td>int4le</td>
+      </tr>
+      <tr>
+          <td>=</td>
+          <td>int4eq</td>
+      </tr>
+      <tr>
+          <td>!= / &lt;&gt;</td>
+          <td>int4ne</td>
+      </tr>
+      <tr>
+          <td>&gt;</td>
+          <td>int4gt</td>
+      </tr>
+      <tr>
+          <td>&gt;=</td>
+          <td>int4ge</td>
+      </tr>
+      <tr>
+          <td>(btree)</td>
+          <td>btint4cmp</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+<li>
+<p>二、算数运算符函数</p>
+<table>
+  <thead>
+      <tr>
+          <th>运算符</th>
+          <th>函数</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>+</td>
+          <td>int4pl</td>
+      </tr>
+      <tr>
+          <td>-</td>
+          <td>int4mi</td>
+      </tr>
+      <tr>
+          <td>*</td>
+          <td>int4mul</td>
+      </tr>
+      <tr>
+          <td>/</td>
+          <td>int4div</td>
+      </tr>
+      <tr>
+          <td>%</td>
+          <td>int4mod</td>
+      </tr>
+      <tr>
+          <td>@</td>
+          <td>int4abs</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+<li>
+<p>三、聚合函数</p>
+<table>
+  <thead>
+      <tr>
+          <th>运算符</th>
+          <th>函数</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>sum()</td>
+          <td>int4_sum</td>
+      </tr>
+      <tr>
+          <td>max()</td>
+          <td>int4larger</td>
+      </tr>
+      <tr>
+          <td>min()</td>
+          <td>int4smaller</td>
+      </tr>
+      <tr>
+          <td>avg()</td>
+          <td>int4_avg_accum + int8_avg</td>
+      </tr>
+  </tbody>
+</table>
+</li>
+</ul>
+</li>
+</ul>
+<h2 id="二数据类型">二、数据类型<a hidden class="anchor" aria-hidden="true" href="#二数据类型">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-gdscript3" data-lang="gdscript3"><span class="line"><span class="cl"><span class="o">-</span> <span class="err">一、数值与字符串</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="err">类型</span> <span class="o">|</span> <span class="err">别名</span> <span class="o">|</span> <span class="err">说明</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="o">-|</span> <span class="o">-|</span> <span class="o">-|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">smallint</span> <span class="o">|</span> <span class="n">int2</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">integer</span> <span class="o">|</span> <span class="ne">int</span><span class="p">,</span> <span class="n">int4</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">bigint</span> <span class="o">|</span> <span class="n">int8</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">real</span> <span class="o">|</span> <span class="n">float4</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">double</span> <span class="n">precision</span> <span class="o">|</span> <span class="n">float8</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">character</span> <span class="n">varying</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">|</span> <span class="n">varchar</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">character</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">|</span> <span class="n">char</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">text</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl"><span class="o">-</span> <span class="err">二、时间、布尔、二进制</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="err">类型</span> <span class="o">|</span> <span class="err">别名</span> <span class="o">|</span> <span class="err">说明</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="o">-|</span> <span class="o">-|</span> <span class="o">-|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">boolean</span> <span class="o">|</span> <span class="ne">bool</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">bytea</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">timestamp</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">timestamp</span> <span class="n">with</span> <span class="n">time</span> <span class="n">zone</span> <span class="o">|</span> <span class="n">timestamptz</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">time</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">time</span> <span class="n">with</span> <span class="n">time</span> <span class="n">zone</span> <span class="o">|</span> <span class="n">timetz</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">interval</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl"><span class="o">-</span> <span class="err">三、自增序列</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="err">类型</span> <span class="o">|</span> <span class="err">别名</span> <span class="o">|</span> <span class="err">说明</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="o">-|</span> <span class="o">-|</span> <span class="o">-|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">smallserial</span> <span class="o">|</span> <span class="n">serial2</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">serial</span> <span class="o">|</span> <span class="n">serial4</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">bigserial</span> <span class="o">|</span> <span class="n">serial8</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl"><span class="o">-</span> <span class="err">四、其他</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="err">类型</span> <span class="o">|</span> <span class="err">别名</span> <span class="o">|</span> <span class="err">说明</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="o">-|</span> <span class="o">-|</span> <span class="o">-|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">numeric</span><span class="p">(</span><span class="n">p</span><span class="p">,</span><span class="n">s</span><span class="p">)</span> <span class="o">|</span> <span class="n">decimal</span><span class="p">(</span><span class="n">p</span><span class="p">,</span><span class="n">s</span><span class="p">)</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">bit</span> <span class="n">varying</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">|</span> <span class="n">varbit</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">jsonb</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">uuid</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span> <span class="o">-|</span>
+</span></span></code></pre></div><h1 id="1-架构设计">1 架构设计<a hidden class="anchor" aria-hidden="true" href="#1-架构设计">#</a></h1>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">Driver
+</span></span><span class="line"><span class="cl">    +Cache
+</span></span><span class="line"><span class="cl">    +Parser <span class="o">(</span>libgram.so<span class="o">)</span>
+</span></span><span class="line"><span class="cl">    +Encrypt <span class="o">(</span>libdrvenc.so<span class="o">)</span>
+</span></span><span class="line"><span class="cl">    +Rewrite <span class="o">(</span>libdrvenc.so<span class="o">)</span>
+</span></span><span class="line"><span class="cl">    Protocol
+</span></span><span class="line"><span class="cl">    Connect
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Server
+</span></span><span class="line"><span class="cl">    Parser
+</span></span><span class="line"><span class="cl">    Analyze
+</span></span><span class="line"><span class="cl">    Rewrite
+</span></span><span class="line"><span class="cl">    Plan
+</span></span><span class="line"><span class="cl">    Executor
+</span></span><span class="line"><span class="cl">        +TeeProtocol
+</span></span><span class="line"><span class="cl">        +CipherQual <span class="o">(</span>libcalc.so<span class="o">)</span>
+</span></span></code></pre></div><p>代码结构：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">src
+</span></span><span class="line"><span class="cl">    interfaces
+</span></span><span class="line"><span class="cl">        libpq
+</span></span><span class="line"><span class="cl">            fe-drvenc.c
+</span></span><span class="line"><span class="cl">    backend
+</span></span><span class="line"><span class="cl">        utils
+</span></span><span class="line"><span class="cl">            adt
+</span></span><span class="line"><span class="cl">                ciphera.c <span class="c1"># 新增数据类型</span>
+</span></span><span class="line"><span class="cl">        security
+</span></span></code></pre></div><ul>
+<li>
+<p>直接计算 (ExecMakeTableFunctionResult)</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">app                                     libpq                       libdrvenc           kernel                          ta_cacl
+</span></span><span class="line"><span class="cl"><span class="p">|</span>---------------------------------------<span class="p">|</span>---------------------------<span class="p">|</span>-------------------<span class="p">|</span>-------------------------------<span class="p">|</span>-----------------------------------
+</span></span><span class="line"><span class="cl">CREATE DATA KEY k1 ..
+</span></span><span class="line"><span class="cl">                                                                                        insert catalog pg_key
+</span></span><span class="line"><span class="cl">CREATE TABLE t1<span class="o">(</span>c1 INT ENCRYPT .., c2 INT<span class="o">)</span>
+</span></span><span class="line"><span class="cl">                                                                                        insert catalog pg_attribute <span class="o">[</span>c1, ciphera<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                                        insert catalog pg_sec_class <span class="o">[</span>t1, c1, int<span class="o">]</span>
+</span></span><span class="line"><span class="cl">connect<span class="o">(</span><span class="nv">drvenc</span><span class="o">=</span>on<span class="o">)</span>
+</span></span><span class="line"><span class="cl">                                        get encrypted columns info from catalog pg_sec_class
+</span></span><span class="line"><span class="cl">                                        <span class="nb">set</span> encrypted columns
+</span></span><span class="line"><span class="cl">                                                                    load encrypted columns
+</span></span><span class="line"><span class="cl">                                        get search_paths from catalog pg_namespace
+</span></span><span class="line"><span class="cl">                                        <span class="nb">set</span> search_paths
+</span></span><span class="line"><span class="cl">INSERT INTO t1 VALUES<span class="o">(</span>11,22<span class="o">)</span>
+</span></span><span class="line"><span class="cl">                                        rewrite query <span class="k">if</span> need
+</span></span><span class="line"><span class="cl">                                                                    load search_path
+</span></span><span class="line"><span class="cl">                                                                    parse query <span class="s1">&#39;INSERT INTO t1 VALUES(11,22)&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                    check <span class="k">if</span> column encryptd <span class="o">[</span>public.t1.c1<span class="o">]</span> <span class="o">[</span>public.t1.c2<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                    encrypt column value <span class="s1">&#39;11&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                    rewrite query <span class="s1">&#39;INSERT INTO t1 VALUES(&#39;</span>cipher_11<span class="s1">&#39;,22)&#39;</span>
+</span></span><span class="line"><span class="cl">                                        send new query <span class="s1">&#39;INSERT INTO t1 VALUES(&#39;</span>cipher_11<span class="s1">&#39;,22)&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                                        insert t1 <span class="o">[</span><span class="s1">&#39;cipher_11&#39;</span>,22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">SELECT * FROM t1 WHERE <span class="nv">c1</span> <span class="o">=</span> <span class="m">11</span> <span class="o">(</span>assume: seqscan<span class="o">)</span>
+</span></span><span class="line"><span class="cl">                                        rewrite query <span class="k">if</span> need
+</span></span><span class="line"><span class="cl">                                                                    parse query <span class="s1">&#39;SELECT * FROM t1 WHERE c1 = 11&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                    check <span class="k">if</span> column encryptd <span class="o">[</span>public.t1.c1<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                    encrypt column value <span class="s1">&#39;11&#39;</span> to <span class="s1">&#39;cipher_11&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                    rewrite query <span class="s1">&#39;SELECT * FROM t1 WHERE c1 = cipher_11&#39;</span>
+</span></span><span class="line"><span class="cl">                                        send new query <span class="s1">&#39;SELECT * FROM t1 WHERE c1 = cipher_11&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                                            scan tuple <span class="o">[</span><span class="nv">c1</span> <span class="o">=</span> cipher_11<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                                            send result <span class="o">[</span><span class="s1">&#39;cipher_11&#39;</span>,22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                        recv result <span class="o">[</span><span class="s1">&#39;cipher_11&#39;</span>,22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                        decrypt result  <span class="k">if</span> need
+</span></span><span class="line"><span class="cl">                                                                    check <span class="k">if</span> column encryptd <span class="o">[</span>public.t1.c1<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                    decrypt column result <span class="s1">&#39;cipher_11&#39;</span> to <span class="m">11</span>
+</span></span><span class="line"><span class="cl">                                                                    rewrite column reslut <span class="o">[</span>11,22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                        <span class="k">return</span> result <span class="o">[</span>11,22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">receive <span class="o">[</span>11,22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">SELECT * FROM t1 WHERE c1 &gt; <span class="m">10</span> <span class="o">(</span>assume: seqscan<span class="o">)</span>
+</span></span><span class="line"><span class="cl">                                        rewrite query <span class="k">if</span> need
+</span></span><span class="line"><span class="cl">                                                                    parse query <span class="s1">&#39;SELECT * FROM t1 WHERE c1 &gt; 10&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                    ..
+</span></span><span class="line"><span class="cl">                                                                    rewrite query <span class="s1">&#39;SELECT * FROM t1 WHERE c1 &gt; cipher_10&#39;</span>
+</span></span><span class="line"><span class="cl">                                        send new query <span class="s1">&#39;SELECT * FROM t1 WHERE c1 &gt; cipher_10&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                                        parse
+</span></span><span class="line"><span class="cl">                                                                                        analyze qual <span class="s1">&#39;c1 &gt; cipher_10&#39;</span> to <span class="s1">&#39;ciphera_gt(c1, cipher_10)&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                                        plan
+</span></span><span class="line"><span class="cl">                                                                                        execute
+</span></span><span class="line"><span class="cl">                                                                                        scan tuple <span class="o">[</span><span class="s1">&#39;cipher_11&#39;</span>,22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                                        call <span class="s1">&#39;ciphera_gt(&#39;</span>cipher_11<span class="s1">&#39;, cipher_10)&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                                        package calculation <span class="o">[</span>ciphera_gt, cipher_11, cipher_10<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                                        send calculation
+</span></span><span class="line"><span class="cl">                                                                                                                        receive calculation <span class="o">[</span>ciphera_gt, cipher_11, cipher_10<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                                                                        decrypt cipher_11 to <span class="m">11</span>
+</span></span><span class="line"><span class="cl">                                                                                                                        decrypt cipher_10 to <span class="m">10</span>
+</span></span><span class="line"><span class="cl">                                                                                                                        call int4gt<span class="o">(</span>11,10<span class="o">)</span> -&gt; <span class="nb">true</span>
+</span></span><span class="line"><span class="cl">                                                                                                                        send result <span class="o">[</span>true<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                                        recv calculation <span class="o">[</span>true<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                                        send scan result <span class="o">[</span><span class="s1">&#39;cipher_11&#39;</span>,22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                        recv result <span class="o">[</span><span class="s1">&#39;cipher_11&#39;</span>,22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                        decrypt result  <span class="k">if</span> need
+</span></span><span class="line"><span class="cl">                                                                    ..
+</span></span><span class="line"><span class="cl">                                        <span class="k">return</span> result <span class="o">[</span>11,22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">SELECT c1 + c2 FROM t1 <span class="o">(</span>assume: seqscan<span class="o">)</span>
+</span></span><span class="line"><span class="cl">                                        rewrite query <span class="k">if</span> need
+</span></span><span class="line"><span class="cl">                                        send query <span class="s1">&#39;SELECT c1 + c2 FROM t1&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                                        parse
+</span></span><span class="line"><span class="cl">                                                                                        analyze qual <span class="s1">&#39;c1 + c2&#39;</span> to <span class="s1">&#39;ciphera_pl(c1,c2)&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                                        plan
+</span></span><span class="line"><span class="cl">                                                                                        execute
+</span></span><span class="line"><span class="cl">                                                                                        scan tuple <span class="o">[</span><span class="s1">&#39;cipher_11&#39;</span>,22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                                        call <span class="s1">&#39;ciphera_pl(&#39;</span>cipher_11<span class="s1">&#39;, 22)&#39;</span>
+</span></span><span class="line"><span class="cl">                                                                                        package calculation <span class="o">[</span>ciphera_pl, cipher_11, 22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                                        send calculation
+</span></span><span class="line"><span class="cl">                                                                                                                        receive calculation <span class="o">[</span>ciphera_pl, cipher_11, 22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                                                                        decrypt cipher11 to <span class="m">11</span>
+</span></span><span class="line"><span class="cl">                                                                                                                        call int4pl<span class="o">(</span>11,22<span class="o">)</span> -&gt; <span class="m">33</span>
+</span></span><span class="line"><span class="cl">                                                                                                                        encrypt result <span class="m">33</span> to cipher_33
+</span></span><span class="line"><span class="cl">                                                                                                                        send result <span class="o">[</span>cipher_33<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                                        recv calculation <span class="o">[</span>cipher_33<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                                                                        send result <span class="o">[</span>cipher_33<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                        recv result <span class="o">[</span><span class="s1">&#39;cipher_11&#39;</span>,22<span class="o">]</span>
+</span></span><span class="line"><span class="cl">                                        decrypt result  <span class="k">if</span> need
+</span></span><span class="line"><span class="cl">                                                                    ..
+</span></span><span class="line"><span class="cl">                                        <span class="k">return</span> result <span class="o">[</span>33<span class="o">]</span>
+</span></span><span class="line"><span class="cl">receive <span class="o">[</span>33<span class="o">]</span>
+</span></span></code></pre></div></li>
+</ul>
+<p>例外：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="p">(</span><span class="mi">10</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">22</span><span class="p">);</span><span class="w"> </span><span class="c1">--&gt; INSERT INTO t1 VALUES(ciphera_sum(cipher_10, cipher_1), 22);
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">SELECT</span><span class="w"> </span><span class="n">c21</span><span class="p">,</span><span class="n">c22</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t2</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">SELECT</span><span class="w"> </span><span class="n">c21</span><span class="p">::</span><span class="n">ciphera</span><span class="p">,</span><span class="n">c22</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t2</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- ciphera中，需包含key oid
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">SELECT</span><span class="w"> </span><span class="n">re_encrypt</span><span class="p">(</span><span class="n">c21</span><span class="p">,</span><span class="w"> </span><span class="n">t1</span><span class="p">,</span><span class="w"> </span><span class="n">c1</span><span class="p">),</span><span class="n">c22</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t2</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h2 id="工作计划">工作计划<a hidden class="anchor" aria-hidden="true" href="#工作计划">#</a></h2>
+<p>一、基本功能</p>
+<ul>
+<li>语句加密（驱动侧
+<ol>
+<li>语法解析 [0.2人月]</li>
+<li>语句重写：10+数据类型、20+语法 [0.5人月]</li>
+<li>结果解密 [0.1人月]</li>
+<li>加密适配器 [0.2人月]</li>
+<li>密钥适配器 [0.2人月]</li>
+</ol>
+</li>
+<li>密文处理（内核侧）
+<ol>
+<li>密文操作符处理：15+ [0.2人月]</li>
+<li>密文函数处理：30+ [0.3人月]</li>
+<li>密文索引处理：btree [0.3人月]</li>
+<li>密文聚集算子处理：sort, agg, group, unique [0.6人月]</li>
+<li>密文连接算子处理：hashjoin, mergejoin, nestloopjoin [0.5人月]</li>
+<li>机密计算适配器 [0.3人月]</li>
+</ol>
+</li>
+<li>密文计算（可信侧）
+<ol>
+<li>密文函数计算：40+ [0.3人月]</li>
+<li>密文索引处理：btree [0.3人月]</li>
+</ol>
+</li>
+</ul>
+<p>二、软硬适配</p>
+<ul>
+<li>
+<p>加密适配</p>
+<ol>
+<li>三未信安加密机 [0.2人月]</li>
+</ol>
+</li>
+<li>
+<p>密钥适配</p>
+<ol>
+<li>华为云管理服务 [0.2人月]</li>
+</ol>
+</li>
+<li>
+<p>驱动适配</p>
+<ol>
+<li>JDBC [0.5人月]</li>
+</ol>
+</li>
+<li>
+<p>机密计算适配</p>
+<ol>
+<li>国产CPU：5 [0.8人月]</li>
+<li>国产OS：10 [0.8人月]</li>
+</ol>
+</li>
+<li>
+<p>分类</p>
+<ul>
+<li>表达式求值：
+<ul>
+<li>ExecEvalExpr</li>
+<li>ExecQual</li>
+<li>ExecProject</li>
+</ul>
+</li>
+<li>索引访问计算：
+<ul>
+<li>bt_compare</li>
+<li>bt_search</li>
+<li>hash_func</li>
+</ul>
+</li>
+<li>基础设施回调
+<ul>
+<li>索引
+<ul>
+<li>_bt_compare</li>
+<li>_bt_binsrch</li>
+</ul>
+</li>
+<li>排序
+<ul>
+<li>ApplySortComparator</li>
+<li>ST_COMPARE</li>
+</ul>
+</li>
+<li>哈希
+<ul>
+<li>ExecHashGetHashValue</li>
+</ul>
+</li>
+<li>合并
+<ul>
+<li>ExecMergeCompareKeys</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h3 id="table-1-scan-nodes">Table 1: Scan Nodes<a hidden class="anchor" aria-hidden="true" href="#table-1-scan-nodes">#</a></h3>
+<table>
+  <thead>
+      <tr>
+          <th style="text-align: left">No.</th>
+          <th style="text-align: left">Node</th>
+          <th style="text-align: left">Exec Function</th>
+          <th style="text-align: left">Expression Evaluation</th>
+          <th style="text-align: left">Infrastructure Callback</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td style="text-align: left">1</td>
+          <td style="text-align: left">Seq Scan</td>
+          <td style="text-align: left">ExecSeqScan</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">2</td>
+          <td style="text-align: left">Index Scan</td>
+          <td style="text-align: left">ExecIndexScan</td>
+          <td style="text-align: left">ExecQual (Filter/Recheck)</td>
+          <td style="text-align: left">_bt_compare, _bt_binsrch</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">3</td>
+          <td style="text-align: left">Index Only Scan</td>
+          <td style="text-align: left">ExecIndexOnlyScan</td>
+          <td style="text-align: left">ExecQual (Filter)</td>
+          <td style="text-align: left">_bt_compare, _bt_binsrch</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">4</td>
+          <td style="text-align: left">Bitmap Heap Scan</td>
+          <td style="text-align: left">ExecBitmapHeapScan</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">5</td>
+          <td style="text-align: left">Bitmap Index Scan</td>
+          <td style="text-align: left">ExecBitmapIndexScan</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">_bt_compare, _bt_binsrch</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">6</td>
+          <td style="text-align: left">Tid Scan</td>
+          <td style="text-align: left">ExecTidScan</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">7</td>
+          <td style="text-align: left">Tid Range Scan</td>
+          <td style="text-align: left">ExecTidRangeScan</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">8</td>
+          <td style="text-align: left">Subquery Scan</td>
+          <td style="text-align: left">ExecSubqueryScan</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">9</td>
+          <td style="text-align: left">Function Scan</td>
+          <td style="text-align: left">ExecFunctionScan</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">10</td>
+          <td style="text-align: left">TableFunc Scan</td>
+          <td style="text-align: left">ExecTableFuncScan</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">11</td>
+          <td style="text-align: left">Values Scan</td>
+          <td style="text-align: left">ExecValuesScan</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">12</td>
+          <td style="text-align: left">CTE Scan</td>
+          <td style="text-align: left">ExecCteScan</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">13</td>
+          <td style="text-align: left">Named Tuplestore Scan</td>
+          <td style="text-align: left">ExecNamedTuplestoreScan</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">14</td>
+          <td style="text-align: left">WorkTable Scan</td>
+          <td style="text-align: left">ExecWorkTableScan</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">15</td>
+          <td style="text-align: left">Foreign Scan</td>
+          <td style="text-align: left">ExecForeignScan</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">16</td>
+          <td style="text-align: left">Sample Scan</td>
+          <td style="text-align: left">ExecSampleScan</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="table-2-join-nodes">Table 2: Join Nodes<a hidden class="anchor" aria-hidden="true" href="#table-2-join-nodes">#</a></h3>
+<table>
+  <thead>
+      <tr>
+          <th style="text-align: left">No.</th>
+          <th style="text-align: left">Node</th>
+          <th style="text-align: left">Exec Function</th>
+          <th style="text-align: left">Expression Evaluation</th>
+          <th style="text-align: left">Infrastructure Callback</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td style="text-align: left">1</td>
+          <td style="text-align: left">Nested Loop</td>
+          <td style="text-align: left">ExecNestLoop</td>
+          <td style="text-align: left">ExecQual (Join Filter), ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">2</td>
+          <td style="text-align: left">Hash Join</td>
+          <td style="text-align: left">ExecHashJoin</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">ExecHashGetHashValue, ExecHashGetBucket</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">3</td>
+          <td style="text-align: left">Merge Join</td>
+          <td style="text-align: left">ExecMergeJoin</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">ExecMergeCompareKeys</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="table-3-processing-nodes">Table 3: Processing Nodes<a hidden class="anchor" aria-hidden="true" href="#table-3-processing-nodes">#</a></h3>
+<table>
+  <thead>
+      <tr>
+          <th style="text-align: left">No.</th>
+          <th style="text-align: left">Node</th>
+          <th style="text-align: left">Exec Function</th>
+          <th style="text-align: left">Expression Evaluation</th>
+          <th style="text-align: left">Infrastructure Callback</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td style="text-align: left">1</td>
+          <td style="text-align: left">Sort</td>
+          <td style="text-align: left">ExecSort</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">ApplySortComparator (ST_COMPARE)</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">2</td>
+          <td style="text-align: left">Incremental Sort</td>
+          <td style="text-align: left">ExecIncrementalSort</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">ApplySortComparator (ST_COMPARE)</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">3</td>
+          <td style="text-align: left">Aggregate</td>
+          <td style="text-align: left">ExecAgg</td>
+          <td style="text-align: left">ExecEvalExpr (transfn, finalfn)</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">4</td>
+          <td style="text-align: left">Group</td>
+          <td style="text-align: left">ExecGroup</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">execTuplesMatchPrepare / Compare</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">5</td>
+          <td style="text-align: left">Unique</td>
+          <td style="text-align: left">ExecUnique</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">execTuplesMatchPrepare / Compare</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">6</td>
+          <td style="text-align: left">Hash</td>
+          <td style="text-align: left">ExecHash</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">ExecHashGetHashValue, ExecHashGetBucket</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">7</td>
+          <td style="text-align: left">WindowAgg</td>
+          <td style="text-align: left">ExecWindowAgg</td>
+          <td style="text-align: left">ExecEvalExpr (window func)</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">8</td>
+          <td style="text-align: left">ProjectSet</td>
+          <td style="text-align: left">ExecProjectSet</td>
+          <td style="text-align: left">ExecEvalExpr (SRF in targetlist)</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">9</td>
+          <td style="text-align: left">ModifyTable</td>
+          <td style="text-align: left">ExecModifyTable</td>
+          <td style="text-align: left">ExecEvalExpr (SET/WHERE exprs)</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">10</td>
+          <td style="text-align: left">Limit</td>
+          <td style="text-align: left">ExecLimit</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">11</td>
+          <td style="text-align: left">Material</td>
+          <td style="text-align: left">ExecMaterial</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">12</td>
+          <td style="text-align: left">Memoize</td>
+          <td style="text-align: left">ExecMemoize</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">ExecMemoizeGetHashValue</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">13</td>
+          <td style="text-align: left">Gather</td>
+          <td style="text-align: left">ExecGather</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">14</td>
+          <td style="text-align: left">Gather Merge</td>
+          <td style="text-align: left">ExecGatherMerge</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">ApplySortComparator (ST_COMPARE)</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">15</td>
+          <td style="text-align: left">LockRows</td>
+          <td style="text-align: left">ExecLockRows</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">16</td>
+          <td style="text-align: left">SetOp</td>
+          <td style="text-align: left">ExecSetOp</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">execTuplesMatchPrepare / Compare</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="table-4-set--control-nodes">Table 4: Set &amp; Control Nodes<a hidden class="anchor" aria-hidden="true" href="#table-4-set--control-nodes">#</a></h3>
+<table>
+  <thead>
+      <tr>
+          <th style="text-align: left">No.</th>
+          <th style="text-align: left">Node</th>
+          <th style="text-align: left">Exec Function</th>
+          <th style="text-align: left">Expression Evaluation</th>
+          <th style="text-align: left">Infrastructure Callback</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td style="text-align: left">1</td>
+          <td style="text-align: left">Append</td>
+          <td style="text-align: left">ExecAppend</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">2</td>
+          <td style="text-align: left">Merge Append</td>
+          <td style="text-align: left">ExecMergeAppend</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">ApplySortComparator (ST_COMPARE)</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">3</td>
+          <td style="text-align: left">Result</td>
+          <td style="text-align: left">ExecResult</td>
+          <td style="text-align: left">ExecQual, ExecProject</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+      <tr>
+          <td style="text-align: left">4</td>
+          <td style="text-align: left">Recursive Union</td>
+          <td style="text-align: left">ExecRecursiveUnion</td>
+          <td style="text-align: left">N/A</td>
+          <td style="text-align: left">N/A</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="单独说明table-function-materialization表函数物化计算">单独说明：Table Function Materialization（表函数物化计算）<a hidden class="anchor" aria-hidden="true" href="#单独说明table-function-materialization表函数物化计算">#</a></h3>
+<p>在原生 PostgreSQL 中，<strong>仅 <code>Function Scan</code> 算子</strong>涉及此类计算。当函数被用作 FROM 子句中的数据源（即 SRF，Set-Returning Function）时，PG 执行引擎会通过 <code>ExecMakeTableFunctionResult</code> 接管控制权，循环调用该函数的 SRF 接口，并将返回的多行结果物化到内存或磁盘的 <code>Tuplestore</code> 中。此计算路径独立于表达式求值和基础设施回调，是 PG 内核中第三种且唯一的表函数专用计算机制。注意：<code>TableFunc Scan</code>（如 XMLTABLE/JSON_TABLE）走的是专门的 TableFunc API，不经过 <code>ExecMakeTableFunctionResult</code>，因此不属于此类。</p>
+<p>SELECT * FROM generate_series(1, 1000000);<br>
+SELECT * FROM pg_stat_activity;</p>
+<h1 id="2-驱动加密---实现">2 驱动加密 - 实现<a hidden class="anchor" aria-hidden="true" href="#2-驱动加密---实现">#</a></h1>
+<h2 id="21-新增类型ciphera">2.1 新增类型ciphera<a hidden class="anchor" aria-hidden="true" href="#21-新增类型ciphera">#</a></h2>
+<ol>
+<li>
+<p>pg_type.dat</p>
+</li>
+<li>
+<p>ciphera.h / ciphera.c</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="err">```</span>
+</span></span><span class="line"><span class="cl"><span class="err">```</span><span class="n">c</span>
+</span></span></code></pre></div></li>
+<li>
+<p>pg_proc.dat</p>
+</li>
+<li>
+<p>Makefile</p>
+</li>
+</ol>
+<p>验证：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="n">psql</span><span class="w"> </span><span class="o">-</span><span class="n">d</span><span class="w"> </span><span class="n">postgres</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 查看内置的数据类型
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_type</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">typname</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;ciphera&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 使用新类型
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="n">CIPHERA</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="err">\</span><span class="n">d</span><span class="w"> </span><span class="n">t1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 检查数据正常处理
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;c101aaff&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h2 id="22-新增系统表pg_key">2.2 新增系统表pg_key<a hidden class="anchor" aria-hidden="true" href="#22-新增系统表pg_key">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_key</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="err">\</span><span class="n">d</span><span class="o">+</span><span class="w"> </span><span class="n">pg_key</span><span class="w">
+</span></span></span></code></pre></div><h2 id="23-新增语法data-key">2.3 新增语法DATA KEY<a hidden class="anchor" aria-hidden="true" href="#23-新增语法data-key">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">DATA</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">dk1</span><span class="p">(</span><span class="n">password</span><span class="o">=</span><span class="s1">&#39;pass.123&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 在pg_key中，存储密钥信息
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_key</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">DATA</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">dk1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h2 id="24-新增系统表pg_sec_class">2.4 新增系统表pg_sec_class<a hidden class="anchor" aria-hidden="true" href="#24-新增系统表pg_sec_class">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_sec_class</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- reloid, attname, atttypid, atttypmod
+</span></span></span></code></pre></div><h2 id="24-新增语法encrypt">2.4 新增语法ENCRYPT<a hidden class="anchor" aria-hidden="true" href="#24-新增语法encrypt">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">DATA</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">dk1</span><span class="p">(</span><span class="n">password</span><span class="o">=</span><span class="s1">&#39;pass.123&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="w"> </span><span class="n">ENCRYPT</span><span class="w"> </span><span class="n">dk1</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- pg_attribute中，c1列的类型自动变更为ciphera
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- pg_sec_class中，attroid列，存储c1列才pg_attribute中的oid
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- pg_sec_class中，attrtype, attrmod
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_attribute</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">attname</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;c1&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_sec_class</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h2 id="25-新增公共语法解析libgram">2.5 新增公共语法解析libgram<a hidden class="anchor" aria-hidden="true" href="#25-新增公共语法解析libgram">#</a></h2>
+<h2 id="26-libpq重写insert">2.6 libpq重写INSERT<a hidden class="anchor" aria-hidden="true" href="#26-libpq重写insert">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">DATA</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">dk1</span><span class="p">(</span><span class="n">password</span><span class="o">=</span><span class="s1">&#39;pass.123&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="n">ENCRYPT</span><span class="w"> </span><span class="n">dk1</span><span class="p">,</span><span class="w"> </span><span class="n">c3</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="s1">&#39;aaa&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;bbb&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;ccc&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c2</span><span class="p">,</span><span class="n">c3</span><span class="p">)</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="s1">&#39;xxx&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;yyy&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="s1">&#39;a1&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;b1&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;c1&#39;</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="s1">&#39;a2&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;b2&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;c2&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h2 id="27-libpq重写select结果">2.7 libpq重写SELECT结果<a hidden class="anchor" aria-hidden="true" href="#27-libpq重写select结果">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">DATA</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">dk1</span><span class="p">(</span><span class="n">password</span><span class="o">=</span><span class="s1">&#39;pass.123&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="n">ENCRYPT</span><span class="w"> </span><span class="n">dk1</span><span class="p">,</span><span class="w"> </span><span class="n">c3</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="s1">&#39;aaa&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;bbb&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;ccc&#39;</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="s1">&#39;xxx&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;yyy&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;zzz&#39;</span><span class="p">);;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;yyy&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c1">-- where ciphera_eq(c2,&#39;...&#39;)
+</span></span></span></code></pre></div><h2 id="28-新增支持int类型">2.8 新增支持int类型<a hidden class="anchor" aria-hidden="true" href="#28-新增支持int类型">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">DATA</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">dk1</span><span class="p">(</span><span class="n">password</span><span class="o">=</span><span class="s1">&#39;pass.123&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">INT</span><span class="w"> </span><span class="n">ENCRYPT</span><span class="w"> </span><span class="n">dk1</span><span class="p">,</span><span class="w"> </span><span class="n">c3</span><span class="w"> </span><span class="nb">INT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="mi">10</span><span class="p">,</span><span class="mi">11</span><span class="p">,</span><span class="mi">12</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c2</span><span class="p">,</span><span class="n">c3</span><span class="p">)</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="mi">100</span><span class="p">,</span><span class="mi">101</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="mi">1001</span><span class="p">,</span><span class="mi">1002</span><span class="p">,</span><span class="mi">1003</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">1011</span><span class="p">,</span><span class="mi">1012</span><span class="p">,</span><span class="mi">1013</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">100</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h1 id="3-机密计算---实现">3 机密计算 - 实现<a hidden class="anchor" aria-hidden="true" href="#3-机密计算---实现">#</a></h1>
+<h2 id="31-简单计划">3.1 简单计划<a hidden class="anchor" aria-hidden="true" href="#31-简单计划">#</a></h2>
+<ul>
+<li>
+<p>目标</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 构造
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">DATA</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">dk1</span><span class="p">(</span><span class="n">password</span><span class="o">=</span><span class="s1">&#39;pass.123&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">INT</span><span class="w"> </span><span class="n">ENCRYPT</span><span class="w"> </span><span class="n">dk1</span><span class="p">,</span><span class="w"> </span><span class="n">c3</span><span class="w"> </span><span class="nb">INT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="mi">11</span><span class="p">,</span><span class="mi">12</span><span class="p">,</span><span class="mi">13</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">21</span><span class="p">,</span><span class="mi">22</span><span class="p">,</span><span class="mi">23</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">31</span><span class="p">,</span><span class="mi">32</span><span class="p">,</span><span class="mi">33</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">41</span><span class="p">,</span><span class="mi">42</span><span class="p">,</span><span class="mi">43</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 预期：tee中，执行ciphera_gt
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">30</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 清理
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">DATA</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">dk1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div></li>
+<li>
+<p>AI提示<br>
+我已经在pg16中，从0实现全密态等值查询，使用方法如下：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">--
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 1 定义密钥（新增语法）：在系统表pg_key中，存储密钥
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">DATA</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">dk1</span><span class="p">(</span><span class="n">password</span><span class="o">=</span><span class="s1">&#39;pass.123&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 2 新增内置数据类型：新增ciphera类型，存储text, int加密后的值，类似与bytea
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 3 定义加密列（新增语法 ）：在系统表 pg_attrbute中，c2存储为ciphera类型，在新系统表pg_sec_class中，存储c2的原始类型int
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">INT</span><span class="w"> </span><span class="n">ENCRYPT</span><span class="w"> </span><span class="n">dk1</span><span class="p">,</span><span class="w"> </span><span class="n">c3</span><span class="w"> </span><span class="nb">INT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 4 自动加密：在libpq中，自动加密INSERT语法中c2列的值，将其转换为ciphera类型
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="mi">11</span><span class="p">,</span><span class="mi">12</span><span class="p">,</span><span class="mi">13</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">21</span><span class="p">,</span><span class="mi">22</span><span class="p">,</span><span class="mi">23</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">31</span><span class="p">,</span><span class="mi">32</span><span class="p">,</span><span class="mi">33</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">41</span><span class="p">,</span><span class="mi">42</span><span class="p">,</span><span class="mi">43</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 5 自动解密：在libpq中，自动解密SELECT返回结果中c2的值，将其转换为int类型
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 6 密态等值查询：自动加密SELECT语法中c2列的值，服务端直接比较密文
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">12</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><p>其中，支持自动加解密的数据类型如下：</p>
+<ul>
+<li>int2</li>
+<li>int4</li>
+<li>int8</li>
+<li>varchar(n)</li>
+<li>text</li>
+<li>bytea</li>
+</ul>
+<p>执行计划</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">INT</span><span class="w"> </span><span class="n">ENCRYPT</span><span class="w"> </span><span class="n">dk1</span><span class="p">,</span><span class="w"> </span><span class="n">c3</span><span class="w"> </span><span class="nb">INT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="mi">11</span><span class="p">,</span><span class="mi">12</span><span class="p">,</span><span class="mi">13</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">21</span><span class="p">,</span><span class="mi">22</span><span class="p">,</span><span class="mi">23</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">31</span><span class="p">,</span><span class="mi">32</span><span class="p">,</span><span class="mi">33</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">41</span><span class="p">,</span><span class="mi">42</span><span class="p">,</span><span class="mi">43</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 在代码中，以下SQL的执行计划
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="k">sum</span><span class="p">(</span><span class="n">c1</span><span class="p">)</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">10</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">40</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="s2">&#34;Agg
+</span></span></span><span class="line"><span class="cl"><span class="s2">    -&gt; Scan t1
+</span></span></span><span class="line"><span class="cl"><span class="s2">        Filter (c1 &gt; 10) AND (c2 &lt; &#39;40&#39;::ciphera) &#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">c1</span><span class="p">,</span><span class="n">c2</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">40</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="k">LIMIT</span><span class="w"> </span><span class="mi">10</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="s2">&#34;LIMIT
+</span></span></span><span class="line"><span class="cl"><span class="s2">    -&gt; Sort
+</span></span></span><span class="line"><span class="cl"><span class="s2">        Sort Key: c2
+</span></span></span><span class="line"><span class="cl"><span class="s2">        -&gt; Scan t1
+</span></span></span><span class="line"><span class="cl"><span class="s2">            Filter c2 &lt; &#39;40&#39; &#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 如果数据很多，要确保以下计算速度最快，怎么创建索引优化呢？注意c1加密，c2不加密。
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">10</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">40</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">10</span><span class="w"> </span><span class="k">OR</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">40</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><p>现在，我要在服务端实现机密计算，支持int类型的各种操作，我要新增一批ciphera的运算函数，比如cipehra_lt等，cipehra_lt中，解密数据，然后转换为int4_lt。为覆盖int的各种运算，我需要新增的ciphera运算函数应该包含哪些？</p>
+</li>
+</ul>
+<h2 id="32-支持范围">3.2 支持范围<a hidden class="anchor" aria-hidden="true" href="#32-支持范围">#</a></h2>
+<h3 id="一数据类型">一、数据类型<a hidden class="anchor" aria-hidden="true" href="#一数据类型">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-gdscript3" data-lang="gdscript3"><span class="line"><span class="cl"><span class="o">-</span> <span class="err">一、数值与字符串</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="err">类型</span> <span class="o">|</span> <span class="err">别名</span> <span class="o">|</span> <span class="err">说明</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="o">-|</span> <span class="o">-|</span> <span class="o">-|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">smallint</span> <span class="o">|</span> <span class="n">int2</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">integer</span> <span class="o">|</span> <span class="ne">int</span><span class="p">,</span> <span class="n">int4</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">bigint</span> <span class="o">|</span> <span class="n">int8</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">real</span> <span class="o">|</span> <span class="n">float4</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">double</span> <span class="n">precision</span> <span class="o">|</span> <span class="n">float8</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">character</span> <span class="n">varying</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">|</span> <span class="n">varchar</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">character</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">|</span> <span class="n">char</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">text</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl"><span class="o">-</span> <span class="err">二、时间、布尔、二进制</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="err">类型</span> <span class="o">|</span> <span class="err">别名</span> <span class="o">|</span> <span class="err">说明</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="o">-|</span> <span class="o">-|</span> <span class="o">-|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">boolean</span> <span class="o">|</span> <span class="ne">bool</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">bytea</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl"><span class="o">-</span> <span class="err">三、其他</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="err">类型</span> <span class="o">|</span> <span class="err">别名</span> <span class="o">|</span> <span class="err">说明</span> <span class="o">|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="o">-|</span> <span class="o">-|</span> <span class="o">-|</span>
+</span></span><span class="line"><span class="cl">    <span class="o">|</span> <span class="n">numeric</span><span class="p">(</span><span class="n">p</span><span class="p">,</span><span class="n">s</span><span class="p">)</span> <span class="o">|</span> <span class="n">decimal</span><span class="p">(</span><span class="n">p</span><span class="p">,</span><span class="n">s</span><span class="p">)</span> <span class="o">|</span> <span class="o">-</span> <span class="o">|</span>
+</span></span></code></pre></div><h3 id="二操作符与函数">二、操作符与函数<a hidden class="anchor" aria-hidden="true" href="#二操作符与函数">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-fallback" data-lang="fallback"><span class="line"><span class="cl">- 一、比较运算符函数
+</span></span><span class="line"><span class="cl">    | 运算符 | 函数 |
+</span></span><span class="line"><span class="cl">    | -| -|
+</span></span><span class="line"><span class="cl">    | &lt; | ciphera_lt |
+</span></span><span class="line"><span class="cl">    | &lt;= | ciphera_le |
+</span></span><span class="line"><span class="cl">    | = | ciphera_eq |
+</span></span><span class="line"><span class="cl">    | != / &lt;&gt; | ciphera_ne |
+</span></span><span class="line"><span class="cl">    | &gt; | ciphera_gt |
+</span></span><span class="line"><span class="cl">    | &gt;= | ciphera_ge |
+</span></span><span class="line"><span class="cl">    | (btree) | bt_ciphera_cmp |
+</span></span><span class="line"><span class="cl">- 二、算术运算符函数
+</span></span><span class="line"><span class="cl">    | 运算符 | 函数 |
+</span></span><span class="line"><span class="cl">    | -| -|
+</span></span><span class="line"><span class="cl">    | + | ciphera_pl |
+</span></span><span class="line"><span class="cl">    | - | ciphera_mi |
+</span></span><span class="line"><span class="cl">    | * | ciphera_mul |
+</span></span><span class="line"><span class="cl">    | / | ciphera_div |
+</span></span><span class="line"><span class="cl">    | % | ciphera_mod |
+</span></span><span class="line"><span class="cl">    | @ | ciphera_abs |
+</span></span><span class="line"><span class="cl">- 三、位运算符函数
+</span></span><span class="line"><span class="cl">    | 运算符 | 函数 |
+</span></span><span class="line"><span class="cl">    | -| -|
+</span></span><span class="line"><span class="cl">    | &amp; | ciphera_bitand |
+</span></span><span class="line"><span class="cl">    | \| | ciphera_bitor |
+</span></span><span class="line"><span class="cl">    | # | ciphera_bitxor |
+</span></span><span class="line"><span class="cl">    | ~ | ciphera_bitnot |
+</span></span><span class="line"><span class="cl">    | &lt;&lt; | ciphera_bitshiftleft |
+</span></span><span class="line"><span class="cl">    | &gt;&gt; | ciphera_bitshiftright |
+</span></span><span class="line"><span class="cl">- 四、字符串与二进制操作函数
+</span></span><span class="line"><span class="cl">    | 运算符 / 函数名 | 函数 |
+</span></span><span class="line"><span class="cl">    | -| -|
+</span></span><span class="line"><span class="cl">    | \|\| | ciphera_cat |
+</span></span><span class="line"><span class="cl">    | length() | ciphera_length |
+</span></span><span class="line"><span class="cl">    | substr() | ciphera_substr |
+</span></span><span class="line"><span class="cl">    | lower() | ciphera_lower |
+</span></span><span class="line"><span class="cl">    | upper() | ciphera_upper |
+</span></span><span class="line"><span class="cl">    | trim() | ciphera_trim |
+</span></span><span class="line"><span class="cl">    | replace() | ciphera_replace |
+</span></span><span class="line"><span class="cl">    | position() | ciphera_position |
+</span></span><span class="line"><span class="cl">    | like | ciphera_like |
+</span></span><span class="line"><span class="cl">    | ilike | ciphera_ilike |
+</span></span><span class="line"><span class="cl">    | ~ / ~* | ciphera_regexp_match |
+</span></span><span class="line"><span class="cl">- 五、聚合状态转换函数
+</span></span><span class="line"><span class="cl">    | 聚合函数 | 函数 |
+</span></span><span class="line"><span class="cl">    | -| -|
+</span></span><span class="line"><span class="cl">    | SUM() | ciphera_sum |
+</span></span><span class="line"><span class="cl">    | MAX() | ciphera_larger |
+</span></span><span class="line"><span class="cl">    | MIN() | ciphera_smaller |
+</span></span><span class="line"><span class="cl">    | AVG() | ciphera_avg_accum |
+</span></span><span class="line"><span class="cl">    | STRING_AGG() | ciphera_string_agg |
+</span></span></code></pre></div><h2 id="32-新增libcalc">3.2 新增libcalc<a hidden class="anchor" aria-hidden="true" href="#32-新增libcalc">#</a></h2>
+<h2 id="32-新增ta_calcca_calc">3.2 新增ta_calc/ca_calc<a hidden class="anchor" aria-hidden="true" href="#32-新增ta_calcca_calc">#</a></h2>
+<ul>
+<li>ca_calc：独立进程。自动生成pg的各种计算int2，text等计算，比如int2eq等，格式化入参，通过共享内内存的方式，把数据发送给ta_calc进程，等待计算结果。</li>
+<li>ta_calc：独立进程。通过共享内存，接收ca_calc发送的数据，并且反格式化，并调用libcalc.so接口，完成计算，把计算结果返回给ca_calc。</li>
+</ul>
+<h2 id="33-内核新增ciphera函数">3.3 内核新增ciphera函数<a hidden class="anchor" aria-hidden="true" href="#33-内核新增ciphera函数">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">oid</span><span class="p">,</span><span class="n">proname</span><span class="p">,</span><span class="n">prorows</span><span class="p">,</span><span class="n">pronargs</span><span class="p">,</span><span class="n">proargtypes</span><span class="p">,</span><span class="n">prorettype</span><span class="p">,</span><span class="n">pronargdefaults</span><span class="p">,</span><span class="n">proargnames</span><span class="p">,</span><span class="n">prosrc</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">pg_proc</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">proname</span><span class="w"> </span><span class="k">like</span><span class="w"> </span><span class="s1">&#39;%cipher%&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">oid</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">proname</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">prorows</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">pronargs</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="p">(</span><span class="k">SELECT</span><span class="w"> </span><span class="n">string_agg</span><span class="p">(</span><span class="n">format_type</span><span class="p">(</span><span class="n">oid</span><span class="p">,</span><span class="w"> </span><span class="k">NULL</span><span class="p">),</span><span class="w"> </span><span class="s1">&#39;, &#39;</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">ord</span><span class="p">)</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="k">unnest</span><span class="p">(</span><span class="n">proargtypes</span><span class="p">)</span><span class="w"> </span><span class="k">WITH</span><span class="w"> </span><span class="k">ORDINALITY</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">u</span><span class="p">(</span><span class="n">oid</span><span class="p">,</span><span class="w"> </span><span class="n">ord</span><span class="p">))</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">argin</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">format_type</span><span class="p">(</span><span class="n">prorettype</span><span class="p">,</span><span class="w"> </span><span class="k">NULL</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">argout</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">pronargdefaults</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">proargnames</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="n">prosrc</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">FROM</span><span class="w"> </span><span class="n">pg_proc</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">proname</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">&#39;%cipher%&#39;</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">oid</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h2 id="34-内核新增ciphera运算符">3.4 内核新增ciphera运算符<a hidden class="anchor" aria-hidden="true" href="#34-内核新增ciphera运算符">#</a></h2>
+<h2 id="35-内核make_op识别机密计算">3.5 内核make_op识别机密计算<a hidden class="anchor" aria-hidden="true" href="#35-内核make_op识别机密计算">#</a></h2>
+<h2 id="36-index_scan算子">3.6 index_scan算子<a hidden class="anchor" aria-hidden="true" href="#36-index_scan算子">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w"> </span><span class="n">c3</span><span class="w"> </span><span class="nb">INT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">i1</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c1</span><span class="p">,</span><span class="n">c2</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 假设t1有很多数据，且analyze过
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 哪些查询会走索引？哪些不走？给一些例子！要全一点
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 走索引：
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="err">；</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="err">；</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">,</span><span class="mi">3</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">2</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;a&#39;</span><span class="p">;</span><span class="w"> </span><span class="c1">-- 不能c2 &gt; &#39;a&#39;
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">c1</span><span class="err">；</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="n">c1</span><span class="p">,</span><span class="k">count</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">GROUP</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">c1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="k">max</span><span class="p">(</span><span class="n">c1</span><span class="p">)</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROm</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">JOIN</span><span class="w"> </span><span class="n">t2</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">t1</span><span class="p">.</span><span class="n">c1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">t2</span><span class="p">.</span><span class="n">c1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">DELETE</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">UPDATE</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">SET</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;b&#39;</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 不走索引
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;a&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="s1">&#39;a&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">;</span><span class="w"> </span><span class="c1">-- 不行
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="p">::</span><span class="nb">text</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;1&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="k">NO</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">,</span><span class="mi">3</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="s1">&#39;a&#39;</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">5</span><span class="w"> </span><span class="k">OR</span><span class="w"> </span><span class="n">c3</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><p>tpcc 1000 warehouse</p>
+<ul>
+<li>bmsql_customer 表：
+<ul>
+<li>行数：3000w</li>
+<li>大小：13.5 G</li>
+<li>索引：(c_w_id, c_d_id, c_id)</li>
+<li>索引大小：700 M</li>
+<li>索引行数：300w</li>
+<li>索引层数：3层
+<ul>
+<li>root：1 page * 400 tup/page</li>
+<li>internal：400 page * 400 tup/page</li>
+<li>leaf：8.8w page * 400 tup/page</li>
+</ul>
+</li>
+<li>tee交互次数：3</li>
+</ul>
+</li>
+</ul>
+<h2 id="36-优化">3.6 优化<a hidden class="anchor" aria-hidden="true" href="#36-优化">#</a></h2>
+<h3 id="cata通信">ca/ta通信<a hidden class="anchor" aria-hidden="true" href="#cata通信">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-fallback" data-lang="fallback"><span class="line"><span class="cl">   ca1          ca1         ca2             ca3
+</span></span><span class="line"><span class="cl">+--------[fdbk]+----------[fdbk]+-------------[fdbk]+---------------+
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">---------
+</span></span><span class="line"><span class="cl">itemdesc
+</span></span><span class="line"><span class="cl">itemdesc
+</span></span><span class="line"><span class="cl">itemdesc
+</span></span><span class="line"><span class="cl">itemdesc
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">total=1000
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">p1 alloc off=[0-100]
+</span></span><span class="line"><span class="cl">p2 alloc off=[100-300]
+</span></span><span class="line"><span class="cl">p3 alloc off=[300-700]
+</span></span><span class="line"><span class="cl">p4 alloc off=[700-1000]
+</span></span><span class="line"><span class="cl">p3 free off=[300-700]
+</span></span><span class="line"><span class="cl">p5 alloc len=100, 怎么处理？
+</span></span><span class="line"><span class="cl">p6 alloc len=200，怎么处理？
+</span></span></code></pre></div><p>我在使用C语言编程。有个场景：多个生产者，比如是p1,p2,p3,p4。1个消费者s1。每个p1都执行psend，然后执行precv阻塞等待s1反馈。帮我设计并实现一个demo。</p>
+<h1 id="4-测试用例">4 测试用例<a hidden class="anchor" aria-hidden="true" href="#4-测试用例">#</a></h1>
+<h2 id="等值查询">等值查询<a hidden class="anchor" aria-hidden="true" href="#等值查询">#</a></h2>
+<h2 id="范围查询">范围查询<a hidden class="anchor" aria-hidden="true" href="#范围查询">#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sql" data-lang="sql"><span class="line"><span class="cl"><span class="c1">-- 构造
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">DATA</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">dk1</span><span class="p">(</span><span class="n">password</span><span class="o">=</span><span class="s1">&#39;pass.123&#39;</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">(</span><span class="n">c1</span><span class="w"> </span><span class="nb">INT</span><span class="p">,</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="nb">INT</span><span class="w"> </span><span class="n">ENCRYPT</span><span class="w"> </span><span class="n">dk1</span><span class="p">,</span><span class="w"> </span><span class="n">c3</span><span class="w"> </span><span class="nb">INT</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">INSERT</span><span class="w"> </span><span class="k">INTO</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">VALUES</span><span class="w"> </span><span class="p">(</span><span class="mi">11</span><span class="p">,</span><span class="mi">12</span><span class="p">,</span><span class="mi">13</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">21</span><span class="p">,</span><span class="mi">22</span><span class="p">,</span><span class="mi">23</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">31</span><span class="p">,</span><span class="mi">32</span><span class="p">,</span><span class="mi">33</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="mi">41</span><span class="p">,</span><span class="mi">42</span><span class="p">,</span><span class="mi">43</span><span class="p">);</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 预期：tee中，执行ciphera_gt
+</span></span></span><span class="line"><span class="cl"><span class="k">SELECT</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">t1</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">c2</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">30</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">-- 清理
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">t1</span><span class="p">;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">DROP</span><span class="w"> </span><span class="k">DATA</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">dk1</span><span class="p">;</span><span class="w">
+</span></span></span></code></pre></div><h2 id="模糊查询">模糊查询<a hidden class="anchor" aria-hidden="true" href="#模糊查询">#</a></h2>
+<h1 id="附录专利">附录：专利<a hidden class="anchor" aria-hidden="true" href="#附录专利">#</a></h1>
+<ul>
+<li>SQL改写
+<ul>
+<li>select * from t1 where c1 &gt; 10</li>
+<li>select * from t1 where ciphera_gt(c1, cipherf_10)</li>
+</ul>
+</li>
+<li>加密上下文
+<ul>
+<li>驱动侧：’Q’修改为’C’：携带 加密上下文版本号</li>
+<li>内核侧：CREATE/ALTER/DROP TABLE，CREAT/ALTER/DROP KEY，更新 加密上下文版本号</li>
+</ul>
+</li>
+<li>表达式短路求值
+<ul>
+<li>内核侧：SELECT .. WHERE cipher &gt; .. OR plian &gt; ..优化为WHERE plian &gt; .. OR cipher &gt; .. OR</li>
+</ul>
+</li>
+</ul>
+<h1 id="附录ai">附录：AI<a hidden class="anchor" aria-hidden="true" href="#附录ai">#</a></h1>
+<h2 id="代码要求">代码要求：<a hidden class="anchor" aria-hidden="true" href="#代码要求">#</a></h2>
+<ol>
+<li>
+<p>尽量少使用换行，遵循以下格式：</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c" data-lang="c"><span class="line"><span class="cl"><span class="k">typedef</span> <span class="k">struct</span> <span class="n">CreateDataKeyStmt</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="n">NodeTag</span>	<span class="n">type</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">char</span> <span class="o">*</span><span class="n">keyname</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="n">CreateDataKeyStmt</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="kt">int</span> <span class="nf">funcname</span><span class="p">(</span><span class="kt">int</span> <span class="n">arg1</span><span class="p">,</span> <span class="kt">char</span> <span class="o">*</span><span class="n">arg2</span><span class="p">)</span> <span class="cm">/* 要求1：返回值、函数名等放在一行 */</span>
+</span></span><span class="line"><span class="cl"><span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">tmpa</span><span class="p">;</span> <span class="cm">/* 要求2：缩进统一用1个tab，1个tab是4个空格，确保是4个空格哦 */</span>
+</span></span><span class="line"><span class="cl">    <span class="kt">int</span> <span class="n">tmpb</span><span class="p">;</span> <span class="cm">/* 要求3：类型和变量名之间，用1个空格 */</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="p">(</span><span class="n">arg1</span> <span class="o">&lt;</span> <span class="mi">5</span> <span class="o">&amp;&amp;</span> <span class="n">arg</span> <span class="o">&lt;</span> <span class="mi">10</span> <span class="o">&amp;&amp;</span>
+</span></span><span class="line"><span class="cl">        <span class="n">arg2</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span> <span class="cm">/* 要求4：换行缩进1个tab，除了函数定义外，所有大括号不单独换行 */</span>
+</span></span><span class="line"><span class="cl">        <span class="cm">/* do something */</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">switch</span> <span class="p">(</span><span class="n">arg1</span><span class="p">)</span> <span class="p">{</span> <span class="cm">/* 要求5：switch和大括号放在同一行 */</span>
+</span></span><span class="line"><span class="cl">        <span class="k">case</span> <span class="mi">30</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">            <span class="cm">/* do something */</span>
+</span></span><span class="line"><span class="cl">            <span class="k">break</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">        <span class="k">case</span> <span class="mi">40</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">            <span class="cm">/* do something */</span>
+</span></span><span class="line"><span class="cl">            <span class="k">break</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">        <span class="k">default</span><span class="o">:</span>
+</span></span><span class="line"><span class="cl">            <span class="k">break</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">if</span> <span class="p">(</span><span class="n">arg</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span> <span class="cm">/* 要求6：即使if中只有1行代码，也加大括号 */</span>
+</span></span><span class="line"><span class="cl">        <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">        <span class="cm">/* do something */</span>
+</span></span><span class="line"><span class="cl">    <span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div></li>
+</ol>
+<ul>
+<li>计划
+<ul>
+<li>新增libcalc.so
+<ul>
+<li>支持的类型：int2,int4,int8,varchar(n),text,bytea</li>
+<li>支持的运算：lt, le, eq, ne, gt, ge, bt_cmp, pl, mi, mul, div, mod, abs, bitand, bitor, bitxor, bitnot, bitshiftleft, bitshiftright, cat, length, substr, lower, upper, trim, replace, position, like, ilike, regexp_match, sum, larger, smaller, avg_accum, string_agg</li>
+</ul>
+</li>
+<li>新增内置函数：ciphera内置函数：lt, le, eq, ne, gt, ge, bt_cmp, pl, mi, mul, div, mod, abs, bitand, bitor, bitxor, bitnot, bitshiftleft, bitshiftright, cat, length, substr, lower, upper, trim, replace, position, like, ilike, regexp_match, sum, larger, smaller, avg_accum, string_agg
+<ul>
+<li>(ciphera, ciphera)：密文和密文</li>
+<li>(ciphera, int2)：密文和明文</li>
+</ul>
+</li>
+<li>独立编译运</li>
+</ul>
+</li>
+</ul>
+<h1 id="附录参考文献">附录：参考文献<a hidden class="anchor" aria-hidden="true" href="#附录参考文献">#</a></h1>
+<ol>
+<li>全密态概述：<a href="https://www.jos.org.cn/html/2024/8/7095.htm#outline_anchor_6">https://www.jos.org.cn/html/2024/8/7095.htm#outline_anchor_6</a></li>
+</ol>
+
+
+  </div>
+
+  
+  <footer class="post-footer"><ul class="post-tags"><li><a href="http://localhost:1313/tags/%E5%8A%A0%E5%AF%86/">加密</a></li></ul>
+  </footer>
+
+  
+  
+  
+  <aside class="sidebar-right">
+    
+
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ RELATED</h4>
+        <ul class="widget-content related-posts"><li><a href="/posts/security/wal-encryption-design/">WAL 加密模块设计</a></li><li><a href="/posts/security/confidential-computing/">高质量专项 全密态机密计算</a></li><li><a href="/posts/security/transport-encryption/">数据库安全 传输加密</a></li><li><a href="/posts/security/fully-encrypted-overview/">数据库安全 全密态</a></li><li><a href="/posts/security/1-1-cryptography/">传统安全 1 密码学</a></li></ul>
+    </div>
+    <div class="sidebar-widget">
+        <h4 class="widget-title">>_ CATEGORY</h4>
+        <div class="widget-content">
+            
+            <span style="color:var(--primary); font-family:monospace;">./安全</span><br>
+            
+        </div>
+    </div>
+  </aside>
+  
+
+  
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">Kernel Notes</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+
+<div id="cat-widget" class="cat-widget" title="心情不好的时候可以点一下">
+    <div class="cat-icon-wrapper">
+        
+        <svg viewBox="0 0 512 512" width="40" height="40" fill="currentColor">
+            <path d="M256 224c-79.4 0-144 64.6-144 144s64.6 144 144 144 144-64.6 144-144-64.6-144-144-144zm0 240c-52.9 0-96-43.1-96-96s43.1-96 96-96 96 43.1 96 96-43.1 96-96 96zm-32-120c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24zm96 0c0-13.3-10.7-24-24-24s-24 10.7-24 24 10.7 24 24 24 24-10.7 24-24z"/>
+            <path d="M240.2 163.6l-20.5-84.3c-2.7-11 5.6-21.7 16.7-21.7h39.2c11.1 0 19.4 10.7 16.7 21.7l-20.5 84.3c-2.3 9.6-16.3 9.6-18.6 0z"/>
+            <path d="M149.6 186.2l-58.2-64.6c-7.4-8.2-4-21.3 6.9-24.6l37.8-11.4c10.7-3.2 21.9 2.5 25.1 12.8l18.4 59.9c3.2 10.3-6.5 19.6-16.3 16.5l-13.7-8.6z"/>
+            <path d="M362.4 186.2l58.2-64.6c7.4-8.2 4-21.3-6.9-24.6l-37.8-11.4c-10.7-3.2-21.9 2.5-25.1 12.8l-18.4 59.9c-3.2 10.3 6.5 19.6 16.3 16.5l13.7-8.6z"/>
+        </svg>
+    </div>
+    <span class="cat-tooltip">心情不好的时候可以点一下 🐱</span>
+</div>
+
+
+<div id="cat-modal" class="cat-modal">
+    <div class="cat-modal-content">
+        <span class="cat-close">&times;</span>
+        
+        <div class="cat-gallery">
+            <button class="cat-nav prev" onclick="changeCat(-1)">&#10094;</button>
+            
+            <div class="cat-image-container">
+                <img id="cat-img" src="" alt="My Cute Cat">
+                <div id="cat-caption" class="cat-caption">Loading...</div>
+            </div>
+            
+            <button class="cat-nav next" onclick="changeCat(1)">&#10095;</button>
+        </div>
+    </div>
+</div>
+
+<style>
+ 
+.cat-widget {
+    position: fixed;
+    bottom: 80px;  
+    right: 30px;
+    z-index: 999;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.cat-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: var(--entry);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    border: 2px solid var(--primary);
+    color: var(--primary);
+}
+
+.cat-widget:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+
+ 
+.cat-tooltip {
+    visibility: hidden;
+    width: 200px;
+    background-color: var(--primary);
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 8px 0;
+    
+     
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;  
+    
+     
+    left: auto; 
+    right: -10px;  
+    margin-left: 0;  
+     
+
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);  
+}
+
+ 
+.cat-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    
+     
+    left: auto;  
+    right: 28px;  
+     
+    
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: var(--primary) transparent transparent transparent;
+}
+
+.cat-widget:hover .cat-tooltip {
+    visibility: visible;
+    opacity: 1;
+}
+
+ 
+.cat-modal {
+    display: none;  
+    position: fixed; 
+    z-index: 10000; 
+    left: 0;
+    top: 0;
+    width: 100%; 
+    height: 100%; 
+    background-color: rgba(0,0,0,0.85);  
+    backdrop-filter: blur(5px);
+    
+     
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    
+    animation: fadeIn 0.3s;
+}
+
+.cat-modal-content {
+    position: relative;
+     
+    width: auto;
+    max-width: 90%;
+    max-height: 90%;
+    
+     
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.cat-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.cat-image-container img {
+     
+    max-width: 90vw;   
+    max-height: 80vh;  
+    width: auto;       
+    height: auto;
+    
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    border: 4px solid #fff;
+    display: block;  
+}
+
+.cat-caption {
+    color: #fff;
+    font-family: 'Menlo', monospace;
+    margin-top: 15px;
+    font-size: 16px;
+    text-align: center;
+    width: 100%;
+}
+
+ 
+.cat-nav {
+    cursor: pointer;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);  
+    padding: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 30px;
+    transition: 0.3s;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.2);
+    border: none;
+    z-index: 10001;  
+}
+
+ 
+.prev { left: 20px; }
+.next { right: 20px; }
+.cat-nav:hover { background-color: rgba(255,255,255,0.3); }
+
+ 
+.cat-close {
+    position: absolute;
+    top: -40px;
+    right: -10px;  
+    color: #f1f1f1;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10002;
+}
+.cat-close:hover { color: var(--primary); }
+
+@keyframes fadeIn {
+    from {opacity: 0} 
+    to {opacity: 1}
+}
+</style>
+
+<script>
+
+const catPhotos = [
+    { src: "/cats/cat1.jpg", desc: "No.1: 这是小猫吗 ❓" },
+    { src: "/cats/cat2.jpg", desc: "No.2: 虚空摸🐱 " },
+    { src: "/cats/cat3.jpg", desc: "No.3: 我妈说我不是傻子 🤤" },
+    { src: "/cats/cat4.jpg", desc: "No.4: 喝点泔水怎么了 😠" },
+    { src: "/cats/cat5.jpg", desc: "No.5: 我要抱抱 😳" },
+    { src: "/cats/cat6.jpg", desc: "No.6: 你脸上怎么长了个手机 📱" },
+    
+];
+
+let currentCatIndex = 0;
+const modal = document.getElementById("cat-modal");
+const widget = document.getElementById("cat-widget");
+const catImg = document.getElementById("cat-img");
+const catCaption = document.getElementById("cat-caption");
+const closeBtn = document.getElementsByClassName("cat-close")[0];
+
+
+widget.onclick = function() {
+    
+    modal.style.display = "flex"; 
+    showCat(currentCatIndex);
+}
+
+
+closeBtn.onclick = function() {
+    modal.style.display = "none";
+}
+
+
+window.onclick = function(event) {
+    if (event.target == modal) {
+        modal.style.display = "none";
+    }
+}
+
+
+document.onkeydown = function(e) {
+    if (modal.style.display === "flex") {
+        if (e.key === "Escape") modal.style.display = "none";
+        if (e.key === "ArrowLeft") changeCat(-1);
+        if (e.key === "ArrowRight") changeCat(1);
+    }
+}
+
+
+function changeCat(n) {
+    showCat(currentCatIndex += n);
+}
+
+function showCat(n) {
+    if (n >= catPhotos.length) { currentCatIndex = 0 }
+    if (n < 0) { currentCatIndex = catPhotos.length - 1 }
+    
+    
+    catImg.src = catPhotos[currentCatIndex].src;
+    catCaption.innerText = catPhotos[currentCatIndex].desc;
+}
+</script>
+
+
+<script>
+
+function openWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'block';
+}
+
+function closeWeChatModal() {
+    document.getElementById('wechat-modal').style.display = 'none';
+}
+
+
+window.onclick = function(event) {
+    const modal = document.getElementById('wechat-modal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+}
+
+
+function switchWeChatTab(tabName) {
+    
+    const tabs = document.querySelectorAll('.wechat-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    
+    if(tabName === 'friend') tabs[0].classList.add('active');
+    else tabs[1].classList.add('active');
+
+    
+    document.querySelectorAll('.wechat-tab-content').forEach(content => {
+        content.classList.remove('active');
+    });
+    document.getElementById('tab-' + tabName).classList.add('active');
+}
+</script>
+
+<script src="https://unpkg.com/codeflask/build/codeflask.min.js"></script>
+
+<script>
+
+
+const MY_LEETCODE_USERNAME = "hashmpa"; 
+let lcDataGlobal = null;
+let flaskEditor = null;
+const STORAGE_KEY_LAST_DATE = 'lc_cn_last_solved_date'; 
+const STORAGE_KEY_STREAK = 'lc_cn_streak_count';
+
+
+const WEEKLY_PLAN =[
+    {
+        topic: "数组与哈希表", 
+        slugs:["two-sum", "group-anagrams", "longest-consecutive-sequence", "move-zeroes", "3sum", "subarray-sum-equals-k", "first-missing-positive"]
+    },
+    {
+        topic: "链表", 
+        slugs:["reverse-linked-list", "merge-two-sorted-lists", "linked-list-cycle", "linked-list-cycle-ii", "intersection-of-two-linked-lists", "remove-nth-node-from-end-of-list", "swap-nodes-in-pairs"]
+    },
+    {
+        topic: "二叉树", 
+        slugs:["binary-tree-inorder-traversal", "maximum-depth-of-binary-tree", "invert-binary-tree", "symmetric-tree", "diameter-of-binary-tree", "binary-tree-level-order-traversal", "lowest-common-ancestor-of-a-binary-tree"]
+    },
+    {
+        topic: "动态规划", 
+        slugs:["climbing-stairs", "coin-change", "longest-increasing-subsequence", "maximum-subarray", "word-break", "house-robber", "perfect-squares"]
+    },
+    {
+        topic: "双指针与窗口", 
+        slugs:["longest-substring-without-repeating-characters", "find-all-anagrams-in-a-string", "minimum-window-substring", "sliding-window-maximum", "trapping-rain-water", "container-with-most-water", "valid-palindrome"]
+    },
+    {
+        topic: "回溯算法", 
+        slugs:["permutations", "subsets", "combinations", "combination-sum", "generate-parentheses", "word-search", "letter-combinations-of-a-phone-number"]
+    },
+    {
+        topic: "二分查找", 
+        slugs:["binary-search", "search-insert-position", "find-first-and-last-position-of-element-in-sorted-array", "search-in-rotated-sorted-array", "find-minimum-in-rotated-sorted-array", "median-of-two-sorted-arrays", "search-a-2d-matrix"]
+    },
+    {
+        topic: "栈与队列", 
+        slugs:["valid-parentheses", "min-stack", "evaluate-reverse-polish-notation", "daily-temperatures", "largest-rectangle-in-histogram", "implement-queue-using-stacks", "decode-string"]
+    }
+];
+
+document.addEventListener("DOMContentLoaded", function() {
+    initLeetCodeWidget();
+});
+
+document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === 'visible' && document.getElementById('lc-modal').style.display === 'block') {
+        checkSubmissionStatus(true); 
+    }
+});
+
+function initLeetCodeWidget() {
+    const lcWidget = document.getElementById('leetcode-widget');
+    if (!lcWidget) return;
+
+    
+    const linkBtn = document.getElementById('lc-link');
+    if (linkBtn) {
+        linkBtn.style.pointerEvents = "none"; 
+        linkBtn.style.opacity = "0.5";        
+        linkBtn.href = "javascript:void(0);"; 
+    }
+    updateStreakDisplay();
+
+    
+    const today = new Date();
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    const weekNum = getWeekNumber(today);
+    const dayIndex = (today.getDay() + 6) % 7; 
+
+    
+    const currentTopicObj = WEEKLY_PLAN[weekNum % WEEKLY_PLAN.length];
+    const targetSlug = currentTopicObj.slugs[dayIndex];
+
+    
+    const titleNode = lcWidget.previousElementSibling;
+    if(titleNode) {
+        const badge = document.getElementById('lc-streak-badge');
+        titleNode.innerHTML = `>_ WEEKLY: ${currentTopicObj.topic} `;
+        if(badge) titleNode.appendChild(badge);
+    }
+
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    
+    const query = `
+    query questionData($titleSlug: String!) {
+        question(titleSlug: $titleSlug) {
+            questionFrontendId
+            titleSlug
+            translatedTitle 
+            difficulty
+            translatedContent
+            topicTags { translatedName }
+            codeSnippets { langSlug code }
+        }
+    }`;
+
+    const todayStr = today.toISOString().split('T')[0];
+
+    
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "questionData", 
+            query: query,
+            variables: { titleSlug: targetSlug }
+        })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+        return res.json();
+    })
+    .then(result => {
+        
+        if (!result.data || !result.data.question) {
+            console.error("API Response Data:", result);
+            throw new Error("Question not found or API blocked");
+        }
+        
+        const data = result.data.question;
+
+        lcDataGlobal = {
+            date: todayStr, 
+            titleSlug: data.titleSlug, 
+            link: `/problems/${data.titleSlug}/description/`,
+            title: data.translatedTitle,
+            difficulty: data.difficulty,
+            content: data.translatedContent,
+            snippets: data.codeSnippets
+        };
+
+        document.querySelector('.leetcode-loading').style.display = 'none';
+        document.querySelector('.leetcode-content').style.display = 'block';
+
+        if (linkBtn) {
+            linkBtn.href = "https://leetcode.cn" + lcDataGlobal.link;
+            linkBtn.target = "_blank";
+            linkBtn.style.pointerEvents = "auto";
+            linkBtn.style.opacity = "1";
+        }
+
+        const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+        if (lastSolved === todayStr) {
+            showSolvedState();
+        } else {
+            document.getElementById('lc-state-todo').style.display = 'block';
+            document.getElementById('lc-date').innerText = todayStr;
+            document.getElementById('lc-title').innerText = `${data.questionFrontendId}. ${data.translatedTitle}`;
+            
+            const diffEl = document.getElementById('lc-difficulty');
+            const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+            diffEl.innerText = diffMap[data.difficulty] || data.difficulty;
+            diffEl.className = `lc-difficulty diff-${data.difficulty.toLowerCase()}`;
+        }
+    })
+    .catch(err => {
+        console.error("LeetCode Fetch Error:", err);
+        
+        document.querySelector('.leetcode-loading').innerHTML = `<span style="color:#ff4d4d">加载失败</span><br><span style="font-size:10px; opacity:0.7">请按 F12 查看控制台</span>`;
+    });
+}
+
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    
+    if (lastSolved) {
+        
+        const lastDateObj = new Date(lastSolved);
+        const todayObj = new Date(today);
+        
+        
+        const diffTime = Math.abs(todayObj - lastDateObj);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+        if (diffDays === 1) {
+            
+            streak++;
+        } else if (diffDays > 1) {
+            
+            if (checkIfGapIsOnlyWeekends(lastDateObj, todayObj)) {
+                
+                streak++;
+                alert("周末休息是为了更好的出发！连续打卡保持成功 🔥");
+            } else {
+                
+                streak = 1;
+            }
+        }
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    if(!document.querySelector('.ai-chat-window').style.display === 'flex') {
+        alert(`验证成功！连续打卡 ${streak} 天 🔥`);
+    }
+    
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+
+function checkIfGapIsOnlyWeekends(startDate, endDate) {
+    let curr = new Date(startDate);
+    curr.setDate(curr.getDate() + 1); 
+
+    while (curr < endDate) {
+        const dayOfWeek = curr.getDay(); 
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            return false;
+        }
+        curr.setDate(curr.getDate() + 1);
+    }
+    return true;
+}
+
+
+function checkSubmissionStatus(isSilent = false) {
+    if (!lcDataGlobal) return;
+    
+    
+    const LEETCODE_API = 'https://leetcode-proxy.j8465383071.workers.dev'; 
+
+    const query = `
+    query recentSubmissions($userSlug: String!) {
+        recentSubmissions(userSlug: $userSlug) {
+            status
+            question { titleSlug }
+            submitTime
+        }
+    }`;
+
+    const checkBtn = document.getElementById('btn-check-status');
+    if(checkBtn) { checkBtn.innerText = "⏳ Verifying..."; checkBtn.disabled = true; }
+
+    fetch(LEETCODE_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            operationName: "recentSubmissions",
+            query: query,
+            variables: { userSlug: MY_LEETCODE_USERNAME }
+        })
+    })
+    .then(res => res.json())
+    .then(result => {
+        const submissions = result.data.recentSubmissions;
+        if (!submissions || submissions.length === 0) {
+            if(!isSilent) alert("未找到提交记录。");
+            return;
+        }
+
+        const targetSlug = lcDataGlobal.titleSlug;
+        
+        
+        const passed = submissions.find(sub => 
+            sub.question.titleSlug === targetSlug && 
+            (sub.status === "A_10" || sub.status === "A_ACCEPTED")
+        );
+
+        if (passed) {
+            console.log("✅ AC Found!", passed);
+            markAsSolvedAuto(); 
+        } else {
+            console.log("❌ Not Found. Target:", targetSlug, "Recent:", submissions.map(s=>s.question.titleSlug));
+            if(!isSilent) alert(`验证失败。未检测到 "${targetSlug}" 的通过记录。`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        if(!isSilent) alert("验证 API 请求失败");
+    })
+    .finally(() => {
+        if(checkBtn) {
+            checkBtn.innerText = "🔄 Verify Status";
+            checkBtn.disabled = false;
+        }
+    });
+}
+
+function markAsSolvedAuto() {
+    const today = lcDataGlobal.date;
+    const lastSolved = localStorage.getItem(STORAGE_KEY_LAST_DATE);
+    
+    if (lastSolved === today) {
+        closeLeetCodeModal();
+        return;
+    }
+
+    let streak = parseInt(localStorage.getItem(STORAGE_KEY_STREAK) || '0');
+    if (lastSolved) {
+        const lastDate = new Date(lastSolved);
+        const currDate = new Date(today);
+        const diffDays = Math.floor((currDate - lastDate) / (1000 * 60 * 60 * 24)); 
+        if (diffDays === 1) streak++;
+        else if (diffDays > 1) streak = 1;
+    } else {
+        streak = 1;
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST_DATE, today);
+    localStorage.setItem(STORAGE_KEY_STREAK, streak);
+
+    alert(`验证成功！AC Get! 连续打卡 ${streak} 天 🔥`);
+    closeLeetCodeModal();
+    showSolvedState();
+    updateStreakDisplay();
+}
+
+function showSolvedState() {
+    document.getElementById('lc-state-todo').style.display = 'none';
+    document.getElementById('lc-state-done').style.display = 'block';
+    document.getElementById('leetcode-widget').classList.add('status-done');
+}
+
+function updateStreakDisplay() {
+    const streak = localStorage.getItem(STORAGE_KEY_STREAK) || '0';
+    if (parseInt(streak) > 0) {
+        document.getElementById('lc-streak-badge').style.display = 'inline';
+        document.getElementById('lc-streak-count').innerText = streak;
+    }
+}
+
+function openLeetCodeModal() {
+    if (!lcDataGlobal) return;
+    document.getElementById('lc-modal').style.display = 'block';
+    
+    
+    document.getElementById('modal-title').innerText = lcDataGlobal.title;
+    const diffEl = document.getElementById('modal-diff');
+    const diffMap = { 'Easy': '简单', 'Medium': '中等', 'Hard': '困难' };
+    diffEl.innerText = diffMap[lcDataGlobal.difficulty] || lcDataGlobal.difficulty;
+    diffEl.className = `lc-difficulty diff-${lcDataGlobal.difficulty.toLowerCase()}`;
+    document.getElementById('modal-content').innerHTML = lcDataGlobal.content;
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    if (!flaskEditor) {
+        flaskEditor = new CodeFlask('#code-editor', {
+            language: 'clike',
+            lineNumbers: true
+        });
+
+        
+        flaskEditor.onUpdate((code) => {
+            
+            if(lcDataGlobal && lcDataGlobal.titleSlug) {
+                const currentKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+                localStorage.setItem(currentKey, code);
+            }
+        });
+    }
+
+    
+    const savedCode = localStorage.getItem(storageKey);
+    
+    if (savedCode) {
+        
+        flaskEditor.updateCode(savedCode);
+    } else {
+        
+        flaskEditor.updateCode(defaultCode);
+    }
+}
+
+
+function resetCode() {
+    if (!confirm("确定要重置代码吗？这将清除当前已写的内容。")) {
+        return;
+    }
+
+    
+    let defaultCode = "// C++ snippet not found.";
+    if (lcDataGlobal.snippets) {
+        const cppSnippet = lcDataGlobal.snippets.find(s => s.langSlug === 'cpp');
+        if (cppSnippet) defaultCode = cppSnippet.code;
+    }
+
+    
+    const storageKey = `lc_draft_${lcDataGlobal.titleSlug}`;
+    localStorage.removeItem(storageKey);
+
+    
+    flaskEditor.updateCode(defaultCode);
+}
+
+function closeLeetCodeModal() {
+    document.getElementById('lc-modal').style.display = 'none';
+}
+
+function copyAndGo() {
+    const code = flaskEditor.getCode();
+    navigator.clipboard.writeText(code).then(() => {
+        const btn = document.querySelector('.submit-btn');
+        btn.innerText = "已复制! 跳转中...";
+        setTimeout(() => { 
+            btn.innerText = "Copy & Submit 🚀"; 
+            window.open("https://leetcode.cn" + lcDataGlobal.link, '_blank');
+        }, 1000);
+    });
+}
+
+document.onkeydown = function(e) {
+    if (e.key === "Escape" && document.getElementById('lc-modal').style.display === 'block') {
+        closeLeetCodeModal();
+    }
+}
+
+</script>
+
+
+
+
+
+
+<div id="ai-trigger" class="ai-trigger" onclick="toggleAIChat()" title="召唤 AI 助手">
+    <svg viewBox="0 0 24 24">
+        <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" />
+    </svg>
+</div>
+
+
+<div id="ai-chat-window" class="ai-chat-window">
+    <div class="ai-header">
+        <span>🤖 Doubao AI</span>
+        <span class="ai-close" onclick="toggleAIChat()">×</span>
+    </div>
+    <div id="ai-messages" class="ai-messages">
+        <div class="ai-msg bot">Hi! 我是你的技术助手。关于代码、架构或 Bug，随时问我！🚀</div>
+    </div>
+    <div class="ai-input-area">
+        <input type="text" id="ai-input" class="ai-input" placeholder="Ask me anything..." onkeypress="handleAIEnter(event)">
+        <button id="ai-send-btn" class="ai-send-btn" onclick="sendAIMessage()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+ 
+
+
+const AI_CONFIG = {
+    
+    key: "21587123-e75f-4c79-be39-a884b288c903", 
+    
+    model: "doubao-seed-1-8-251228", 
+    
+    
+    
+    api: "https://my-doubao-proxy.j8465383071.workers.dev/", 
+    
+    
+    proxy: "" 
+};
+
+let chatHistory = [
+    { 
+        role: "system", 
+        content: "你是一个专业的数据库内核开发专家。请用简洁、极客的风格回答技术问题。支持 Markdown 格式。" 
+    }
+];
+
+function toggleAIChat() {
+    const win = document.getElementById('ai-chat-window');
+    if (win.style.display === 'flex') {
+        win.style.display = 'none';
+    } else {
+        win.style.display = 'flex';
+        setTimeout(() => document.getElementById('ai-input').focus(), 100);
+    }
+}
+
+function handleAIEnter(e) {
+    if (e.key === 'Enter') sendAIMessage();
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-input');
+    const btn = document.getElementById('ai-send-btn');
+    const msgText = input.value.trim();
+    
+    if (!msgText) return;
+
+    
+    addMessage(msgText, 'user');
+    input.value = '';
+    btn.disabled = true;
+    
+    
+    chatHistory.push({ role: "user", content: msgText });
+
+    
+    const loadingId = 'loading-' + Date.now();
+    const botMsgDiv = addMessage("Thinking...", 'bot', loadingId);
+    botMsgDiv.classList.add('typing-dots');
+
+    try {
+        
+        
+        const finalUrl = AI_CONFIG.api;
+
+        console.log("AI Request:", finalUrl);
+
+        const response = await fetch(finalUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_CONFIG.key}`
+            },
+            body: JSON.stringify({
+                model: AI_CONFIG.model,
+                messages: chatHistory, 
+                stream: false,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText}`);
+        }
+
+        const data = await response.json();
+        
+        
+        botMsgDiv.classList.remove('typing-dots');
+
+        if (data.choices && data.choices.length > 0) {
+            const reply = data.choices[0].message.content;
+            
+            botMsgDiv.innerHTML = formatAIResponse(reply);
+            
+            chatHistory.push({ role: "assistant", content: reply });
+        } else {
+            botMsgDiv.innerText = "Error: API 返回空数据";
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        botMsgDiv.classList.remove('typing-dots');
+        
+        
+        if (error.message.includes("Failed to fetch") || error.message.includes("504")) {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">网络连接超时 (代理繁忙)。</span><br>请稍后再试，或检查网络。`;
+        } else {
+            botMsgDiv.innerHTML = `<span style="color:#ff4d4d">发送失败: ${error.message}</span>`;
+        }
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => input.focus(), 100);
+    }
+}
+
+function addMessage(text, role, id = null) {
+    const container = document.getElementById('ai-messages');
+    const div = document.createElement('div');
+    div.className = `ai-msg ${role}`;
+    if (id) div.id = id;
+    div.innerText = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function formatAIResponse(text) {
+    let formatted = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    
+    
+    formatted = formatted.replace(/```(\w*)([\s\S]*?)```/g, function(match, lang, code) {
+        return `<pre style="background:#222; color:#eee; padding:10px; border-radius:6px; overflow-x:auto; margin:8px 0; font-family:Menlo,monospace; border:1px solid #444;"><code>${code.trim()}</code></pre>`;
+    });
+
+    
+    formatted = formatted.replace(/`([^`]+)`/g, '<code style="background:rgba(0,0,0,0.1); padding:2px 4px; border-radius:3px; font-family:monospace; color:#d63384; font-weight:bold;">$1</code>');
+    
+    
+    formatted = formatted.replace(/\n/g, "<br>");
+    return formatted;
+}
+</script>
+</body>
+
+</html>

@@ -2,7 +2,7 @@
 date = '2026-02-24T12:02:52+08:00'
 draft = false
 title = '深度优先遍历'
-categories = ["Algorithm"]
+categories = ["数据结构与算法"]
 
 tags = ["DFS", "LeetCode"]
 ShowToc = true
