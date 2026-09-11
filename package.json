@@ -1,0 +1,8 @@
+{
+  "name": "my-blog",
+  "private": true,
+  "description": "Hugo blog (PaperMod) deployed to Cloudflare",
+  "scripts": {
+    "build": "bash scripts/cf-build.sh"
+  }
+}
