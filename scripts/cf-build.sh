@@ -39,10 +39,14 @@ fi
 
 echo "==> $(hugo version)"
 
+# Prefer explicit env, then Cloudflare Pages URL, then hugo.toml baseURL.
 args=(--minify --gc)
-if [[ -n "${CF_PAGES_URL:-}" ]]; then
+if [[ -n "${HUGO_BASEURL:-}" ]]; then
+  args+=(-b "$HUGO_BASEURL")
+  echo "==> baseURL=$HUGO_BASEURL (HUGO_BASEURL)"
+elif [[ -n "${CF_PAGES_URL:-}" ]]; then
   args+=(-b "$CF_PAGES_URL")
-  echo "==> baseURL=$CF_PAGES_URL"
+  echo "==> baseURL=$CF_PAGES_URL (CF_PAGES_URL)"
 fi
 
 # PaperMod is a git submodule — fail early with a clear message

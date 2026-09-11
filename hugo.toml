@@ -1,4 +1,4 @@
-baseURL = 'http://localhost/'
+baseURL = 'https://my-blog.j8465383071.workers.dev/'
 languageCode = 'zh-cn'
 title = 'Kernel Notes' # 你的博客标题
 theme = 'PaperMod'
