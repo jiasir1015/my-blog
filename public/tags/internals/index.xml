@@ -36,15 +36,21 @@
 &lt;/figure&gt;
 
 &lt;hr&gt;
-&lt;h2 id=&#34;数据组织&#34;&gt;数据组织&lt;/h2&gt;
-&lt;h3 id=&#34;数据库&#34;&gt;数据库&lt;/h3&gt;
+&lt;h1 id=&#34;介绍&#34;&gt;介绍&lt;/h1&gt;
+&lt;h2 id=&#34;11-数据组织&#34;&gt;1.1 数据组织&lt;/h2&gt;
+&lt;h3 id=&#34;111-数据库&#34;&gt;1.1.1 数据库&lt;/h3&gt;
 &lt;p&gt;当初始化一个 PG 实例之后，PGDATA 会自动创建以下三种基础数据库：&lt;/p&gt;
 &lt;ul&gt;
 &lt;li&gt;template0: 用来通过逻辑复制，或创建不同编码数据库的原型/样板；&lt;/li&gt;
 &lt;li&gt;template1: 用户在此实例下创建所有其他数据库的模版，新建库都基于它；&lt;/li&gt;
 &lt;li&gt;postgres: 自带的一个常规库；&lt;/li&gt;
 &lt;/ul&gt;
-&lt;p&gt;&lt;img alt=&#34;image&#34; loading=&#34;lazy&#34; src=&#34;http://localhost:1313/images/uploads/image.png&#34;&gt;&lt;/p&gt;</description>
+&lt;p&gt;&lt;img alt=&#34;image&#34; loading=&#34;lazy&#34; src=&#34;http://localhost:1313/images/uploads/image.png&#34;&gt;&lt;/p&gt;
+&lt;h3 id=&#34;112-系统目录&#34;&gt;1.1.2 系统目录&lt;/h3&gt;
+&lt;p&gt;所有集簇对象 (例如表、索引、数据类型或函数) 的元数据都存储在属于系统目录 3 的表中。每个数据库都有其自己的一组用于描述该数据库对象的表 (和视图)。有几个系统目录表是整个集簇共有的，它们不属于任何特定的数据库 (从技术上讲，使用的是一个 ID 为零的虚拟数据库)，但可以从所有数据库中访问这些表。&lt;/p&gt;
+&lt;p&gt;系统目录可以使用常规 SQL 查询进行查看，所有对系统目录的修改都是通过 DDL 命令执行的。psql 客户端还提供了一系列命令，用于显示系统目录的内容。&lt;/p&gt;
+&lt;p&gt;所有系统目录表的名称都以 pg_ 开头，比如 pg_database。列名通常以对应于表名的三个字母前缀开头，比如 datname。&lt;/p&gt;
+&lt;p&gt;在所有的系统目录表中，声明为主键的列称之为 oid (对象标识符)，其类型是一个 32 位整数，也被称为 oid。&lt;/p&gt;</description>
     </item>
   </channel>
 </rss>

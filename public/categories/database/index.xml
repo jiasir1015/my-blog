@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Database on Kernel Notes</title>
+    <link>http://localhost:1313/categories/database/</link>
+    <description>Recent content in Database on Kernel Notes</description>
+    <generator>Hugo -- 0.155.3</generator>
+    <language>zh-cn</language>
+    <lastBuildDate>Fri, 23 Oct 2026 15:49:45 +0800</lastBuildDate>
+    <atom:link href="http://localhost:1313/categories/database/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>V3-G100透明加密适配硬件密码机</title>
+      <link>http://localhost:1313/posts/database/v3-g100%E9%80%8F%E6%98%8E%E5%8A%A0%E5%AF%86%E9%80%82%E9%85%8D%E7%A1%AC%E4%BB%B6%E5%AF%86%E7%A0%81%E6%9C%BA/</link>
+      <pubDate>Fri, 23 Oct 2026 15:49:45 +0800</pubDate>
+      <guid>http://localhost:1313/posts/database/v3-g100%E9%80%8F%E6%98%8E%E5%8A%A0%E5%AF%86%E9%80%82%E9%85%8D%E7%A1%AC%E4%BB%B6%E5%AF%86%E7%A0%81%E6%9C%BA/</guid>
+      <description>&lt;h1 id=&#34;v3-g100透明加密适配硬件密码机&#34;&gt;V3-G100透明加密适配硬件密码机&lt;/h1&gt;
+&lt;p&gt;对硬件适配的代码做梳理性总结，同时自己仔细过一遍。&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;软加密的详细设计请看另一篇文档&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id=&#34;1-透明加密适配硬件密码机&#34;&gt;1. 透明加密适配硬件密码机&lt;/h2&gt;
+&lt;p&gt;依托PSU3实现的透明加密模块，在此基础上适配BJCA密码机，主要是使用BJCA的密码机加解密以及密钥管理能力实现更安全的透明加密。很多用户都会有这种诉求，通常不会只依赖数据库自带的透明加密特性。&lt;/p&gt;
+&lt;h3 id=&#34;11-功能简述&#34;&gt;1.1 功能简述&lt;/h3&gt;
+&lt;p&gt;语法上与软加密使用方式相同，只是在建立密钥的通过option进行区分：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-python&#34; data-lang=&#34;python&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;create&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;encryption&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;key&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;k1&lt;/span&gt; &lt;span class=&#34;k&#34;&gt;with&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;source&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;hsm&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;    &lt;span class=&#34;c1&#34;&gt;##hsm（Hardwire-Security-Module)表示使用硬件设备进行密钥创建，以后使用此密钥的策略都走硬件路径；软加密这里是local，意为本地加解密。&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;create&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;encryption&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;policy&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;p1&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;key&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;k1&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;algorithm&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;sm4_ctr&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;mac_algorithm&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;hmac_sm3&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;create&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;table&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;t1&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;a&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;text&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;)&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;secured&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;by&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;n&#34;&gt;encrypt_policy&lt;/span&gt;&lt;span class=&#34;o&#34;&gt;=&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;p1&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;insert&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;into&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;t1&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;values&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;(&lt;/span&gt;&lt;span class=&#34;s1&#34;&gt;&amp;#39;tde_plain&amp;#39;&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;);&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;&lt;span class=&#34;n&#34;&gt;select&lt;/span&gt; &lt;span class=&#34;n&#34;&gt;a&lt;/span&gt; &lt;span class=&#34;kn&#34;&gt;from&lt;/span&gt; &lt;span class=&#34;nn&#34;&gt;t1&lt;/span&gt;&lt;span class=&#34;p&#34;&gt;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;这里需要说明的是，一个集群中只能部署一种类型的密钥，如果key的source指定为local，就无法再创建hsm的硬件加密密钥，这样处理的原因是，如果混用不同来源的密钥，很容易造成一些未知的错误，导致加解密状态混乱，因此现在的设计时，严格限制密钥的单一来源；如上所述，就会带来一个存量迁移的路径，例如之前使用软加密，现在向前一到硬件加密去。这个诉求也很常见，后面会讲到具体的做法。&lt;/p&gt;
+&lt;p&gt;如何限制单一密钥来源？后面的章节会结合代码树分析，主要是在实例启动的时候去做限制。&lt;/p&gt;
+&lt;p&gt;友商关于这个模块的实现，在内核中大致的思路是类似的：&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;达梦、金仓：内核通过调用统一的接口，来实现对硬件加密设备的连接，从而不必关心不同设备所带来的差异，具体的架构类似于：&lt;/li&gt;
+&lt;/ul&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; class=&#34;chroma&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;--------------     可能有接口差异  ------------   提供统一的API      ------------
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;硬件加密机            --------&amp;gt;      封装库整合   --------------&amp;gt;        内核
+&lt;/span&gt;&lt;/span&gt;&lt;span class=&#34;line&#34;&gt;&lt;span class=&#34;cl&#34;&gt;--------------                   ------------                    ------------ 
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;但是对于封装库，达梦和金仓都选择了一个自定义的头文件类型，由用户去自行做三方硬件设备的适配工作，这样的好处是研发连适配具体的哪个硬件都不用关心了，而且也不需要关心未来第三方的更新等等，缺点就是把复杂度转移给了用户，从体验上感觉不好。&lt;/p&gt;
+&lt;p&gt;本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

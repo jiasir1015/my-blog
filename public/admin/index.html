@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>写作 · Kernel Notes</title>
-  <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="./style.css?v=editor-recent-1" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/monokai-sublime.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/highlight.min.js"></script>
@@ -16,12 +16,19 @@
         <a class="brand" href="/">← Kernel Notes</a>
         <h1>写作</h1>
         <p class="hint" id="apiStatus">连接编辑服务中…</p>
+        <p class="hint">自动保存：停笔约 2.5s / 每 10s</p>
+        <p class="hint">缩进：Tab；取消缩进：Shift + Tab</p>
       </div>
 
       <div class="toolbar">
         <button type="button" id="btnNew" class="btn primary">新建文章</button>
         <button type="button" id="btnRefresh" class="btn">刷新</button>
       </div>
+
+      <section class="recent-section" id="recentSection" hidden aria-label="最近编辑">
+        <h2 class="section-title">最近编辑</h2>
+        <div class="recent-list" id="recentList"></div>
+      </section>
 
       <input type="search" id="fileFilter" class="filter" placeholder="筛选路径…" />
 
@@ -83,6 +90,6 @@
     </form>
   </dialog>
 
-  <script src="./app.js"></script>
+  <script src="./app.js?v=editor-scroll-sync-1"></script>
 </body>
 </html>

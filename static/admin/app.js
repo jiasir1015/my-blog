@@ -4,6 +4,8 @@
   const els = {
     apiStatus: document.getElementById('apiStatus'),
     fileList: document.getElementById('fileList'),
+    recentSection: document.getElementById('recentSection'),
+    recentList: document.getElementById('recentList'),
     fileFilter: document.getElementById('fileFilter'),
     editor: document.getElementById('editor'),
     preview: document.getElementById('preview'),
@@ -34,6 +36,12 @@
   let dirty = false;
   let previewOn = true;
   let previewTimer = null;
+  let saving = false;
+  let autoSaveTimer = null;
+  let idleSaveTimer = null;
+  const AUTO_SAVE_INTERVAL_MS = 10000; // 定时自动保存
+  const IDLE_SAVE_MS = 2500; // 停止输入后稍后保存
+  const RECENT_FILE_LIMIT = 6;
 
   async function api(path, options = {}) {
     const res = await fetch(`${API}${path}`, {
@@ -45,10 +53,40 @@
     return data;
   }
 
+  function formatTime(d = new Date()) {
+    return d.toLocaleTimeString('zh-CN', { hour12: false });
+  }
+
+  function formatRecentTime(value) {
+    const time = new Date(value).getTime();
+    if (Number.isNaN(time)) return '';
+    const elapsed = Date.now() - time;
+    if (elapsed < 60 * 1000) return '刚刚更新';
+    if (elapsed < 60 * 60 * 1000) return `${Math.floor(elapsed / 60000)} 分钟前更新`;
+    if (elapsed < 24 * 60 * 60 * 1000) return `${Math.floor(elapsed / 3600000)} 小时前更新`;
+    return `更新于 ${new Date(time).toLocaleDateString('zh-CN', {
+      month: 'numeric',
+      day: 'numeric',
+    })}`;
+  }
+
   function setDirty(v) {
     dirty = v;
-    els.btnSave.disabled = !currentPath || !dirty;
-    els.saveStatus.textContent = dirty ? '未保存' : currentPath ? '已保存' : '';
+    els.btnSave.disabled = !currentPath || !dirty || saving;
+    if (!currentPath) {
+      els.saveStatus.textContent = '';
+      return;
+    }
+    if (saving) return;
+    els.saveStatus.textContent = dirty ? '未保存 · 将自动保存' : els.saveStatus.textContent || '已保存';
+  }
+
+  function scheduleIdleSave() {
+    clearTimeout(idleSaveTimer);
+    if (!currentPath || !dirty) return;
+    idleSaveTimer = setTimeout(() => {
+      autoSave('idle').catch(() => {});
+    }, IDLE_SAVE_MS);
   }
 
   function updateWordCount() {
@@ -99,8 +137,11 @@
   function resolvePreviewSrc(src) {
     if (!src) return src;
     if (/^(https?:|data:|blob:)/i.test(src)) return src;
+    // Prefer editor API media for local uploads — avoids hugo server 404 on new files.
+    if (src.startsWith('/images/uploads/') || src.startsWith('/ebooks/')) {
+      return `${API}/media${src}`;
+    }
     if (src.startsWith('/')) return `${location.origin}${src}`;
-    // relative to site root, not /admin/
     return `${location.origin}/${src.replace(/^\.\//, '')}`;
   }
 
@@ -108,14 +149,19 @@
     root.querySelectorAll('img').forEach((img) => {
       const raw = img.getAttribute('src') || '';
       const abs = resolvePreviewSrc(raw);
-      // cache-bust so a previous 404 doesn't stick
       img.src = abs + (abs.includes('?') ? '&' : '?') + 't=' + Date.now();
       img.loading = 'eager';
       img.decoding = 'async';
       img.onerror = () => {
+        // Fallback: try Hugo origin if media API failed
+        if (raw.startsWith('/') && !img.dataset.fallback) {
+          img.dataset.fallback = '1';
+          img.src = `${location.origin}${raw}?t=${Date.now()}`;
+          return;
+        }
         const tip = document.createElement('p');
         tip.className = 'img-error';
-        tip.textContent = `图片加载失败：${raw || '(空路径)'}。请重新粘贴截图，或点「插入图片」。`;
+        tip.textContent = `图片加载失败：${raw || '(空路径)'}。请确认编辑服务在运行，或重新粘贴上传。`;
         img.replaceWith(tip);
       };
     });
@@ -132,11 +178,23 @@
     decorateCodeBlocks(els.preview);
     fixPreviewImages(els.preview);
     els.preview.scrollTop = scrollTop;
+    syncPreviewScroll();
   }
 
   function schedulePreview() {
     clearTimeout(previewTimer);
     previewTimer = setTimeout(renderPreviewNow, 80);
+  }
+
+  function syncPreviewScroll() {
+    if (!previewOn) return;
+    const editorMaxScroll = els.editor.scrollHeight - els.editor.clientHeight;
+    const previewMaxScroll = els.preview.scrollHeight - els.preview.clientHeight;
+    if (editorMaxScroll <= 0 || previewMaxScroll <= 0) {
+      els.preview.scrollTop = 0;
+      return;
+    }
+    els.preview.scrollTop = (els.editor.scrollTop / editorMaxScroll) * previewMaxScroll;
   }
 
   function renderFileList(filter = '') {
@@ -152,6 +210,39 @@
       btn.addEventListener('click', () => openFile(f.path));
       els.fileList.appendChild(btn);
     }
+  }
+
+  function renderRecentList() {
+    const recent = files
+      .filter((file) => file.mtime)
+      .sort((a, b) => new Date(b.mtime) - new Date(a.mtime))
+      .slice(0, RECENT_FILE_LIMIT);
+    els.recentSection.hidden = recent.length === 0;
+    els.recentList.replaceChildren();
+
+    for (const file of recent) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `recent-item${file.path === currentPath ? ' active' : ''}`;
+      btn.title = `${file.path}\n${formatRecentTime(file.mtime)}`;
+
+      const path = document.createElement('span');
+      path.className = 'recent-path';
+      path.textContent = file.path;
+      const time = document.createElement('span');
+      time.className = 'recent-time';
+      time.textContent = formatRecentTime(file.mtime);
+      btn.append(path, time);
+      btn.addEventListener('click', () => openFile(file.path).catch((err) => alert(err.message || err)));
+      els.recentList.appendChild(btn);
+    }
+  }
+
+  function markFileRecentlyEdited(path) {
+    const file = files.find((item) => item.path === path);
+    if (!file) return;
+    file.mtime = new Date().toISOString();
+    renderRecentList();
   }
 
   async function checkHealth() {
@@ -170,6 +261,7 @@
   async function loadFiles() {
     const data = await api('/api/files');
     files = data.files || [];
+    renderRecentList();
     renderFileList(els.fileFilter.value);
   }
 
@@ -186,6 +278,65 @@
     }
     const preferred = dirs.find((d) => d.startsWith('posts/'));
     if (preferred) els.newDir.value = preferred;
+  }
+
+  function insertTabInEditor(unindent) {
+    const el = els.editor;
+    if (!el || el.disabled) return;
+    const value = el.value;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const tab = '\t';
+    const selected = value.slice(start, end);
+    const useBlock = unindent || selected.includes('\n');
+
+    if (!useBlock) {
+      el.setRangeText(tab, start, end, 'end');
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
+
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+    let rangeEnd = end;
+    if (!(end > start && value[end - 1] === '\n')) {
+      const nl = value.indexOf('\n', end);
+      rangeEnd = nl === -1 ? value.length : nl;
+    } else {
+      rangeEnd = end - 1;
+    }
+
+    const block = value.slice(lineStart, rangeEnd);
+    const lines = block.split('\n');
+    let deltaStart = 0;
+    let deltaEnd = 0;
+    const next = lines.map((line, i) => {
+      let nextLine = line;
+      let delta = 0;
+      if (unindent) {
+        if (line.startsWith('\t')) {
+          nextLine = line.slice(1);
+          delta = -1;
+        } else {
+          const m = line.match(/^ {1,4}/);
+          if (m) {
+            nextLine = line.slice(m[0].length);
+            delta = -m[0].length;
+          }
+        }
+      } else {
+        nextLine = tab + line;
+        delta = 1;
+      }
+      if (i === 0) deltaStart = delta;
+      deltaEnd += delta;
+      return nextLine;
+    }).join('\n');
+
+    el.setRangeText(next, lineStart, rangeEnd, 'end');
+    const newStart = Math.max(lineStart, start + deltaStart);
+    const newEnd = Math.max(newStart, end + deltaEnd);
+    el.setSelectionRange(newStart, newEnd);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   function insertAtCursor(text) {
@@ -313,6 +464,8 @@
     currentPath = data.path;
     els.currentPath.textContent = currentPath;
     els.editor.value = data.content;
+    els.editor.scrollTop = 0;
+    els.preview.scrollTop = 0;
     els.editor.disabled = false;
     els.btnDelete.disabled = false;
     els.btnImage.disabled = false;
@@ -320,17 +473,43 @@
     setDirty(false);
     updateWordCount();
     renderPreviewNow();
+    renderRecentList();
     renderFileList(els.fileFilter.value);
   }
 
-  async function saveFile() {
-    if (!currentPath) return;
-    await api('/api/file', {
-      method: 'PUT',
-      body: JSON.stringify({ path: currentPath, content: els.editor.value }),
-    });
-    setDirty(false);
-    els.saveStatus.textContent = '已保存 · Hugo 会自动刷新';
+  async function saveFile({ silent = false } = {}) {
+    if (!currentPath || saving) return false;
+    if (!dirty && silent) return false;
+    saving = true;
+    els.btnSave.disabled = true;
+    if (!silent) els.saveStatus.textContent = '保存中…';
+    else els.saveStatus.textContent = '自动保存中…';
+    try {
+      await api('/api/file', {
+        method: 'PUT',
+        body: JSON.stringify({ path: currentPath, content: els.editor.value }),
+      });
+      markFileRecentlyEdited(currentPath);
+      dirty = false;
+      els.btnSave.disabled = true;
+      els.saveStatus.textContent = silent
+        ? `已自动保存 ${formatTime()}`
+        : `已保存 ${formatTime()} · Hugo 会自动刷新`;
+      return true;
+    } catch (err) {
+      els.saveStatus.textContent = `保存失败：${err.message || err}`;
+      els.btnSave.disabled = !dirty;
+      if (!silent) throw err;
+      return false;
+    } finally {
+      saving = false;
+      els.btnSave.disabled = !currentPath || !dirty;
+    }
+  }
+
+  async function autoSave(reason) {
+    if (!currentPath || !dirty || saving) return;
+    await saveFile({ silent: true });
   }
 
   async function deleteFile() {
@@ -389,7 +568,10 @@
     setDirty(true);
     updateWordCount();
     schedulePreview();
+    scheduleIdleSave();
   });
+
+  els.editor.addEventListener('scroll', syncPreviewScroll, { passive: true });
 
   // Auto-heal accidentally split image markdown: ![alt]\n(url)
   els.editor.addEventListener('blur', () => {
@@ -400,15 +582,26 @@
       els.editor.setSelectionRange(pos, pos);
       setDirty(true);
       renderPreviewNow();
+      scheduleIdleSave();
     }
   });
 
   els.editor.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 's') {
       e.preventDefault();
-      if (!els.btnSave.disabled) saveFile().catch(alert);
+      saveFile().catch((err) => alert(err.message || err));
+      return;
+    }
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      insertTabInEditor(e.shiftKey);
     }
   });
+
+  // 定时自动保存（有未保存修改时）
+  autoSaveTimer = setInterval(() => {
+    autoSave('interval').catch(() => {});
+  }, AUTO_SAVE_INTERVAL_MS);
 
   // Paste screenshot / copied image → upload → insert markdown
   function collectClipboardImages(clipboardData) {

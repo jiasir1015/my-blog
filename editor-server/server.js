@@ -14,6 +14,7 @@ const PORT = Number(process.env.EDITOR_PORT || 1314);
 const ROOT = path.resolve(__dirname, '..');
 const CONTENT_ROOT = path.join(ROOT, 'content');
 const STATIC_ROOT = path.join(ROOT, 'static');
+const PUBLIC_ROOT = path.join(ROOT, 'public');
 const UPLOAD_DIR = path.join(STATIC_ROOT, 'images', 'uploads');
 const EBOOK_DIR = path.join(STATIC_ROOT, 'ebooks');
 const EBOOKS_DATA = path.join(ROOT, 'data', 'ebooks.json');
@@ -32,6 +33,7 @@ const UPLOAD_KINDS = {
     dir: UPLOAD_DIR,
     urlPrefix: '/images/uploads/',
     staticPrefix: 'static/images/uploads/',
+    publicRel: 'images/uploads',
     maxBytes: 12 * 1024 * 1024,
     mimes: IMAGE_MIME,
   },
@@ -39,6 +41,7 @@ const UPLOAD_KINDS = {
     dir: EBOOK_DIR,
     urlPrefix: '/ebooks/',
     staticPrefix: 'static/ebooks/',
+    publicRel: 'ebooks',
     maxBytes: 80 * 1024 * 1024,
     mimes: { 'application/pdf': '.pdf' },
   },
@@ -95,6 +98,28 @@ async function saveUniqueFile(dir, base, ext, buf) {
   }
   await fsp.writeFile(abs, buf);
   return { abs, filename };
+}
+
+/** Mirror into public/ so a long-running `hugo server` can serve new uploads immediately. */
+async function mirrorToPublic(publicRel, filename, buf) {
+  const dir = path.join(PUBLIC_ROOT, publicRel);
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(path.join(dir, filename), buf);
+}
+
+function mediaTypeFromExt(filename) {
+  const ext = path.extname(filename).toLowerCase();
+  return (
+    {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+      '.pdf': 'application/pdf',
+    }[ext] || 'application/octet-stream'
+  );
 }
 
 async function readEbooksIndex() {
@@ -310,6 +335,38 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { files, index });
     }
 
+    // Serve uploaded media for admin preview (bypasses hugo static lag/404).
+    // e.g. GET /media/images/uploads/foo.png
+    if (req.method === 'GET' && pathname.startsWith('/media/')) {
+      const rel = pathname.slice('/media/'.length).replace(/^\/+/, '');
+      if (!rel || rel.includes('..') || rel.includes('\0')) {
+        return send(res, 400, { error: 'invalid path' });
+      }
+      const allowed =
+        rel.startsWith('images/uploads/') || rel.startsWith('ebooks/');
+      if (!allowed || (!rel.includes('.') )) {
+        return send(res, 403, { error: 'forbidden' });
+      }
+      const absStatic = path.join(STATIC_ROOT, rel);
+      const absPublic = path.join(PUBLIC_ROOT, rel);
+      const abs = fs.existsSync(absStatic)
+        ? absStatic
+        : fs.existsSync(absPublic)
+          ? absPublic
+          : null;
+      if (!abs || !abs.startsWith(ROOT)) {
+        return send(res, 404, { error: 'not found' });
+      }
+      const buf = await fsp.readFile(abs);
+      res.writeHead(200, {
+        'Content-Type': mediaTypeFromExt(rel),
+        'Content-Length': buf.length,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store',
+      });
+      return res.end(buf);
+    }
+
     async function handleUpload({ kind, mime, filename, buf, title }) {
       const conf = UPLOAD_KINDS[kind];
       if (!conf) throw Object.assign(new Error('unknown upload kind'), { status: 400 });
@@ -327,6 +384,10 @@ const server = http.createServer(async (req, res) => {
       }
       const base = sanitizeBaseName(filename, kind === 'pdf' ? `ebook-${Date.now()}` : `img-${Date.now()}`);
       const saved = await saveUniqueFile(conf.dir, base, ext, buf);
+      // Keep public/ in sync — otherwise hugo server may 404 new static files.
+      if (conf.publicRel) {
+        await mirrorToPublic(conf.publicRel, saved.filename, buf);
+      }
       const url = `${conf.urlPrefix}${saved.filename}`;
       const result = {
         ok: true,

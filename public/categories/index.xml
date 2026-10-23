@@ -6,8 +6,22 @@
     <description>Recent content in Categories on Kernel Notes</description>
     <generator>Hugo -- 0.155.3</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Fri, 11 Sep 2026 12:09:29 +0800</lastBuildDate>
+    <lastBuildDate>Fri, 23 Oct 2026 15:49:45 +0800</lastBuildDate>
     <atom:link href="http://localhost:1313/categories/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Database</title>
+      <link>http://localhost:1313/categories/database/</link>
+      <pubDate>Fri, 23 Oct 2026 15:49:45 +0800</pubDate>
+      <guid>http://localhost:1313/categories/database/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>PostgreSQL</title>
+      <link>http://localhost:1313/categories/postgresql/</link>
+      <pubDate>Fri, 11 Sep 2026 15:06:30 +0800</pubDate>
+      <guid>http://localhost:1313/categories/postgresql/</guid>
+      <description></description>
+    </item>
     <item>
       <title>Learning</title>
       <link>http://localhost:1313/categories/learning/</link>
@@ -41,13 +55,6 @@
       <link>http://localhost:1313/categories/%E6%95%B0%E6%8D%AE%E5%BA%93/</link>
       <pubDate>Mon, 27 Jul 2026 14:19:00 +0800</pubDate>
       <guid>http://localhost:1313/categories/%E6%95%B0%E6%8D%AE%E5%BA%93/</guid>
-      <description></description>
-    </item>
-    <item>
-      <title>PostgreSQL</title>
-      <link>http://localhost:1313/categories/postgresql/</link>
-      <pubDate>Fri, 03 Jul 2026 16:51:00 +0800</pubDate>
-      <guid>http://localhost:1313/categories/postgresql/</guid>
       <description></description>
     </item>
     <item>
