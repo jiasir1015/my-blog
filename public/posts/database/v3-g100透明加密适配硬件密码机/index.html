@@ -31,7 +31,50 @@ select a from t1;
 硬件加密机            --------&gt;      封装库整合   --------------&gt;        内核
 --------------                   ------------                    ------------ 
 但是对于封装库，达梦和金仓都选择了一个自定义的头文件类型，由用户去自行做三方硬件设备的适配工作，这样的好处是研发连适配具体的哪个硬件都不用关心了，而且也不需要关心未来第三方的更新等等，缺点就是把复杂度转移给了用户，从体验上感觉不好。
-本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件">
+本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件，缺点就是未来一旦第三方厂商出现更新，或者随着越来越多种类的第三方适配，代码库可能会变的更多更杂，主要原因还是0018标准不够清晰和全面，导致各个厂家在实现的时候，仍然有一定的差异化。
+如前所述，使用可以概括为：
+
+密钥在密码机中生成，现阶段使用的是kek类型的密钥，密钥不出密码机，内核只持有加密后的密钥密文；
+软硬件路径互斥，集群中只能存在一种类型的加密密钥；
+算法集主要以国密算法为主，本次实现使用的是SM4算法，覆盖的模式有CTR/GCM/CBC，同时还支持完整性校验算法HMAC_SM3；
+封装库为common_cipher.so，封装库的实现请参考另外的章节；
+使用BJCA的密码机服务库libSDF.so；
+
+1.2 实现方案
+本节主要通过函数调用树的方式，来介绍具体的实现路径。
+【启动阶段】
+PostmasterMain. # 校验enable_tde主特性开关
+	if (enable_tde)
+		tde_hw_register_exit_hook() # 注册进程退出回调，因为在进程关闭时需要同步调用密码机的关闭接口，这里是无条件创建的；
+		if (tde_hw_conf_present() &amp;&amp; !tde_key_info_file_exists()) # 这里判断硬件配置文件的存在性，如果存在这个配置文件，就认为需要走硬件路径；
+		if (tde_hw_startup(FATAL)) # 这里就尝试打开密码机设备，FATAL参数说明如果这里执行失败，实例会FATAL掉，这样设计的目的是为了不在异常的前提下提供任何服务，避免出现更严重的问题；
+			if (tde_hw_is_active()) # 这里是有一个static进程级别的变量，标识密码机是否已经处于激活状态，因为密码机状态可能随时变化，采用原子读的方式读取这个变量，如果已经激活，就直接返回，算是一个快路径，除了刚启动，大多数；
+			pthread_mutex_lock(&amp;tde_hw_startup_lock); # 这里对激活状态加锁，避免多个进程同时做这个操作；
+			tde_hw_startup_locked(level) # 在锁内去执行启动流程，这里的level是FATAL；
+				_atomic_load_n(&amp;tde_hw_active_flag, __ATOMIC_ACQUIRE)
+				dlopen(lib_path)
+				tde_hw_api.module_init()
+			pthread_mutex_unlock(&amp;tde_hw_startup_lock)
+【创建密钥】
+CreateEncryptionKey()
+	require_tde_enabled_and_superuser() # 主特性开关以及权限控制
+	if (IsTranscactionBlock()) # 如果在事务块中则报错，原因在于创建密钥会写密钥文件并且写WAL日志，在主备条件下会向备机同步，这两个操作是无法撤销的，同时如果是硬件路径，也会在密码机上创建密钥，同样无法撤销
+		ERROR
+	check_catalog_if_has_key_or_hw_key() # 这里对表进行一次扫描确认是否存在已有的key以及是否存在硬件key，注意这里是全表扫
+	tde_remove_orphan_keyfile() # 清理孤儿密钥文件，当catalog为空，但是存在keyfile的时候，清理这个keyfile，只在软件路径下执行，这个会在后面单独说明一下
+	if (use_hw)
+		if (!tde_hw_startup(ERROR)) # 这里的错误级别是ERROR，原因在于创建key的时的错误只影响当前语句，而不是一种状态不可信，是可重试的
+			ERROR
+		hw_append_key_entry() # 将新建的密钥加入缓存和密钥文件，关于密钥文件的格式会在后面说明
+		simple_heap_insert()
+		if (!TdeKeyInfoWriteWAL()) # 写创建密钥的WAL日志失败
+			hw_remove_key_entry() # 把刚刚写入的密钥信息删除
+			ERROR
+【创建密钥】
+CreateEncryptionPolicy()
+	check_algo_for_policy()
+		simple_heap_insert()
+这里实际上只做catalog更新">
 <meta name="author" content="Me">
 <link rel="canonical" href="http://localhost:1313/posts/database/v3-g100%E9%80%8F%E6%98%8E%E5%8A%A0%E5%AF%86%E9%80%82%E9%85%8D%E7%A1%AC%E4%BB%B6%E5%AF%86%E7%A0%81%E6%9C%BA/">
 <link crossorigin="anonymous" href="/assets/css/stylesheet.63bca2aa3250e5f3e08b0b0d04b639530d79856e2fcbb28e31ff900f14d3d91e.css" integrity="sha256-Y7yiqjJQ5fPgiwsNBLY5Uw15hW4vy7KOMf&#43;QDxTT2R4=" rel="preload stylesheet" as="style">
@@ -105,7 +148,10 @@ create encryption key k1 with(source=hsm); ##hsm（Hardwire-Security-Module)表�
 如何限制单一密钥来源？后面的章节会结合代码树分析，主要是在实例启动的时候去做限制。
 友商关于这个模块的实现，在内核中大致的思路是类似的：
 达梦、金仓：内核通过调用统一的接口，来实现对硬件加密设备的连接，从而不必关心不同设备所带来的差异，具体的架构类似于： -------------- 可能有接口差异 ------------ 提供统一的API ------------ 硬件加密机 --------&gt; 封装库整合 --------------&gt; 内核 -------------- ------------ ------------ 但是对于封装库，达梦和金仓都选择了一个自定义的头文件类型，由用户去自行做三方硬件设备的适配工作，这样的好处是研发连适配具体的哪个硬件都不用关心了，而且也不需要关心未来第三方的更新等等，缺点就是把复杂度转移给了用户，从体验上感觉不好。
-本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件">
+本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件，缺点就是未来一旦第三方厂商出现更新，或者随着越来越多种类的第三方适配，代码库可能会变的更多更杂，主要原因还是0018标准不够清晰和全面，导致各个厂家在实现的时候，仍然有一定的差异化。
+如前所述，使用可以概括为：
+密钥在密码机中生成，现阶段使用的是kek类型的密钥，密钥不出密码机，内核只持有加密后的密钥密文； 软硬件路径互斥，集群中只能存在一种类型的加密密钥； 算法集主要以国密算法为主，本次实现使用的是SM4算法，覆盖的模式有CTR/GCM/CBC，同时还支持完整性校验算法HMAC_SM3； 封装库为common_cipher.so，封装库的实现请参考另外的章节； 使用BJCA的密码机服务库libSDF.so； 1.2 实现方案 本节主要通过函数调用树的方式，来介绍具体的实现路径。
+【启动阶段】 PostmasterMain. # 校验enable_tde主特性开关 if (enable_tde) tde_hw_register_exit_hook() # 注册进程退出回调，因为在进程关闭时需要同步调用密码机的关闭接口，这里是无条件创建的； if (tde_hw_conf_present() &amp;&amp; !tde_key_info_file_exists()) # 这里判断硬件配置文件的存在性，如果存在这个配置文件，就认为需要走硬件路径； if (tde_hw_startup(FATAL)) # 这里就尝试打开密码机设备，FATAL参数说明如果这里执行失败，实例会FATAL掉，这样设计的目的是为了不在异常的前提下提供任何服务，避免出现更严重的问题； if (tde_hw_is_active()) # 这里是有一个static进程级别的变量，标识密码机是否已经处于激活状态，因为密码机状态可能随时变化，采用原子读的方式读取这个变量，如果已经激活，就直接返回，算是一个快路径，除了刚启动，大多数； pthread_mutex_lock(&amp;tde_hw_startup_lock); # 这里对激活状态加锁，避免多个进程同时做这个操作； tde_hw_startup_locked(level) # 在锁内去执行启动流程，这里的level是FATAL； _atomic_load_n(&amp;tde_hw_active_flag, __ATOMIC_ACQUIRE) dlopen(lib_path) tde_hw_api.module_init() pthread_mutex_unlock(&amp;tde_hw_startup_lock) 【创建密钥】 CreateEncryptionKey() require_tde_enabled_and_superuser() # 主特性开关以及权限控制 if (IsTranscactionBlock()) # 如果在事务块中则报错，原因在于创建密钥会写密钥文件并且写WAL日志，在主备条件下会向备机同步，这两个操作是无法撤销的，同时如果是硬件路径，也会在密码机上创建密钥，同样无法撤销 ERROR check_catalog_if_has_key_or_hw_key() # 这里对表进行一次扫描确认是否存在已有的key以及是否存在硬件key，注意这里是全表扫 tde_remove_orphan_keyfile() # 清理孤儿密钥文件，当catalog为空，但是存在keyfile的时候，清理这个keyfile，只在软件路径下执行，这个会在后面单独说明一下 if (use_hw) if (!tde_hw_startup(ERROR)) # 这里的错误级别是ERROR，原因在于创建key的时的错误只影响当前语句，而不是一种状态不可信，是可重试的 ERROR hw_append_key_entry() # 将新建的密钥加入缓存和密钥文件，关于密钥文件的格式会在后面说明 simple_heap_insert() if (!TdeKeyInfoWriteWAL()) # 写创建密钥的WAL日志失败 hw_remove_key_entry() # 把刚刚写入的密钥信息删除 ERROR 【创建密钥】 CreateEncryptionPolicy() check_algo_for_policy() simple_heap_insert() 这里实际上只做catalog更新">
   <meta property="og:locale" content="zh-cn">
   <meta property="og:type" content="article">
     <meta property="article:section" content="posts">
@@ -137,7 +183,50 @@ select a from t1;
 硬件加密机            --------&gt;      封装库整合   --------------&gt;        内核
 --------------                   ------------                    ------------ 
 但是对于封装库，达梦和金仓都选择了一个自定义的头文件类型，由用户去自行做三方硬件设备的适配工作，这样的好处是研发连适配具体的哪个硬件都不用关心了，而且也不需要关心未来第三方的更新等等，缺点就是把复杂度转移给了用户，从体验上感觉不好。
-本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件">
+本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件，缺点就是未来一旦第三方厂商出现更新，或者随着越来越多种类的第三方适配，代码库可能会变的更多更杂，主要原因还是0018标准不够清晰和全面，导致各个厂家在实现的时候，仍然有一定的差异化。
+如前所述，使用可以概括为：
+
+密钥在密码机中生成，现阶段使用的是kek类型的密钥，密钥不出密码机，内核只持有加密后的密钥密文；
+软硬件路径互斥，集群中只能存在一种类型的加密密钥；
+算法集主要以国密算法为主，本次实现使用的是SM4算法，覆盖的模式有CTR/GCM/CBC，同时还支持完整性校验算法HMAC_SM3；
+封装库为common_cipher.so，封装库的实现请参考另外的章节；
+使用BJCA的密码机服务库libSDF.so；
+
+1.2 实现方案
+本节主要通过函数调用树的方式，来介绍具体的实现路径。
+【启动阶段】
+PostmasterMain. # 校验enable_tde主特性开关
+	if (enable_tde)
+		tde_hw_register_exit_hook() # 注册进程退出回调，因为在进程关闭时需要同步调用密码机的关闭接口，这里是无条件创建的；
+		if (tde_hw_conf_present() &amp;&amp; !tde_key_info_file_exists()) # 这里判断硬件配置文件的存在性，如果存在这个配置文件，就认为需要走硬件路径；
+		if (tde_hw_startup(FATAL)) # 这里就尝试打开密码机设备，FATAL参数说明如果这里执行失败，实例会FATAL掉，这样设计的目的是为了不在异常的前提下提供任何服务，避免出现更严重的问题；
+			if (tde_hw_is_active()) # 这里是有一个static进程级别的变量，标识密码机是否已经处于激活状态，因为密码机状态可能随时变化，采用原子读的方式读取这个变量，如果已经激活，就直接返回，算是一个快路径，除了刚启动，大多数；
+			pthread_mutex_lock(&amp;tde_hw_startup_lock); # 这里对激活状态加锁，避免多个进程同时做这个操作；
+			tde_hw_startup_locked(level) # 在锁内去执行启动流程，这里的level是FATAL；
+				_atomic_load_n(&amp;tde_hw_active_flag, __ATOMIC_ACQUIRE)
+				dlopen(lib_path)
+				tde_hw_api.module_init()
+			pthread_mutex_unlock(&amp;tde_hw_startup_lock)
+【创建密钥】
+CreateEncryptionKey()
+	require_tde_enabled_and_superuser() # 主特性开关以及权限控制
+	if (IsTranscactionBlock()) # 如果在事务块中则报错，原因在于创建密钥会写密钥文件并且写WAL日志，在主备条件下会向备机同步，这两个操作是无法撤销的，同时如果是硬件路径，也会在密码机上创建密钥，同样无法撤销
+		ERROR
+	check_catalog_if_has_key_or_hw_key() # 这里对表进行一次扫描确认是否存在已有的key以及是否存在硬件key，注意这里是全表扫
+	tde_remove_orphan_keyfile() # 清理孤儿密钥文件，当catalog为空，但是存在keyfile的时候，清理这个keyfile，只在软件路径下执行，这个会在后面单独说明一下
+	if (use_hw)
+		if (!tde_hw_startup(ERROR)) # 这里的错误级别是ERROR，原因在于创建key的时的错误只影响当前语句，而不是一种状态不可信，是可重试的
+			ERROR
+		hw_append_key_entry() # 将新建的密钥加入缓存和密钥文件，关于密钥文件的格式会在后面说明
+		simple_heap_insert()
+		if (!TdeKeyInfoWriteWAL()) # 写创建密钥的WAL日志失败
+			hw_remove_key_entry() # 把刚刚写入的密钥信息删除
+			ERROR
+【创建密钥】
+CreateEncryptionPolicy()
+	check_algo_for_policy()
+		simple_heap_insert()
+这里实际上只做catalog更新">
 
 
 <script type="application/ld+json">
@@ -166,12 +255,12 @@ select a from t1;
   "@type": "BlogPosting",
   "headline": "V3-G100透明加密适配硬件密码机",
   "name": "V3-G100透明加密适配硬件密码机",
-  "description": "V3-G100透明加密适配硬件密码机 对硬件适配的代码做梳理性总结，同时自己仔细过一遍。\n软加密的详细设计请看另一篇文档\n1. 透明加密适配硬件密码机 依托PSU3实现的透明加密模块，在此基础上适配BJCA密码机，主要是使用BJCA的密码机加解密以及密钥管理能力实现更安全的透明加密。很多用户都会有这种诉求，通常不会只依赖数据库自带的透明加密特性。\n1.1 功能简述 语法上与软加密使用方式相同，只是在建立密钥的通过option进行区分：\ncreate encryption key k1 with(source=hsm); ##hsm（Hardwire-Security-Module)表示使用硬件设备进行密钥创建，以后使用此密钥的策略都走硬件路径；软加密这里是local，意为本地加解密。 create encryption policy p1 key k1 algorithm sm4_ctr mac_algorithm hmac_sm3; create table t1(a text) secured by(encrypt_policy=\u0026#39;p1\u0026#39;); insert into t1 values(\u0026#39;tde_plain\u0026#39;); select a from t1; 这里需要说明的是，一个集群中只能部署一种类型的密钥，如果key的source指定为local，就无法再创建hsm的硬件加密密钥，这样处理的原因是，如果混用不同来源的密钥，很容易造成一些未知的错误，导致加解密状态混乱，因此现在的设计时，严格限制密钥的单一来源；如上所述，就会带来一个存量迁移的路径，例如之前使用软加密，现在向前一到硬件加密去。这个诉求也很常见，后面会讲到具体的做法。\n如何限制单一密钥来源？后面的章节会结合代码树分析，主要是在实例启动的时候去做限制。\n友商关于这个模块的实现，在内核中大致的思路是类似的：\n达梦、金仓：内核通过调用统一的接口，来实现对硬件加密设备的连接，从而不必关心不同设备所带来的差异，具体的架构类似于： -------------- 可能有接口差异 ------------ 提供统一的API ------------ 硬件加密机 --------\u0026gt; 封装库整合 --------------\u0026gt; 内核 -------------- ------------ ------------ 但是对于封装库，达梦和金仓都选择了一个自定义的头文件类型，由用户去自行做三方硬件设备的适配工作，这样的好处是研发连适配具体的哪个硬件都不用关心了，而且也不需要关心未来第三方的更新等等，缺点就是把复杂度转移给了用户，从体验上感觉不好。\n本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件\n",
+  "description": "V3-G100透明加密适配硬件密码机 对硬件适配的代码做梳理性总结，同时自己仔细过一遍。\n软加密的详细设计请看另一篇文档\n1. 透明加密适配硬件密码机 依托PSU3实现的透明加密模块，在此基础上适配BJCA密码机，主要是使用BJCA的密码机加解密以及密钥管理能力实现更安全的透明加密。很多用户都会有这种诉求，通常不会只依赖数据库自带的透明加密特性。\n1.1 功能简述 语法上与软加密使用方式相同，只是在建立密钥的通过option进行区分：\ncreate encryption key k1 with(source=hsm); ##hsm（Hardwire-Security-Module)表示使用硬件设备进行密钥创建，以后使用此密钥的策略都走硬件路径；软加密这里是local，意为本地加解密。 create encryption policy p1 key k1 algorithm sm4_ctr mac_algorithm hmac_sm3; create table t1(a text) secured by(encrypt_policy=\u0026#39;p1\u0026#39;); insert into t1 values(\u0026#39;tde_plain\u0026#39;); select a from t1; 这里需要说明的是，一个集群中只能部署一种类型的密钥，如果key的source指定为local，就无法再创建hsm的硬件加密密钥，这样处理的原因是，如果混用不同来源的密钥，很容易造成一些未知的错误，导致加解密状态混乱，因此现在的设计时，严格限制密钥的单一来源；如上所述，就会带来一个存量迁移的路径，例如之前使用软加密，现在向前一到硬件加密去。这个诉求也很常见，后面会讲到具体的做法。\n如何限制单一密钥来源？后面的章节会结合代码树分析，主要是在实例启动的时候去做限制。\n友商关于这个模块的实现，在内核中大致的思路是类似的：\n达梦、金仓：内核通过调用统一的接口，来实现对硬件加密设备的连接，从而不必关心不同设备所带来的差异，具体的架构类似于： -------------- 可能有接口差异 ------------ 提供统一的API ------------ 硬件加密机 --------\u0026gt; 封装库整合 --------------\u0026gt; 内核 -------------- ------------ ------------ 但是对于封装库，达梦和金仓都选择了一个自定义的头文件类型，由用户去自行做三方硬件设备的适配工作，这样的好处是研发连适配具体的哪个硬件都不用关心了，而且也不需要关心未来第三方的更新等等，缺点就是把复杂度转移给了用户，从体验上感觉不好。\n本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件，缺点就是未来一旦第三方厂商出现更新，或者随着越来越多种类的第三方适配，代码库可能会变的更多更杂，主要原因还是0018标准不够清晰和全面，导致各个厂家在实现的时候，仍然有一定的差异化。\n如前所述，使用可以概括为：\n密钥在密码机中生成，现阶段使用的是kek类型的密钥，密钥不出密码机，内核只持有加密后的密钥密文； 软硬件路径互斥，集群中只能存在一种类型的加密密钥； 算法集主要以国密算法为主，本次实现使用的是SM4算法，覆盖的模式有CTR/GCM/CBC，同时还支持完整性校验算法HMAC_SM3； 封装库为common_cipher.so，封装库的实现请参考另外的章节； 使用BJCA的密码机服务库libSDF.so； 1.2 实现方案 本节主要通过函数调用树的方式，来介绍具体的实现路径。\n【启动阶段】 PostmasterMain. # 校验enable_tde主特性开关 if (enable_tde) tde_hw_register_exit_hook() # 注册进程退出回调，因为在进程关闭时需要同步调用密码机的关闭接口，这里是无条件创建的； if (tde_hw_conf_present() \u0026amp;\u0026amp; !tde_key_info_file_exists()) # 这里判断硬件配置文件的存在性，如果存在这个配置文件，就认为需要走硬件路径； if (tde_hw_startup(FATAL)) # 这里就尝试打开密码机设备，FATAL参数说明如果这里执行失败，实例会FATAL掉，这样设计的目的是为了不在异常的前提下提供任何服务，避免出现更严重的问题； if (tde_hw_is_active()) # 这里是有一个static进程级别的变量，标识密码机是否已经处于激活状态，因为密码机状态可能随时变化，采用原子读的方式读取这个变量，如果已经激活，就直接返回，算是一个快路径，除了刚启动，大多数； pthread_mutex_lock(\u0026amp;tde_hw_startup_lock); # 这里对激活状态加锁，避免多个进程同时做这个操作； tde_hw_startup_locked(level) # 在锁内去执行启动流程，这里的level是FATAL； _atomic_load_n(\u0026amp;tde_hw_active_flag, __ATOMIC_ACQUIRE) dlopen(lib_path) tde_hw_api.module_init() pthread_mutex_unlock(\u0026amp;tde_hw_startup_lock) 【创建密钥】 CreateEncryptionKey() require_tde_enabled_and_superuser() # 主特性开关以及权限控制 if (IsTranscactionBlock()) # 如果在事务块中则报错，原因在于创建密钥会写密钥文件并且写WAL日志，在主备条件下会向备机同步，这两个操作是无法撤销的，同时如果是硬件路径，也会在密码机上创建密钥，同样无法撤销 ERROR check_catalog_if_has_key_or_hw_key() # 这里对表进行一次扫描确认是否存在已有的key以及是否存在硬件key，注意这里是全表扫 tde_remove_orphan_keyfile() # 清理孤儿密钥文件，当catalog为空，但是存在keyfile的时候，清理这个keyfile，只在软件路径下执行，这个会在后面单独说明一下 if (use_hw) if (!tde_hw_startup(ERROR)) # 这里的错误级别是ERROR，原因在于创建key的时的错误只影响当前语句，而不是一种状态不可信，是可重试的 ERROR hw_append_key_entry() # 将新建的密钥加入缓存和密钥文件，关于密钥文件的格式会在后面说明 simple_heap_insert() if (!TdeKeyInfoWriteWAL()) # 写创建密钥的WAL日志失败 hw_remove_key_entry() # 把刚刚写入的密钥信息删除 ERROR 【创建密钥】 CreateEncryptionPolicy() check_algo_for_policy() simple_heap_insert() 这里实际上只做catalog更新\n",
   "keywords": [
     
   ],
-  "articleBody": "V3-G100透明加密适配硬件密码机 对硬件适配的代码做梳理性总结，同时自己仔细过一遍。\n软加密的详细设计请看另一篇文档\n1. 透明加密适配硬件密码机 依托PSU3实现的透明加密模块，在此基础上适配BJCA密码机，主要是使用BJCA的密码机加解密以及密钥管理能力实现更安全的透明加密。很多用户都会有这种诉求，通常不会只依赖数据库自带的透明加密特性。\n1.1 功能简述 语法上与软加密使用方式相同，只是在建立密钥的通过option进行区分：\ncreate encryption key k1 with(source=hsm); ##hsm（Hardwire-Security-Module)表示使用硬件设备进行密钥创建，以后使用此密钥的策略都走硬件路径；软加密这里是local，意为本地加解密。 create encryption policy p1 key k1 algorithm sm4_ctr mac_algorithm hmac_sm3; create table t1(a text) secured by(encrypt_policy='p1'); insert into t1 values('tde_plain'); select a from t1; 这里需要说明的是，一个集群中只能部署一种类型的密钥，如果key的source指定为local，就无法再创建hsm的硬件加密密钥，这样处理的原因是，如果混用不同来源的密钥，很容易造成一些未知的错误，导致加解密状态混乱，因此现在的设计时，严格限制密钥的单一来源；如上所述，就会带来一个存量迁移的路径，例如之前使用软加密，现在向前一到硬件加密去。这个诉求也很常见，后面会讲到具体的做法。\n如何限制单一密钥来源？后面的章节会结合代码树分析，主要是在实例启动的时候去做限制。\n友商关于这个模块的实现，在内核中大致的思路是类似的：\n达梦、金仓：内核通过调用统一的接口，来实现对硬件加密设备的连接，从而不必关心不同设备所带来的差异，具体的架构类似于： -------------- 可能有接口差异 ------------ 提供统一的API ------------ 硬件加密机 --------\u003e 封装库整合 --------------\u003e 内核 -------------- ------------ ------------ 但是对于封装库，达梦和金仓都选择了一个自定义的头文件类型，由用户去自行做三方硬件设备的适配工作，这样的好处是研发连适配具体的哪个硬件都不用关心了，而且也不需要关心未来第三方的更新等等，缺点就是把复杂度转移给了用户，从体验上感觉不好。\n本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件\n",
-  "wordCount" : "58",
+  "articleBody": "V3-G100透明加密适配硬件密码机 对硬件适配的代码做梳理性总结，同时自己仔细过一遍。\n软加密的详细设计请看另一篇文档\n1. 透明加密适配硬件密码机 依托PSU3实现的透明加密模块，在此基础上适配BJCA密码机，主要是使用BJCA的密码机加解密以及密钥管理能力实现更安全的透明加密。很多用户都会有这种诉求，通常不会只依赖数据库自带的透明加密特性。\n1.1 功能简述 语法上与软加密使用方式相同，只是在建立密钥的通过option进行区分：\ncreate encryption key k1 with(source=hsm); ##hsm（Hardwire-Security-Module)表示使用硬件设备进行密钥创建，以后使用此密钥的策略都走硬件路径；软加密这里是local，意为本地加解密。 create encryption policy p1 key k1 algorithm sm4_ctr mac_algorithm hmac_sm3; create table t1(a text) secured by(encrypt_policy='p1'); insert into t1 values('tde_plain'); select a from t1; 这里需要说明的是，一个集群中只能部署一种类型的密钥，如果key的source指定为local，就无法再创建hsm的硬件加密密钥，这样处理的原因是，如果混用不同来源的密钥，很容易造成一些未知的错误，导致加解密状态混乱，因此现在的设计时，严格限制密钥的单一来源；如上所述，就会带来一个存量迁移的路径，例如之前使用软加密，现在向前一到硬件加密去。这个诉求也很常见，后面会讲到具体的做法。\n如何限制单一密钥来源？后面的章节会结合代码树分析，主要是在实例启动的时候去做限制。\n友商关于这个模块的实现，在内核中大致的思路是类似的：\n达梦、金仓：内核通过调用统一的接口，来实现对硬件加密设备的连接，从而不必关心不同设备所带来的差异，具体的架构类似于： -------------- 可能有接口差异 ------------ 提供统一的API ------------ 硬件加密机 --------\u003e 封装库整合 --------------\u003e 内核 -------------- ------------ ------------ 但是对于封装库，达梦和金仓都选择了一个自定义的头文件类型，由用户去自行做三方硬件设备的适配工作，这样的好处是研发连适配具体的哪个硬件都不用关心了，而且也不需要关心未来第三方的更新等等，缺点就是把复杂度转移给了用户，从体验上感觉不好。\n本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件，缺点就是未来一旦第三方厂商出现更新，或者随着越来越多种类的第三方适配，代码库可能会变的更多更杂，主要原因还是0018标准不够清晰和全面，导致各个厂家在实现的时候，仍然有一定的差异化。\n如前所述，使用可以概括为：\n密钥在密码机中生成，现阶段使用的是kek类型的密钥，密钥不出密码机，内核只持有加密后的密钥密文； 软硬件路径互斥，集群中只能存在一种类型的加密密钥； 算法集主要以国密算法为主，本次实现使用的是SM4算法，覆盖的模式有CTR/GCM/CBC，同时还支持完整性校验算法HMAC_SM3； 封装库为common_cipher.so，封装库的实现请参考另外的章节； 使用BJCA的密码机服务库libSDF.so； 1.2 实现方案 本节主要通过函数调用树的方式，来介绍具体的实现路径。\n【启动阶段】 PostmasterMain. # 校验enable_tde主特性开关 if (enable_tde) tde_hw_register_exit_hook() # 注册进程退出回调，因为在进程关闭时需要同步调用密码机的关闭接口，这里是无条件创建的； if (tde_hw_conf_present() \u0026\u0026 !tde_key_info_file_exists()) # 这里判断硬件配置文件的存在性，如果存在这个配置文件，就认为需要走硬件路径； if (tde_hw_startup(FATAL)) # 这里就尝试打开密码机设备，FATAL参数说明如果这里执行失败，实例会FATAL掉，这样设计的目的是为了不在异常的前提下提供任何服务，避免出现更严重的问题； if (tde_hw_is_active()) # 这里是有一个static进程级别的变量，标识密码机是否已经处于激活状态，因为密码机状态可能随时变化，采用原子读的方式读取这个变量，如果已经激活，就直接返回，算是一个快路径，除了刚启动，大多数； pthread_mutex_lock(\u0026tde_hw_startup_lock); # 这里对激活状态加锁，避免多个进程同时做这个操作； tde_hw_startup_locked(level) # 在锁内去执行启动流程，这里的level是FATAL； _atomic_load_n(\u0026tde_hw_active_flag, __ATOMIC_ACQUIRE) dlopen(lib_path) tde_hw_api.module_init() pthread_mutex_unlock(\u0026tde_hw_startup_lock) 【创建密钥】 CreateEncryptionKey() require_tde_enabled_and_superuser() # 主特性开关以及权限控制 if (IsTranscactionBlock()) # 如果在事务块中则报错，原因在于创建密钥会写密钥文件并且写WAL日志，在主备条件下会向备机同步，这两个操作是无法撤销的，同时如果是硬件路径，也会在密码机上创建密钥，同样无法撤销 ERROR check_catalog_if_has_key_or_hw_key() # 这里对表进行一次扫描确认是否存在已有的key以及是否存在硬件key，注意这里是全表扫 tde_remove_orphan_keyfile() # 清理孤儿密钥文件，当catalog为空，但是存在keyfile的时候，清理这个keyfile，只在软件路径下执行，这个会在后面单独说明一下 if (use_hw) if (!tde_hw_startup(ERROR)) # 这里的错误级别是ERROR，原因在于创建key的时的错误只影响当前语句，而不是一种状态不可信，是可重试的 ERROR hw_append_key_entry() # 将新建的密钥加入缓存和密钥文件，关于密钥文件的格式会在后面说明 simple_heap_insert() if (!TdeKeyInfoWriteWAL()) # 写创建密钥的WAL日志失败 hw_remove_key_entry() # 把刚刚写入的密钥信息删除 ERROR 【创建密钥】 CreateEncryptionPolicy() check_algo_for_policy() simple_heap_insert() 这里实际上只做catalog更新\n【数据加密】 TdePageEncryptForWrite() if (PageIsNew || !PageIsTDE()) ERROR if (PageIsEncrypt()) FATAL PG_TRY tde_page_crypt() if (dek-\u003eis_hw) # 这里表示从缓存中获取的dek是硬件标识，后面会讲一下这个结构 tde_build_aad() # 这里构建完整性计算的aad，具体的会在第二个需求中说明 tde_hw_page_crypt() for (attempt = 0; attempt \u003c 2; attempt++) # 尝试两次，因为不能确认设备总是可用的，同时提供一定的容忍性 tde_hw_ctx_acquire() # 获取封装库ctx，这个会在封装库的实现中详细介绍，简单说就是一个参数合集，包含了我们加解密所需的所有参数，都在这个ctx中 tde_hw_blob_fp() # 这里获取快速查找ctx的key，ctx本身已经被hash缓存 for( attempt = 0; attempt \u003c 3; attempt++) # 这里同样三次尝试 tde_hw_ensure_ctx() pthread_rwlock_rdlock(\u0026tde_hw_ctx_lock) for (i = 0;i \u003c TDE_HW_MAX_CTX;i++ if (find) return pthread_rwlock_unlock(\u0026tde_hw_ctx_lock) pthread_rwlock_wrlock(\u0026tde_hw_ctx_lock) for (i = 0;i \u003c TDE_HW_MAX_CTX;i++ if (find) return if (free_slot \u003c 0) tde_hw_evict_slot(); tde_hw_api.module_sess_init() tde_hw_api.ctx_init() 【 ",
+  "wordCount" : "217",
   "inLanguage": "en",
   "datePublished": "2026-10-23T15:49:45+08:00",
   "dateModified": "2026-10-23T15:49:45+08:00",
@@ -264,7 +353,7 @@ select a from t1;
       V3-G100透明加密适配硬件密码机
     </h1>
     <div class="post-meta">
-      <span title='2026-10-23 15:49:45 +0800 CST'>October 23, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>58 words</span>&nbsp;·&nbsp;<span>Me</span>
+      <span title='2026-10-23 15:49:45 +0800 CST'>October 23, 2026</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>217 words</span>&nbsp;·&nbsp;<span>Me</span>
       
       
 
@@ -289,7 +378,21 @@ select a from t1;
                     <a href="#1-%e9%80%8f%e6%98%8e%e5%8a%a0%e5%af%86%e9%80%82%e9%85%8d%e7%a1%ac%e4%bb%b6%e5%af%86%e7%a0%81%e6%9c%ba" aria-label="1. 透明加密适配硬件密码机">1. 透明加密适配硬件密码机</a><ul>
                         
                 <li>
-                    <a href="#11-%e5%8a%9f%e8%83%bd%e7%ae%80%e8%bf%b0" aria-label="1.1 功能简述">1.1 功能简述</a>
+                    <a href="#11-%e5%8a%9f%e8%83%bd%e7%ae%80%e8%bf%b0" aria-label="1.1 功能简述">1.1 功能简述</a></li></ul>
+                </li>
+                <li>
+                    <a href="#12-%e5%ae%9e%e7%8e%b0%e6%96%b9%e6%a1%88" aria-label="1.2 实现方案">1.2 实现方案</a><ul>
+                        
+                <li>
+                    <a href="#%e5%90%af%e5%8a%a8%e9%98%b6%e6%ae%b5" aria-label="【启动阶段】">【启动阶段】</a></li>
+                <li>
+                    <a href="#%e5%88%9b%e5%bb%ba%e5%af%86%e9%92%a5" aria-label="【创建密钥】">【创建密钥】</a></li>
+                <li>
+                    <a href="#%e5%88%9b%e5%bb%ba%e5%af%86%e9%92%a5-1" aria-label="【创建密钥】">【创建密钥】</a></li>
+                <li>
+                    <a href="#%e6%95%b0%e6%8d%ae%e5%8a%a0%e5%af%86" aria-label="【数据加密】">【数据加密】</a></li>
+                <li>
+                    <a href="#heading" aria-label="【">【</a>
                 </li>
             </ul>
             </li>
@@ -326,7 +429,80 @@ select a from t1;
 </span></span><span class="line"><span class="cl">硬件加密机            --------&gt;      封装库整合   --------------&gt;        内核
 </span></span><span class="line"><span class="cl">--------------                   ------------                    ------------ 
 </span></span></code></pre></div><p>但是对于封装库，达梦和金仓都选择了一个自定义的头文件类型，由用户去自行做三方硬件设备的适配工作，这样的好处是研发连适配具体的哪个硬件都不用关心了，而且也不需要关心未来第三方的更新等等，缺点就是把复杂度转移给了用户，从体验上感觉不好。</p>
-<p>本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件</p>
+<p>本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件，缺点就是未来一旦第三方厂商出现更新，或者随着越来越多种类的第三方适配，代码库可能会变的更多更杂，主要原因还是0018标准不够清晰和全面，导致各个厂家在实现的时候，仍然有一定的差异化。</p>
+<p>如前所述，使用可以概括为：</p>
+<ul>
+<li>密钥在密码机中生成，现阶段使用的是kek类型的密钥，密钥不出密码机，内核只持有加密后的密钥密文；</li>
+<li>软硬件路径互斥，集群中只能存在一种类型的加密密钥；</li>
+<li>算法集主要以国密算法为主，本次实现使用的是SM4算法，覆盖的模式有CTR/GCM/CBC，同时还支持完整性校验算法HMAC_SM3；</li>
+<li>封装库为common_cipher.so，封装库的实现请参考另外的章节；</li>
+<li>使用BJCA的密码机服务库libSDF.so；</li>
+</ul>
+<h2 id="12-实现方案">1.2 实现方案<a hidden class="anchor" aria-hidden="true" href="#12-实现方案">#</a></h2>
+<p>本节主要通过函数调用树的方式，来介绍具体的实现路径。</p>
+<h3 id="启动阶段">【启动阶段】<a hidden class="anchor" aria-hidden="true" href="#启动阶段">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c++" data-lang="c++"><span class="line"><span class="cl"><span class="n">PostmasterMain</span><span class="p">.</span> <span class="err">#</span> <span class="err">校验</span><span class="n">enable_tde主特性开关</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="p">(</span><span class="n">enable_tde</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">		<span class="n">tde_hw_register_exit_hook</span><span class="p">()</span> <span class="err">#</span> <span class="err">注册进程退出回调，因为在进程关闭时需要同步调用密码机的关闭接口，这里是无条件创建的；</span>
+</span></span><span class="line"><span class="cl">		<span class="k">if</span> <span class="p">(</span><span class="n">tde_hw_conf_present</span><span class="p">()</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="n">tde_key_info_file_exists</span><span class="p">())</span> <span class="err">#</span> <span class="err">这里判断硬件配置文件的存在性，如果存在这个配置文件，就认为需要走硬件路径；</span>
+</span></span><span class="line"><span class="cl">		<span class="k">if</span> <span class="p">(</span><span class="n">tde_hw_startup</span><span class="p">(</span><span class="n">FATAL</span><span class="p">))</span> <span class="err">#</span> <span class="err">这里就尝试打开密码机设备，</span><span class="n">FATAL参数说明如果这里执行失败</span><span class="err">，实例会</span><span class="n">FATAL掉</span><span class="err">，这样设计的目的是为了不在异常的前提下提供任何服务，避免出现更严重的问题；</span>
+</span></span><span class="line"><span class="cl">			<span class="k">if</span> <span class="p">(</span><span class="n">tde_hw_is_active</span><span class="p">())</span> <span class="err">#</span> <span class="err">这里是有一个</span><span class="n">static进程级别的变量</span><span class="err">，标识密码机是否已经处于激活状态，因为密码机状态可能随时变化，采用原子读的方式读取这个变量，如果已经激活，就直接返回，算是一个快路径，除了刚启动，大多数；</span>
+</span></span><span class="line"><span class="cl">			<span class="n">pthread_mutex_lock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tde_hw_startup_lock</span><span class="p">);</span> <span class="err">#</span> <span class="err">这里对激活状态加锁，避免多个进程同时做这个操作；</span>
+</span></span><span class="line"><span class="cl">			<span class="n">tde_hw_startup_locked</span><span class="p">(</span><span class="n">level</span><span class="p">)</span> <span class="err">#</span> <span class="err">在锁内去执行启动流程，这里的</span><span class="n">level是FATAL</span><span class="err">；</span>
+</span></span><span class="line"><span class="cl">				<span class="n">_atomic_load_n</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tde_hw_active_flag</span><span class="p">,</span> <span class="n">__ATOMIC_ACQUIRE</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">				<span class="n">dlopen</span><span class="p">(</span><span class="n">lib_path</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">				<span class="n">tde_hw_api</span><span class="p">.</span><span class="n">module_init</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">			<span class="n">pthread_mutex_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tde_hw_startup_lock</span><span class="p">)</span>
+</span></span></code></pre></div><h3 id="创建密钥">【创建密钥】<a hidden class="anchor" aria-hidden="true" href="#创建密钥">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c++" data-lang="c++"><span class="line"><span class="cl"><span class="n">CreateEncryptionKey</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">	<span class="n">require_tde_enabled_and_superuser</span><span class="p">()</span> <span class="err">#</span> <span class="err">主特性开关以及权限控制</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="p">(</span><span class="n">IsTranscactionBlock</span><span class="p">())</span> <span class="err">#</span> <span class="err">如果在事务块中则报错，原因在于创建密钥会写密钥文件并且写</span><span class="n">WAL日志</span><span class="err">，在主备条件下会向备机同步，这两个操作是无法撤销的，同时如果是硬件路径，也会在密码机上创建密钥，同样无法撤销</span>
+</span></span><span class="line"><span class="cl">		<span class="n">ERROR</span>
+</span></span><span class="line"><span class="cl">	<span class="n">check_catalog_if_has_key_or_hw_key</span><span class="p">()</span> <span class="err">#</span> <span class="err">这里对表进行一次扫描确认是否存在已有的</span><span class="n">key以及是否存在硬件key</span><span class="err">，注意这里是全表扫</span>
+</span></span><span class="line"><span class="cl">	<span class="n">tde_remove_orphan_keyfile</span><span class="p">()</span> <span class="err">#</span> <span class="err">清理孤儿密钥文件，当</span><span class="n">catalog为空</span><span class="err">，但是存在</span><span class="n">keyfile的时候</span><span class="err">，清理这个</span><span class="n">keyfile</span><span class="err">，只在软件路径下执行，这个会在后面单独说明一下</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="p">(</span><span class="n">use_hw</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">		<span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">tde_hw_startup</span><span class="p">(</span><span class="n">ERROR</span><span class="p">))</span> <span class="err">#</span> <span class="err">这里的错误级别是</span><span class="n">ERROR</span><span class="err">，原因在于创建</span><span class="n">key的时的错误只影响当前语句</span><span class="err">，而不是一种状态不可信，是可重试的</span>
+</span></span><span class="line"><span class="cl">			<span class="n">ERROR</span>
+</span></span><span class="line"><span class="cl">		<span class="n">hw_append_key_entry</span><span class="p">()</span> <span class="err">#</span> <span class="err">将新建的密钥加入缓存和密钥文件，关于密钥文件的格式会在后面说明</span>
+</span></span><span class="line"><span class="cl">		<span class="n">simple_heap_insert</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">		<span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">TdeKeyInfoWriteWAL</span><span class="p">())</span> <span class="err">#</span> <span class="err">写创建密钥的</span><span class="n">WAL日志失败</span>
+</span></span><span class="line"><span class="cl">			<span class="n">hw_remove_key_entry</span><span class="p">()</span> <span class="err">#</span> <span class="err">把刚刚写入的密钥信息删除</span>
+</span></span><span class="line"><span class="cl">			<span class="n">ERROR</span>
+</span></span></code></pre></div><h3 id="创建密钥-1">【创建密钥】<a hidden class="anchor" aria-hidden="true" href="#创建密钥-1">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c++" data-lang="c++"><span class="line"><span class="cl"><span class="n">CreateEncryptionPolicy</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">	<span class="n">check_algo_for_policy</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">		<span class="n">simple_heap_insert</span><span class="p">()</span>
+</span></span></code></pre></div><p>这里实际上只做catalog更新</p>
+<h3 id="数据加密">【数据加密】<a hidden class="anchor" aria-hidden="true" href="#数据加密">#</a></h3>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-c++" data-lang="c++"><span class="line"><span class="cl"><span class="n">TdePageEncryptForWrite</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="p">(</span><span class="n">PageIsNew</span> <span class="o">||</span> <span class="o">!</span><span class="n">PageIsTDE</span><span class="p">())</span>
+</span></span><span class="line"><span class="cl">		<span class="n">ERROR</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="p">(</span><span class="n">PageIsEncrypt</span><span class="p">())</span>
+</span></span><span class="line"><span class="cl">		<span class="n">FATAL</span>
+</span></span><span class="line"><span class="cl">	<span class="n">PG_TRY</span>
+</span></span><span class="line"><span class="cl">		<span class="n">tde_page_crypt</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">			<span class="k">if</span> <span class="p">(</span><span class="n">dek</span><span class="o">-&gt;</span><span class="n">is_hw</span><span class="p">)</span> <span class="err">#</span> <span class="err">这里表示从缓存中获取的</span><span class="n">dek是硬件标识</span><span class="err">，后面会讲一下这个结构</span>
+</span></span><span class="line"><span class="cl">				<span class="n">tde_build_aad</span><span class="p">()</span> <span class="err">#</span> <span class="err">这里构建完整性计算的</span><span class="n">aad</span><span class="err">，具体的会在第二个需求中说明</span>
+</span></span><span class="line"><span class="cl">				<span class="n">tde_hw_page_crypt</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">					<span class="k">for</span> <span class="p">(</span><span class="n">attempt</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">attempt</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">;</span> <span class="n">attempt</span><span class="o">++</span><span class="p">)</span> <span class="err">#</span> <span class="err">尝试两次，因为不能确认设备总是可用的，同时提供一定的容忍性</span>
+</span></span><span class="line"><span class="cl">						<span class="n">tde_hw_ctx_acquire</span><span class="p">()</span> <span class="err">#</span> <span class="err">获取封装库</span><span class="n">ctx</span><span class="err">，这个会在封装库的实现中详细介绍，简单说就是一个参数合集，包含了我们加解密所需的所有参数，都在这个</span><span class="n">ctx中</span>
+</span></span><span class="line"><span class="cl">							<span class="n">tde_hw_blob_fp</span><span class="p">()</span> <span class="err">#</span> <span class="err">这里获取快速查找</span><span class="n">ctx的key</span><span class="err">，</span><span class="n">ctx本身已经被hash缓存</span>
+</span></span><span class="line"><span class="cl">							<span class="k">for</span><span class="p">(</span> <span class="n">attempt</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">attempt</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">;</span> <span class="n">attempt</span><span class="o">++</span><span class="p">)</span> <span class="err">#</span> <span class="err">这里同样三次尝试</span>
+</span></span><span class="line"><span class="cl">								<span class="n">tde_hw_ensure_ctx</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">									<span class="n">pthread_rwlock_rdlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tde_hw_ctx_lock</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">									<span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">TDE_HW_MAX_CTX</span><span class="p">;</span><span class="n">i</span><span class="o">++</span>
+</span></span><span class="line"><span class="cl">										<span class="k">if</span> <span class="p">(</span><span class="n">find</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">											<span class="k">return</span>
+</span></span><span class="line"><span class="cl">									<span class="n">pthread_rwlock_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tde_hw_ctx_lock</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">									<span class="n">pthread_rwlock_wrlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tde_hw_ctx_lock</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">									<span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">TDE_HW_MAX_CTX</span><span class="p">;</span><span class="n">i</span><span class="o">++</span>
+</span></span><span class="line"><span class="cl">										<span class="k">if</span> <span class="p">(</span><span class="n">find</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">											<span class="k">return</span>
+</span></span><span class="line"><span class="cl">									<span class="k">if</span> <span class="p">(</span><span class="n">free_slot</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">										<span class="n">tde_hw_evict_slot</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl">									<span class="n">tde_hw_api</span><span class="p">.</span><span class="n">module_sess_init</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl">									<span class="n">tde_hw_api</span><span class="p">.</span><span class="n">ctx_init</span><span class="p">()</span>
+</span></span></code></pre></div><h3 id="heading">【<a hidden class="anchor" aria-hidden="true" href="#heading">#</a></h3>
 
 
   </div>

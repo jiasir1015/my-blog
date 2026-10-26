@@ -325,10 +325,13 @@ create encryption key k1 with(source=hsm); ##hsm（Hardwire-Security-Module)表�
 如何限制单一密钥来源？后面的章节会结合代码树分析，主要是在实例启动的时候去做限制。
 友商关于这个模块的实现，在内核中大致的思路是类似的：
 达梦、金仓：内核通过调用统一的接口，来实现对硬件加密设备的连接，从而不必关心不同设备所带来的差异，具体的架构类似于： -------------- 可能有接口差异 ------------ 提供统一的API ------------ 硬件加密机 --------&gt; 封装库整合 --------------&gt; 内核 -------------- ------------ ------------ 但是对于封装库，达梦和金仓都选择了一个自定义的头文件类型，由用户去自行做三方硬件设备的适配工作，这样的好处是研发连适配具体的哪个硬件都不用关心了，而且也不需要关心未来第三方的更新等等，缺点就是把复杂度转移给了用户，从体验上感觉不好。
-本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件
-</p>
+本次硬件适配的方案时由内核以插件的形式自带三方封装库，这样的好处是用户只需要按照指定步骤进行配置即可，不用自己创建头文件，缺点就是未来一旦第三方厂商出现更新，或者随着越来越多种类的第三方适配，代码库可能会变的更多更杂，主要原因还是0018标准不够清晰和全面，导致各个厂家在实现的时候，仍然有一定的差异化。
+如前所述，使用可以概括为：
+密钥在密码机中生成，现阶段使用的是kek类型的密钥，密钥不出密码机，内核只持有加密后的密钥密文； 软硬件路径互斥，集群中只能存在一种类型的加密密钥； 算法集主要以国密算法为主，本次实现使用的是SM4算法，覆盖的模式有CTR/GCM/CBC，同时还支持完整性校验算法HMAC_SM3； 封装库为common_cipher.so，封装库的实现请参考另外的章节； 使用BJCA的密码机服务库libSDF.so； 1.2 实现方案 本节主要通过函数调用树的方式，来介绍具体的实现路径。
+【启动阶段】 PostmasterMain. # 校验enable_tde主特性开关 if (enable_tde) tde_hw_register_exit_hook() # 注册进程退出回调，因为在进程关闭时需要同步调用密码机的关闭接口，这里是无条件创建的； if (tde_hw_conf_present() &amp;&amp; !tde_key_info_file_exists()) # 这里判断硬件配置文件的存在性，如果存在这个配置文件，就认为需要走硬件路径； if (tde_hw_startup(FATAL)) # 这里就尝试打开密码机设备，FATAL参数说明如果这里执行失败，实例会FATAL掉，这样设计的目的是为了不在异常的前提下提供任何服务，避免出现更严重的问题； if (tde_hw_is_active()) # 这里是有一个static进程级别的变量，标识密码机是否已经处于激活状态，因为密码机状态可能随时变化，采用原子读的方式读取这个变量，如果已经激活，就直接返回，算是一个快路径，除了刚启动，大多数； pthread_mutex_lock(&amp;tde_hw_startup_lock); # 这里对激活状态加锁，避免多个进程同时做这个操作； tde_hw_startup_locked(level) # 在锁内去执行启动流程，这里的level是FATAL； _atomic_load_n(&amp;tde_hw_active_flag, __ATOMIC_ACQUIRE) dlopen(lib_path) tde_hw_api.module_init() pthread_mutex_unlock(&amp;tde_hw_startup_lock) 【创建密钥】 CreateEncryptionKey() require_tde_enabled_and_superuser() # 主特性开关以及权限控制 if (IsTranscactionBlock()) # 如果在事务块中则报错，原因在于创建密钥会写密钥文件并且写WAL日志，在主备条件下会向备机同步，这两个操作是无法撤销的，同时如果是硬件路径，也会在密码机上创建密钥，同样无法撤销 ERROR check_catalog_if_has_key_or_hw_key() # 这里对表进行一次扫描确认是否存在已有的key以及是否存在硬件key，注意这里是全表扫 tde_remove_orphan_keyfile() # 清理孤儿密钥文件，当catalog为空，但是存在keyfile的时候，清理这个keyfile，只在软件路径下执行，这个会在后面单独说明一下 if (use_hw) if (!tde_hw_startup(ERROR)) # 这里的错误级别是ERROR，原因在于创建key的时的错误只影响当前语句，而不是一种状态不可信，是可重试的 ERROR hw_append_key_entry() # 将新建的密钥加入缓存和密钥文件，关于密钥文件的格式会在后面说明 simple_heap_insert() if (!TdeKeyInfoWriteWAL()) # 写创建密钥的WAL日志失败 hw_remove_key_entry() # 把刚刚写入的密钥信息删除 ERROR 【创建密钥】 CreateEncryptionPolicy() check_algo_for_policy() simple_heap_insert() 这里实际上只做catalog更新
+...</p>
   </div>
-  <footer class="entry-footer"><span title='2026-10-23 15:49:45 +0800 CST'>October 23, 2026</span>&nbsp;·&nbsp;<span>1 min</span>&nbsp;·&nbsp;<span>58 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
+  <footer class="entry-footer"><span title='2026-10-23 15:49:45 +0800 CST'>October 23, 2026</span>&nbsp;·&nbsp;<span>2 min</span>&nbsp;·&nbsp;<span>217 words</span>&nbsp;·&nbsp;<span>Me</span></footer>
   <a class="entry-link" aria-label="post link to V3-G100透明加密适配硬件密码机" href="http://localhost:1313/posts/database/v3-g100%E9%80%8F%E6%98%8E%E5%8A%A0%E5%AF%86%E9%80%82%E9%85%8D%E7%A1%AC%E4%BB%B6%E5%AF%86%E7%A0%81%E6%9C%BA/"></a>
 </article>
 

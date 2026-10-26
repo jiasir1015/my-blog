@@ -98,15 +98,21 @@
 
   function decorateCodeBlocks(root) {
     root.querySelectorAll('pre code').forEach((block) => {
+      const match = (block.className || '').match(/\blanguage-([^\s]+)/i);
+      const label = match ? match[1] : '';
+      const language = label.toLowerCase();
+      const normalized = ({ 'c++': 'cpp', 'c#': 'csharp' })[language] || language;
+      if (match) block.classList.replace(match[0], `language-${normalized}`);
       try {
-        hljs.highlightElement(block);
-      } catch {
-        /* ignore */
+        if (!normalized || hljs.getLanguage(normalized)) {
+          hljs.highlightElement(block);
+        }
+      } catch (err) {
+        console.warn('代码高亮失败', err);
       }
       const pre = block.parentElement;
       if (!pre || pre.querySelector('.lang-badge')) return;
-      const match = (block.className || '').match(/language-([\w#+-]+)/i);
-      const lang = match ? match[1] : block.className.includes('hljs') ? 'auto' : 'text';
+      const lang = label || (block.className.includes('hljs') ? 'auto' : 'text');
       const badge = document.createElement('span');
       badge.className = 'lang-badge';
       badge.textContent = lang;
